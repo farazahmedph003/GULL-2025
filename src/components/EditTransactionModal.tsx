@@ -78,100 +78,157 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       {/* Modal */}
       <div className="fixed inset-0 z-[60] overflow-y-auto">
         <div className="flex min-h-full items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl max-w-md w-full">
+          <div className="relative bg-white dark:bg-gradient-to-br dark:from-slate-800 dark:to-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            {/* Gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-50/20 via-purple-50/10 to-indigo-50/20 dark:from-blue-900/10 dark:via-purple-900/5 dark:to-indigo-900/10 rounded-2xl"></div>
+            
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                Edit Transaction
-              </h2>
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                aria-label="Close modal"
-              >
-                <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+            <div className="relative z-10 p-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-500 to-purple-600">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Edit Transaction</h2>
+                    <p className="text-sm text-blue-100">Single Entry: {transaction.number}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={onClose}
+                  className="p-2 hover:bg-white/20 rounded-xl transition-all duration-200 group"
+                  aria-label="Close modal"
+                >
+                  <svg className="w-5 h-5 text-white group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="relative z-10 p-6 space-y-6">
               {/* Number (readonly) */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                   Number
                 </label>
-                <input
-                  type="text"
-                  value={transaction.number}
-                  disabled
-                  className="input-field bg-gray-100 dark:bg-gray-700 cursor-not-allowed"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={transaction.number}
+                    disabled
+                    className="w-full px-4 py-3 bg-gray-100 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600 rounded-xl text-gray-900 dark:text-white cursor-not-allowed"
+                  />
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
+                </div>
               </div>
 
               {/* FIRST Amount */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  FIRST Amount
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                  First Amount
                 </label>
-                <input
-                  type="number"
-                  value={first}
-                  onChange={(e) => {
-                    setFirst(e.target.value);
-                    if (errors.first) setErrors(prev => ({ ...prev, first: undefined }));
-                  }}
-                  placeholder="Enter FIRST amount"
-                  className={`input-field ${errors.first ? 'border-danger' : ''}`}
-                  step="0.01"
-                />
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={first}
+                    onChange={(e) => {
+                      setFirst(e.target.value);
+                      if (errors.first) setErrors(prev => ({ ...prev, first: undefined }));
+                    }}
+                    placeholder="Enter FIRST amount"
+                    className={`w-full px-4 py-3 bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 ${errors.first ? 'border-red-500 focus:ring-red-500' : ''}`}
+                    step="0.01"
+                  />
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                    </svg>
+                  </div>
+                </div>
                 {errors.first && (
-                  <p className="mt-1 text-sm text-danger">{errors.first}</p>
+                  <p className="mt-2 text-sm text-red-500 flex items-center">
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {errors.first}
+                  </p>
                 )}
               </div>
 
               {/* SECOND Amount */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  SECOND Amount
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                  Second Amount
                 </label>
-                <input
-                  type="number"
-                  value={second}
-                  onChange={(e) => {
-                    setSecond(e.target.value);
-                    if (errors.second) setErrors(prev => ({ ...prev, second: undefined }));
-                  }}
-                  placeholder="Enter SECOND amount"
-                  className={`input-field ${errors.second ? 'border-danger' : ''}`}
-                  step="0.01"
-                />
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={second}
+                    onChange={(e) => {
+                      setSecond(e.target.value);
+                      if (errors.second) setErrors(prev => ({ ...prev, second: undefined }));
+                    }}
+                    placeholder="Enter SECOND amount"
+                    className={`w-full px-4 py-3 bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 ${errors.second ? 'border-red-500 focus:ring-red-500' : ''}`}
+                    step="0.01"
+                  />
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                    </svg>
+                  </div>
+                </div>
                 {errors.second && (
-                  <p className="mt-1 text-sm text-danger">{errors.second}</p>
+                  <p className="mt-2 text-sm text-red-500 flex items-center">
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {errors.second}
+                  </p>
                 )}
               </div>
 
               {/* Notes */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                   Notes (Optional)
                 </label>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Add any notes or comments..."
-                  className="input-field h-24 resize-none"
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 h-24 resize-none"
                 />
               </div>
 
               {/* Actions */}
-              <div className="flex justify-end space-x-3 pt-4">
-                <button type="button" onClick={onClose} className="btn-secondary">
-                  Cancel
+              <div className="flex justify-end space-x-4 pt-6 border-t border-gray-100 dark:border-gray-700">
+                <button 
+                  type="button" 
+                  onClick={onClose}
+                  className="px-6 py-3 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-slate-600 transition-all duration-200 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 flex items-center space-x-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  <span>Cancel</span>
                 </button>
-                <button type="submit" className="btn-primary">
-                  Save Changes
+                <button 
+                  type="submit"
+                  className="px-6 py-3 bg-gradient-to-r from-green-500 to-blue-600 text-white rounded-xl font-semibold hover:from-green-600 hover:to-blue-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center space-x-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span>Save Changes</span>
                 </button>
               </div>
             </form>

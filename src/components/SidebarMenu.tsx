@@ -144,6 +144,7 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
         path: '',
         icon: '',
         adminOnly: false,
+        isDivider: true,
       },
       {
         id: 'projects',
@@ -190,70 +191,105 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
 
       {/* Sidebar */}
       <div
-        className={`fixed top-0 left-0 h-full w-64 sm:w-72 lg:w-80 bg-gray-900 shadow-2xl transform transition-transform duration-300 ease-out z-50 ${
+        className={`fixed top-0 left-0 h-full w-64 sm:w-72 lg:w-80 bg-white dark:bg-gradient-to-br dark:from-slate-900 dark:to-gray-900 border-r border-gray-200 dark:border-gray-700 shadow-2xl transform transition-transform duration-300 ease-out z-50 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         {/* Sidebar Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-700 bg-gradient-to-r from-purple-900 to-blue-900">
-          <div>
-            <h2 className="text-2xl font-bold text-white">
-              🎯 NERO Menu
-            </h2>
-            <p className="text-sm text-purple-200 mt-1">
-              {user?.displayName || user?.email || 'User'}
-            </p>
+        <div className="relative p-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-purple-500 to-blue-600 overflow-hidden">
+          {/* Gradient overlay */}
+          <div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 to-blue-700/20"></div>
+          
+          <div className="relative z-10 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center shadow-lg">
+                <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white">
+                  NERO Menu
+                </h2>
+                <p className="text-sm text-blue-100">
+                  {user?.displayName || user?.email || 'User'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 bg-red-500 hover:bg-red-600 text-white rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 group"
+              aria-label="Close menu"
+            >
+              <svg className="w-5 h-5 group-hover:rotate-90 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
-            aria-label="Close menu"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
         </div>
 
         {/* Menu Items */}
         <div className="overflow-y-auto h-[calc(100vh-180px)] p-4">
-          <div className="space-y-2">
+          <div className="space-y-3">
             {menuItems
               .filter(item => !item.adminOnly || isAdmin)
               .map((item) => {
                 if ((item as any).isDivider) {
-                  return <div key={item.id} className="border-t border-gray-700 my-4" />;
+                  return (
+                    <div key={item.id} className="relative my-6">
+                      {/* Decorative divider with gradient */}
+                      <div className="flex items-center justify-center">
+                        <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
+                        <div className="relative mx-4">
+                          <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg">
+                            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                          </div>
+                          {/* Animated pulse effect */}
+                          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/30 to-blue-600/30 rounded-full animate-pulse"></div>
+                        </div>
+                        <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
+                      </div>
+                      
+                    </div>
+                  );
                 }
                 return (
                   <button
                     key={item.id}
                     onClick={() => handleNavigation(item.path)}
-                    className="w-full flex items-center space-x-3 p-4 bg-gray-800 hover:bg-gradient-to-r hover:from-purple-600 hover:to-blue-600 rounded-lg transition-all duration-200 hover:scale-105 hover:shadow-lg text-left group"
+                    className="w-full group relative flex items-center space-x-3 p-4 bg-white dark:bg-slate-800 hover:bg-gradient-to-r hover:from-purple-50 hover:to-blue-50 dark:hover:from-purple-900/20 dark:hover:to-blue-900/20 border border-gray-200 dark:border-slate-700 rounded-xl transition-all duration-300 hover:shadow-lg hover:-translate-y-1 text-left overflow-hidden"
                   >
-                    <span className="text-2xl group-hover:scale-110 transition-transform">{item.icon}</span>
-                    <span className="text-gray-300 group-hover:text-white font-semibold">{item.label}</span>
+                    {/* Gradient overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-purple-500/0 to-blue-500/0 group-hover:from-purple-500/5 group-hover:to-blue-500/5 transition-all duration-300 rounded-xl"></div>
+                    
+                    <div className="relative z-10 flex items-center space-x-3">
+                      <span className="text-2xl group-hover:scale-110 transition-transform duration-300">{item.icon}</span>
+                      <span className="text-gray-700 dark:text-gray-300 group-hover:text-purple-600 dark:group-hover:text-purple-400 font-semibold">{item.label}</span>
+                    </div>
                   </button>
                 );
               })}
           </div>
 
           {/* User Info Section */}
-          <div className="mt-8 p-4 bg-gray-800 rounded-lg border border-gray-700">
+          <div className="mt-8 p-4 bg-gradient-to-br from-slate-50 to-gray-50 dark:from-slate-800 dark:to-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg">
             <div className="flex items-center space-x-3 mb-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-lg">
+              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg">
                 {(user?.displayName || user?.email || 'U').charAt(0).toUpperCase()}
               </div>
               <div>
-                <p className="text-white font-semibold">
+                <p className="text-gray-900 dark:text-white font-semibold">
                   {user?.displayName || 'User'}
                 </p>
-                <p className="text-gray-400 text-sm">
+                <p className="text-gray-500 dark:text-gray-400 text-sm">
                   {user?.email}
                 </p>
               </div>
             </div>
             {isAdmin && (
-              <div className="px-3 py-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-semibold rounded-full inline-block">
+              <div className="px-3 py-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-semibold rounded-full inline-block shadow-lg">
                 👑 Administrator
               </div>
             )}
@@ -261,10 +297,16 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
         </div>
 
         {/* Footer */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gray-800 border-t border-gray-700">
-          <p className="text-xs text-gray-400 text-center">
-            Press <kbd className="px-2 py-1 bg-gray-700 text-gray-300 rounded">Esc</kbd> to close
-          </p>
+        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-center space-x-2">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Press
+            </p>
+            <kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs font-medium">Esc</kbd>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              to close
+            </p>
+          </div>
         </div>
       </div>
     </>
