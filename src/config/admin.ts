@@ -1,7 +1,7 @@
 // Admin configuration
 
 export const ADMIN_EMAILS = [
-  'gmpfaraz@gmail.com'
+  'gullbaba@gmail.com'
 ];
 
 export const DEFAULT_USER_PERMISSIONS = [

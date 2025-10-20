@@ -72,7 +72,7 @@ const EditModal: React.FC<EditModalProps> = ({ transaction, onSave, onCancel }) 
                   <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">
                     Number: {num}
                   </h3>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                         First Amount
@@ -125,7 +125,7 @@ const EditModal: React.FC<EditModalProps> = ({ transaction, onSave, onCancel }) 
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                     First Amount

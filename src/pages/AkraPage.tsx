@@ -36,11 +36,16 @@ const AkraPage: React.FC = () => {
     const loadProject = async () => {
       if (!id) return;
       
+      // Reset project and loading state when id changes
+      setProject(null);
+      setProjectLoading(true);
+      
       try {
         const projectData = await db.getProject(id);
         setProject(projectData);
       } catch (error) {
         console.error('Error loading project:', error);
+        setProject(null);
       } finally {
         setProjectLoading(false);
       }
@@ -215,6 +220,7 @@ const AkraPage: React.FC = () => {
 
   const modalSummary = modalNumber ? summaries.get(modalNumber) : null;
 
+  // Show loading state while loading or when project is still loading
   if (loading || projectLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -229,9 +235,10 @@ const AkraPage: React.FC = () => {
     );
   }
 
-  if (!project) {
+  // Show not found only after loading is complete and project is still null
+  if (!projectLoading && !project) {
     return (
-      <div>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
@@ -262,9 +269,8 @@ const AkraPage: React.FC = () => {
         projectId={id}
       />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-
-        {/* Page Header */}
+      {/* Page Header */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
         <div className="mb-6">
           <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             Akra (2-digit Numbers)
@@ -298,81 +304,85 @@ const AkraPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Tab Content */}
-        {activeTab === 'entries' ? (
-          <div className="space-y-6">
-            {/* Action Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex-1 max-w-md">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search numbers (e.g., 01, 1*, *5)"
-                  className="input-field"
-                />
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={handleImport}
-                  className="px-6 py-3 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
-                >
-                  <svg
-                    className="w-5 h-5 inline mr-2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                    />
-                  </svg>
-                  📥 Import CSV
-                </button>
-
-                <button
-                  onClick={handleExport}
-                  className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
-                >
-                  <svg
-                    className="w-5 h-5 inline mr-2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
-                  📤 Export CSV
-                </button>
-              </div>
-            </div>
-
-            {/* Hidden File Input */}
+        {/* Action Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div className="flex-1 max-w-md">
             <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleFileChange}
-              className="hidden"
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search numbers (e.g., 01, 1*, *5)"
+              className="input-field"
             />
+          </div>
 
-            {/* Premium Statistics */}
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={handleImport}
+              className="px-6 py-3 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+            >
+              <svg
+                className="w-5 h-5 inline mr-2"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                />
+              </svg>
+              📥 Import CSV
+            </button>
+
+            <button
+              onClick={handleExport}
+              className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+            >
+              <svg
+                className="w-5 h-5 inline mr-2"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+              📤 Export CSV
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Hidden File Input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
+      {/* Tab Content - Full Width */}
+      {activeTab === 'entries' ? (
+        <div className="w-full">
+          {/* Premium Statistics */}
+          <div className="px-4 sm:px-6 lg:px-8 mb-6">
             <PremiumStats 
               summaries={summaries}
               selectedNumbers={selectedNumbers}
               showSelected={selectionMode && selectedNumbers.size > 0}
             />
+          </div>
 
-            {/* Number Grid */}
+          {/* Number Grid - Full Width with proper padding */}
+          <div className="px-4 sm:px-6 lg:px-8">
             <NumberGrid
               summaries={summaries}
               entryType="akra"
@@ -383,15 +393,17 @@ const AkraPage: React.FC = () => {
               selectionMode={selectionMode}
             />
           </div>
-        ) : (
+        </div>
+      ) : (
+        <div className="px-4 sm:px-6 lg:px-8">
           <FilterTab 
             summaries={summaries} 
             entryType="akra" 
             projectId={id || ''}
             onSaveResults={handleSaveFilterResults}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Transaction Modal */}
       {modalSummary && (

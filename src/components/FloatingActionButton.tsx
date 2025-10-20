@@ -20,8 +20,8 @@ const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   showTooltip = true,
 }) => {
   const positionClasses = {
-    'bottom-left': 'bottom-6 left-6',
-    'bottom-right': 'bottom-6 right-6',
+    'bottom-left': 'bottom-4 sm:bottom-6 left-4 sm:left-6',
+    'bottom-right': 'bottom-4 sm:bottom-6 right-4 sm:right-6',
   };
 
   const colorClasses = {

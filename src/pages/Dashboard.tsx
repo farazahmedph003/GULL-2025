@@ -274,7 +274,7 @@ const Dashboard: React.FC = () => {
           <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4">
             Quick Actions
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
             {project.entryTypes?.includes('akra') && (
               <button
                 onClick={() => {

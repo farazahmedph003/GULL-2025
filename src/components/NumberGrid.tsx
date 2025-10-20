@@ -69,43 +69,15 @@ const NumberGrid: React.FC<NumberGridProps> = ({
     }
   };
 
-  // Calculate grid columns based on entry type
+  // Fixed grid columns - exactly 8 cards per row for Akra
   const gridCols = entryType === 'akra' 
-    ? 'grid-cols-5 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-10'
-    : 'grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10';
+    ? 'grid-cols-8'
+    : 'grid-cols-8';
 
   return (
-    <div className="space-y-4">
-      {/* Statistics Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="card p-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">Total Numbers</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {filteredNumbers.length}
-          </p>
-        </div>
-        <div className="card p-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">With Entries</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {summaries.size}
-          </p>
-        </div>
-        <div className="card p-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">Selected</p>
-          <p className="text-2xl font-bold text-secondary">
-            {selectedNumbers.size}
-          </p>
-        </div>
-        <div className="card p-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">Coverage</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            {Math.round((summaries.size / allNumbers.length) * 100)}%
-          </p>
-        </div>
-      </div>
-
-      {/* Number Grid */}
-      <div className={`grid ${gridCols} gap-3`}>
+    <div className="space-y-4 w-full">
+      {/* Number Grid - Full Width */}
+      <div className={`grid ${gridCols} gap-3 w-full`}>
         {filteredNumbers.map(number => {
           const summary = getSummary(number);
           return (

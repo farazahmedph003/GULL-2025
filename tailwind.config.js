@@ -224,6 +224,13 @@ export default {
       
       // Spacing Scale (already included by default, but documented here)
       // Uses 4px base unit: 0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 20, 24
+      
+      // Custom Grid Columns
+      gridTemplateColumns: {
+        '15': 'repeat(15, minmax(0, 1fr))',
+        '18': 'repeat(18, minmax(0, 1fr))',
+        '20': 'repeat(20, minmax(0, 1fr))',
+      },
     },
   },
   plugins: [],

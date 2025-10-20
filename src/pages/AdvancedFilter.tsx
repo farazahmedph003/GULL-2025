@@ -328,10 +328,10 @@ const AdvancedFilter: React.FC = () => {
         </div>
 
       {/* Two-Panel Layout (match FilterTab layout) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
         {/* FIRST Panel */}
         <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6">
-          <div className="mb-3 grid grid-cols-2 items-center">
+          <div className="mb-3 grid grid-cols-1 sm:grid-cols-2 items-center">
             <div className="text-sm font-semibold text-gray-300">Number</div>
             <div className="flex items-center justify-between text-sm font-semibold text-gray-300">
               <span>FIRST (Result)</span>
@@ -377,7 +377,7 @@ const AdvancedFilter: React.FC = () => {
                   {firstFilteredResults.map((result) => (
                     <div
                       key={result.number}
-                      className="grid grid-cols-2 items-center px-3 py-3 hover:bg-gray-800/60 transition-colors rounded"
+                      className="grid grid-cols-1 sm:grid-cols-2 items-center px-3 py-3 hover:bg-gray-800/60 transition-colors rounded"
                     >
                       <div className="text-gray-200 font-medium">{result.number}</div>
                       <div className="text-right font-semibold text-cyan-300">{`F ${result.amount.toLocaleString()}`}</div>
@@ -390,7 +390,7 @@ const AdvancedFilter: React.FC = () => {
 
           {/* SECOND Panel */}
         <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6">
-          <div className="mb-3 grid grid-cols-2 items-center">
+          <div className="mb-3 grid grid-cols-1 sm:grid-cols-2 items-center">
             <div className="text-sm font-semibold text-gray-300">Number</div>
             <div className="flex items-center justify-between text-sm font-semibold text-gray-300">
               <span>SECOND (Result)</span>
@@ -436,7 +436,7 @@ const AdvancedFilter: React.FC = () => {
                   {secondFilteredResults.map((result) => (
                     <div
                       key={result.number}
-                      className="grid grid-cols-2 items-center px-3 py-3 hover:bg-gray-800/60 transition-colors rounded"
+                      className="grid grid-cols-1 sm:grid-cols-2 items-center px-3 py-3 hover:bg-gray-800/60 transition-colors rounded"
                     >
                       <div className="text-gray-200 font-medium">{result.number}</div>
                       <div className="text-right font-semibold text-cyan-300">{`S ${result.amount.toLocaleString()}`}</div>
