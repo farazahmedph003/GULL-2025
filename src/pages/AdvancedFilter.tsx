@@ -307,19 +307,19 @@ const AdvancedFilter: React.FC = () => {
           </button>
         </div>
 
-        {/* Two-Panel Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* FIRST Panel */}
-          <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-2xl font-bold text-green-400">
-                FIRST
-              </h3>
+      {/* Two-Panel Layout (match FilterTab layout) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* FIRST Panel */}
+        <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6">
+          <div className="mb-3 grid grid-cols-2 items-center">
+            <div className="text-sm font-semibold text-gray-300">Number</div>
+            <div className="flex items-center justify-between text-sm font-semibold text-gray-300">
+              <span>FIRST (Result)</span>
               {firstFilteredResults.length > 0 && (
                 <div className="flex items-center gap-2">
                   <button
                     onClick={copyFirstResults}
-                    className="p-2 text-gray-400 hover:text-white transition-colors"
+                    className="p-1.5 text-gray-400 hover:text-white transition-colors"
                     title="Copy"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -328,7 +328,7 @@ const AdvancedFilter: React.FC = () => {
                   </button>
                   <button
                     onClick={deductFirstResults}
-                    className="p-2 text-red-400 hover:text-red-300 transition-colors"
+                    className="p-1.5 text-red-400 hover:text-red-300 transition-colors"
                     title="Deduct"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -338,6 +338,7 @@ const AdvancedFilter: React.FC = () => {
                 </div>
               )}
             </div>
+          </div>
 
             <input
               type="text"
@@ -348,17 +349,18 @@ const AdvancedFilter: React.FC = () => {
             />
 
             {/* First Results */}
-            <div className="bg-gray-900 rounded-lg p-4 min-h-[300px]">
+            <div className="bg-gray-900 rounded-lg p-2 min-h-[300px]">
               {firstFilteredResults.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No matching numbers found.</p>
               ) : (
-                <div className="space-y-1">
+                <div className="divide-y divide-gray-800">
                   {firstFilteredResults.map((result) => (
                     <div
                       key={result.number}
-                      className="text-gray-300 hover:text-white hover:bg-gray-800 px-3 py-2 rounded transition-colors"
+                      className="grid grid-cols-2 items-center px-3 py-3 hover:bg-gray-800/60 transition-colors rounded"
                     >
-                      {result.number} - {result.amount}
+                      <div className="text-gray-200 font-medium">{result.number}</div>
+                      <div className="text-right font-semibold text-cyan-300">{`F ${result.amount.toLocaleString()}`}</div>
                     </div>
                   ))}
                 </div>
@@ -367,16 +369,16 @@ const AdvancedFilter: React.FC = () => {
           </div>
 
           {/* SECOND Panel */}
-          <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-2xl font-bold text-blue-400">
-                SECOND
-              </h3>
+        <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6">
+          <div className="mb-3 grid grid-cols-2 items-center">
+            <div className="text-sm font-semibold text-gray-300">Number</div>
+            <div className="flex items-center justify-between text-sm font-semibold text-gray-300">
+              <span>SECOND (Result)</span>
               {secondFilteredResults.length > 0 && (
                 <div className="flex items-center gap-2">
                   <button
                     onClick={copySecondResults}
-                    className="p-2 text-gray-400 hover:text-white transition-colors"
+                    className="p-1.5 text-gray-400 hover:text-white transition-colors"
                     title="Copy"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -385,7 +387,7 @@ const AdvancedFilter: React.FC = () => {
                   </button>
                   <button
                     onClick={deductSecondResults}
-                    className="p-2 text-red-400 hover:text-red-300 transition-colors"
+                    className="p-1.5 text-red-400 hover:text-red-300 transition-colors"
                     title="Deduct"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -395,6 +397,7 @@ const AdvancedFilter: React.FC = () => {
                 </div>
               )}
             </div>
+          </div>
 
             <input
               type="text"
@@ -405,17 +408,18 @@ const AdvancedFilter: React.FC = () => {
             />
 
             {/* Second Results */}
-            <div className="bg-gray-900 rounded-lg p-4 min-h-[300px]">
+            <div className="bg-gray-900 rounded-lg p-2 min-h-[300px]">
               {secondFilteredResults.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No matching numbers found.</p>
               ) : (
-                <div className="space-y-1">
+                <div className="divide-y divide-gray-800">
                   {secondFilteredResults.map((result) => (
                     <div
                       key={result.number}
-                      className="text-gray-300 hover:text-white hover:bg-gray-800 px-3 py-2 rounded transition-colors"
+                      className="grid grid-cols-2 items-center px-3 py-3 hover:bg-gray-800/60 transition-colors rounded"
                     >
-                      {result.number} - {result.amount}
+                      <div className="text-gray-200 font-medium">{result.number}</div>
+                      <div className="text-right font-semibold text-cyan-300">{`S ${result.amount.toLocaleString()}`}</div>
                     </div>
                   ))}
                 </div>
@@ -457,7 +461,7 @@ const AdvancedFilter: React.FC = () => {
         </div>
       </div>
 
-      {/* Floating Action Button */}
+      {/* Floating Add Entry Button (restored) */}
       <FloatingActionButton
         onClick={() => setEntryPanelOpen(true)}
         position="bottom-right"
@@ -470,7 +474,7 @@ const AdvancedFilter: React.FC = () => {
         }
       />
 
-      {/* Entry Panel */}
+      {/* Entry Panel (kept available, but no overlay now) */}
       <EntryPanel
         isOpen={entryPanelOpen}
         onClose={() => setEntryPanelOpen(false)}

@@ -110,6 +110,8 @@ body {
   text-rendering: optimizeLegibility;
   min-height: 100vh;
   position: relative;
+  /* Set a fluid base for rem sizing */
+  font-size: 16px;
 }
 
 /* Light Mode Styles */
@@ -276,7 +278,7 @@ body {
 }
 
 /* Tablet optimization */
-@media (min-width: 769px) and (max-width: 1024px) {
+@media (min-width: 768px) and (max-width: 1199px) {
   .grid-cols-2-tablet {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -287,7 +289,7 @@ body {
 }
 
 /* Desktop optimization */
-@media (min-width: 1025px) {
+@media (min-width: 1200px) {
   .card {
     padding: 2rem;
   }
@@ -298,6 +300,67 @@ body {
     box-shadow: 0 10px 30px rgba(0,0,0,0.15);
   }
 }
+
+/* ======================================
+   GLOBAL RESPONSIVE UTILITIES & SCAFFOLD
+   ====================================== */
+
+/* Container that adapts smoothly across devices */
+.container-responsive {
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 480px) {
+  .container-responsive { max-width: 440px; }
+}
+@media (min-width: 768px) {
+  .container-responsive { max-width: 720px; }
+}
+@media (min-width: 1200px) {
+  .container-responsive { max-width: 1120px; }
+}
+
+/* Fluid images and media */
+img, svg, video, canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Prevent layout breakage */
+.responsive-wrap {
+  overflow: hidden;
+  word-wrap: break-word;
+}
+
+.no-overflow-x { overflow-x: hidden; }
+.no-overflow-y { overflow-y: hidden; }
+
+/* Ensure grids and flexes wrap on smaller screens */
+.flex-wrap-responsive { flex-wrap: wrap; }
+.grid-auto-fit {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+/* NOTE: Avoid global fluid typography to prevent unexpected layout shifts.
+   Apply fluid scales only within explicitly marked containers if needed. */
+
+/* Safer tables on small screens */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent text/content overflow in flexible layouts */
+.flex > * { min-width: 0; }
+.grid > * { min-width: 0; }
+.truncate-safe { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ================================
    PREMIUM BUTTON STYLES

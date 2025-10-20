@@ -8,7 +8,7 @@ interface FilterTabProps {
   onSaveResults: (deductions: Array<{ number: string; firstAmount: number; secondAmount: number }>) => Promise<void>;
 }
 
-const FilterTab: React.FC<FilterTabProps> = ({ summaries, onSaveResults }) => {
+const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResults }) => {
   const [firstOperator, setFirstOperator] = useState<FilterOperator>('>=');
   const [firstValue, setFirstValue] = useState('');
   const [secondOperator, setSecondOperator] = useState<FilterOperator>('>=');
@@ -142,15 +142,34 @@ const FilterTab: React.FC<FilterTabProps> = ({ summaries, onSaveResults }) => {
   };
 
   const copyToClipboard = (column: 'first' | 'second') => {
-    const data = results
-      .map((r) => {
-        const amount = column === 'first' ? r.firstAmount : r.secondAmount;
-        return `${r.number}: ${amount}`;
-      })
-      .join('\n');
+    const filtered = results.filter(r =>
+      column === 'first'
+        ? r.meetsFirstCriteria && r.firstAmount > 0
+        : r.meetsSecondCriteria && r.secondAmount > 0
+    );
+
+    if (filtered.length === 0) {
+      alert('No results to copy!');
+      return;
+    }
+
+    const isFirst = column === 'first';
+    const header = entryType === 'akra'
+      ? `Ak\t${isFirst ? 'First' : 'Second'}`
+      : `Ring\t${isFirst ? 'First' : 'Second'}`;
+
+    const rows = filtered.map(r => {
+      const amount = isFirst ? r.firstAmount : r.secondAmount;
+      const prefix = isFirst ? 'F' : 'S';
+      return `${r.number}\t${prefix} ${amount}`;
+    });
+
+    const data = [header, ...rows].join('\n');
 
     navigator.clipboard.writeText(data).then(() => {
-      alert(`Copied ${column.toUpperCase()} column to clipboard!`);
+      alert(`\u2713 Copied ${filtered.length} ${isFirst ? 'First' : 'Second'} entries to clipboard!`);
+    }).catch(() => {
+      alert('Failed to copy to clipboard');
     });
   };
 
@@ -296,76 +315,88 @@ const FilterTab: React.FC<FilterTabProps> = ({ summaries, onSaveResults }) => {
       {/* Results */}
       {showResults && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* FIRST Results */}
-          <div className="bg-gray-800/50 dark:bg-gray-800/50 rounded-xl p-6 border border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">
-                FIRST Results ({results.filter(r => r.meetsFirstCriteria).length})
-              </h3>
-              <button
-                onClick={() => copyToClipboard('first')}
-                className="flex items-center gap-2 text-sm text-gray-300 hover:text-white transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                Copy
-              </button>
+          {/* FIRST Panel */}
+          <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6">
+            <div className="mb-3 grid grid-cols-2 items-center">
+              <div className="text-sm font-semibold text-gray-300">Number</div>
+              <div className="flex items-center justify-between text-sm font-semibold text-gray-300">
+                <span>FIRST (Result)</span>
+                {results.some(r => r.meetsFirstCriteria && r.firstAmount > 0) && (
+                  <button
+                    onClick={() => copyToClipboard('first')}
+                    className="p-1.5 text-gray-400 hover:text-white transition-colors"
+                    title="Copy"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
             </div>
 
-            {results.filter(r => r.meetsFirstCriteria).length === 0 ? (
-              <div className="text-center py-12 bg-gray-900/50 rounded-lg">
-                <p className="text-gray-400">No results</p>
-              </div>
-            ) : (
-              <div className="max-h-96 overflow-y-auto space-y-2 bg-gray-900/50 p-4 rounded-lg">
-                {results.filter(r => r.meetsFirstCriteria).map((result) => (
-                  <div
-                    key={result.number}
-                    className="flex justify-between text-sm font-mono text-white bg-gray-800/50 px-3 py-2 rounded"
-                  >
-                    <span>{result.number}</span>
-                    <span className="text-green-400">{result.firstAmount.toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="bg-gray-900 rounded-lg p-2 min-h-[300px]">
+              {results.filter(r => r.meetsFirstCriteria && r.firstAmount > 0).length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No matching numbers found.</p>
+              ) : (
+                <div className="divide-y divide-gray-800">
+                  {results
+                    .filter(r => r.meetsFirstCriteria && r.firstAmount > 0)
+                    .sort((a, b) => a.number.localeCompare(b.number))
+                    .map((result) => (
+                      <div
+                        key={result.number}
+                        className="grid grid-cols-2 items-center px-3 py-3 hover:bg-gray-800/60 transition-colors rounded"
+                      >
+                        <div className="text-gray-200 font-medium">{result.number}</div>
+                        <div className="text-right font-semibold text-cyan-300">{`F ${result.firstAmount.toLocaleString()}`}</div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* SECOND Results */}
-          <div className="bg-gray-800/50 dark:bg-gray-800/50 rounded-xl p-6 border border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">
-                SECOND Results ({results.filter(r => r.meetsSecondCriteria).length})
-              </h3>
-              <button
-                onClick={() => copyToClipboard('second')}
-                className="flex items-center gap-2 text-sm text-gray-300 hover:text-white transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                Copy
-              </button>
+          {/* SECOND Panel */}
+          <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6">
+            <div className="mb-3 grid grid-cols-2 items-center">
+              <div className="text-sm font-semibold text-gray-300">Number</div>
+              <div className="flex items-center justify-between text-sm font-semibold text-gray-300">
+                <span>SECOND (Result)</span>
+                {results.some(r => r.meetsSecondCriteria && r.secondAmount > 0) && (
+                  <button
+                    onClick={() => copyToClipboard('second')}
+                    className="p-1.5 text-gray-400 hover:text-white transition-colors"
+                    title="Copy"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
             </div>
 
-            {results.filter(r => r.meetsSecondCriteria).length === 0 ? (
-              <div className="text-center py-12 bg-gray-900/50 rounded-lg">
-                <p className="text-gray-400">No results</p>
-              </div>
-            ) : (
-              <div className="max-h-96 overflow-y-auto space-y-2 bg-gray-900/50 p-4 rounded-lg">
-                {results.filter(r => r.meetsSecondCriteria).map((result) => (
-                  <div
-                    key={result.number}
-                    className="flex justify-between text-sm font-mono text-white bg-gray-800/50 px-3 py-2 rounded"
-                  >
-                    <span>{result.number}</span>
-                    <span className="text-yellow-400">{result.secondAmount.toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="bg-gray-900 rounded-lg p-2 min-h-[300px]">
+              {results.filter(r => r.meetsSecondCriteria && r.secondAmount > 0).length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No matching numbers found.</p>
+              ) : (
+                <div className="divide-y divide-gray-800">
+                  {results
+                    .filter(r => r.meetsSecondCriteria && r.secondAmount > 0)
+                    .sort((a, b) => a.number.localeCompare(b.number))
+                    .map((result) => (
+                      <div
+                        key={result.number}
+                        className="grid grid-cols-2 items-center px-3 py-3 hover:bg-gray-800/60 transition-colors rounded"
+                      >
+                        <div className="text-gray-200 font-medium">{result.number}</div>
+                        <div className="text-right font-semibold text-cyan-300">{`S ${result.secondAmount.toLocaleString()}`}</div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

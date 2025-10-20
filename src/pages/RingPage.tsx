@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
+import EntryPanel from '../components/EntryPanel';
+import FloatingActionButton from '../components/FloatingActionButton';
 import NumberGrid from '../components/NumberGrid';
 import FilterTab from '../components/FilterTab';
 import TransactionModal from '../components/TransactionModal';
@@ -25,6 +27,7 @@ const RingPage: React.FC = () => {
   const [selectedNumbers, setSelectedNumbers] = useState<Set<string>>(new Set());
   const [modalNumber, setModalNumber] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [entryPanelOpen, setEntryPanelOpen] = useState(false);
   
   const project = getProject(id || '');
   const { 
@@ -378,6 +381,30 @@ const RingPage: React.FC = () => {
           onDelete={handleDelete}
         />
       )}
+      {/* Floating Add Entry Button */}
+      <FloatingActionButton
+        onClick={() => setEntryPanelOpen(true)}
+        position="bottom-right"
+        color="secondary"
+        label="Add Entry (Ctrl+/)"
+        icon={
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        }
+      />
+
+      {/* Entry Panel */}
+      <EntryPanel
+        isOpen={entryPanelOpen}
+        onClose={() => setEntryPanelOpen(false)}
+        projectId={id || ''}
+        entryType={'ring'}
+        onEntryAdded={() => {
+          refresh();
+          setEntryPanelOpen(false);
+        }}
+      />
 
     </div>
   );

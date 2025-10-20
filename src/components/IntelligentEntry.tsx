@@ -131,17 +131,36 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       const storageKey = `gull-transactions-${projectId}`;
       const existingTransactions = JSON.parse(localStorage.getItem(storageKey) || '[]');
 
-      // Create new transactions
-      const newTransactions: Transaction[] = parsedEntries.map(entry => ({
-        id: generateId(),
-        projectId,
-        number: entry.number,
-        entryType,
-        first: entry.first,
-        second: entry.second,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }));
+      // If multiple entries, store as a single bulk transaction
+      const newTransactions: Transaction[] = (() => {
+        if (parsedEntries.length > 1) {
+          const numbers = parsedEntries.map(e => e.number).join(', ');
+          // Use first/second of the first parsed entry as the shared amounts
+          const first = parsedEntries[0].first || 0;
+          const second = parsedEntries[0].second || 0;
+          return [{
+            id: generateId(),
+            projectId,
+            number: numbers,
+            entryType,
+            first,
+            second,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }];
+        }
+        // Single entry behaves as before
+        return parsedEntries.map(entry => ({
+          id: generateId(),
+          projectId,
+          number: entry.number,
+          entryType,
+          first: entry.first,
+          second: entry.second,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }));
+      })();
 
       // Deduct balance for non-admin users
       if (!isAdmin) {

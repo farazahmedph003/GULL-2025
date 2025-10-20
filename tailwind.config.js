@@ -7,6 +7,12 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      screens: {
+        // Custom responsive breakpoints without overriding Tailwind defaults
+        xs: '480px',      // Mobile
+        tablet: '768px',  // Tablet
+        desktop: '1200px' // Desktop
+      },
       colors: {
         // Dashboard Design System v3.0 - Complete Implementation
         

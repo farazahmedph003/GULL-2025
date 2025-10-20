@@ -34,7 +34,8 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
     if (!numbers.trim()) {
       newErrors.numbers = 'Please enter at least one number';
     } else {
-      const numberList = numbers.split(/[\s,]+/).filter(n => n);
+      // Split by ANY non-digit characters to support symbols like = * + - ( ) ! ^ etc.
+      const numberList = numbers.split(/[^0-9]+/).filter(n => n.length > 0);
       const invalidNumbers = numberList.filter(n => !isValidNumber(n, entryType));
       
       if (invalidNumbers.length > 0) {
@@ -71,14 +72,16 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
     setIsSubmitting(true);
 
     try {
-      // Parse numbers
-      const numberList = numbers.split(/[\s,]+/).filter(n => n);
+      // Parse numbers: split on any non-digit characters (all keyboard symbols)
+      let numberList = numbers.split(/[^0-9]+/).filter(n => n.length > 0);
+      // Normalize: keep leading zeros for 2/3-digit entries as typed
+      numberList = numberList.map(n => n);
       const firstAmount = first.trim() ? Number(first) : 0;
       const secondAmount = second.trim() ? Number(second) : 0;
       
       // Calculate total amount per entry
       const totalPerEntry = firstAmount + secondAmount;
-      // Total cost for all numbers
+      // Total cost for all numbers (bulk uses shared amounts per number)
       const totalCost = totalPerEntry * numberList.length;
 
       // Check balance for non-admin users
@@ -95,18 +98,18 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
       const storageKey = `gull-transactions-${projectId}`;
       const existingTransactions = JSON.parse(localStorage.getItem(storageKey) || '[]');
 
-      // Create new transactions for each number
-      const newTransactions: Transaction[] = numberList.map(num => ({
+      // Create a SINGLE bulk transaction containing all numbers
+      const bulkTransaction: Transaction = {
         id: generateId(),
         projectId,
-        number: num,
+        number: numberList.join(', '),
         entryType,
         first: firstAmount,
         second: secondAmount,
         notes: notes.trim() || undefined,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      }));
+      };
 
       // Deduct balance for non-admin users
       if (!isAdmin) {
@@ -124,7 +127,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
       // Save to localStorage
       localStorage.setItem(
         storageKey,
-        JSON.stringify([...existingTransactions, ...newTransactions])
+        JSON.stringify([...existingTransactions, bulkTransaction])
       );
 
       // Reset form

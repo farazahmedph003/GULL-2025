@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
+import EntryPanel from '../components/EntryPanel';
+import FloatingActionButton from '../components/FloatingActionButton';
 import { useTransactions } from '../hooks/useTransactions';
 import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
@@ -265,6 +267,7 @@ const HistoryPage: React.FC = () => {
   const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [entryPanelOpen, setEntryPanelOpen] = useState(false);
 
   // Create combined history view with current transactions and deleted transactions
   const combinedHistory = useMemo(() => {
@@ -690,7 +693,34 @@ const HistoryPage: React.FC = () => {
                 </svg>
                 Delete {selectedTransactions.size > 0 ? `(${selectedTransactions.size})` : ''}
               </button>
-            </div>
+      </div>
+
+      {/* Floating Add Entry Button */}
+      <FloatingActionButton
+        onClick={() => setEntryPanelOpen(true)}
+        position="bottom-right"
+        color="secondary"
+        label="Add Entry (Ctrl+/)"
+        performanceMode="stable"
+        showTooltip={false}
+        icon={
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        }
+      />
+
+      {/* Entry Panel */}
+      <EntryPanel
+        isOpen={entryPanelOpen}
+        onClose={() => setEntryPanelOpen(false)}
+        projectId={projectId || ''}
+        entryType={'akra'}
+        onEntryAdded={() => {
+          refresh();
+          setEntryPanelOpen(false);
+        }}
+      />
           </div>
         </div>
 
@@ -809,57 +839,23 @@ const HistoryPage: React.FC = () => {
                       : ''
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    {/* Left Side - Entry Details */}
-                    <div className="flex-1">
-                      {/* Entry Title with Color Coding */}
-                      <div className="flex items-center space-x-3 mb-2">
-                        <h3 className={`text-lg font-semibold ${
-                          item.type === 'added' 
-                            ? 'text-teal-400' // Teal for added entries
-                            : 'text-red-400' // Red for deleted entries
-                        }`}>
-                          {item.type === 'added' ? 'Entry Added' : 'Transaction Deleted'}: {numbersString}
-                        </h3>
-                        {item.transactionId && (
-                          <input
-                            type="checkbox"
-                            checked={selectedTransactions.has(item.transactionId)}
-                            onChange={() => handleSelectTransaction(item.transactionId!)}
-                            className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                          />
-                        )}
-                      </div>
-                      
-                      {/* FIRST and SECOND Values */}
-                      <div className="flex items-center space-x-6 text-sm">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-gray-400 dark:text-gray-500 font-medium">
-                            {item.type === 'added' ? 'FIRST:' : 'First:'}
-                          </span>
-                          <span className="text-white font-semibold">
-                            {item.first ? item.first.toLocaleString() : '0'}
-                          </span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-gray-400 dark:text-gray-500 font-medium">
-                            {item.type === 'added' ? 'SECOND:' : 'Second:'}
-                          </span>
-                          <span className="text-white font-semibold">
-                            {item.second ? item.second.toLocaleString() : '0'}
-                          </span>
-                        </div>
-                      </div>
+                  {/* Header: Title and Action */}
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <h3 className={`text-sm sm:text-base md:text-lg font-semibold truncate ${
+                        item.type === 'added' ? 'text-teal-400' : 'text-red-400'
+                      }`}>
+                        {item.type === 'added' ? 'Entry Added' : 'Transaction Deleted'}: {numbersString}
+                      </h3>
+                      {item.transactionId && (
+                        <input
+                          type="checkbox"
+                          checked={selectedTransactions.has(item.transactionId)}
+                          onChange={() => handleSelectTransaction(item.transactionId!)}
+                          className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 flex-shrink-0"
+                        />
+                      )}
                     </div>
-
-                    {/* Right Side - Timestamp and Action Button */}
-                    <div className="flex flex-col items-end space-y-2">
-                      {/* Timestamp */}
-                      <p className="text-xs text-gray-400 dark:text-gray-500">
-                        {formatTime(item.timestamp)}
-                      </p>
-                      
-                      {/* Action Button */}
                       {item.transactionId && (
                         <button
                           onClick={() => {
@@ -868,16 +864,28 @@ const HistoryPage: React.FC = () => {
                               handleEditTransaction(transaction);
                             }
                           }}
-                          className={`px-4 py-2 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 text-sm ${
-                            item.isBulk
-                              ? 'bg-red-600 hover:bg-red-700' // Red "Revert Batch" for bulk entries
-                              : 'bg-blue-600 hover:bg-blue-700' // Blue "Manage" for single entries
-                          }`}
+                          className={`px-3 py-1.5 sm:px-4 sm:py-2 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 text-xs sm:text-sm bg-blue-600 hover:bg-blue-700`}
                         >
-                          {item.isBulk ? 'Revert Batch' : 'Manage'}
+                          Manage
                         </button>
                       )}
+                  </div>
+
+                  {/* Body: FIRST / SECOND row */}
+                  <div className="mt-2 flex items-center gap-6 text-xs sm:text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400 dark:text-gray-500 font-medium">FIRST:</span>
+                      <span className="text-white font-semibold">{item.first ? item.first.toLocaleString() : '0'}</span>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400 dark:text-gray-500 font-medium">SECOND:</span>
+                      <span className="text-white font-semibold">{item.second ? item.second.toLocaleString() : '0'}</span>
+                    </div>
+                  </div>
+
+                  {/* Footer: timestamp aligned right */}
+                  <div className="mt-2 flex justify-end">
+                    <p className="text-[10px] sm:text-xs text-gray-400 dark:text-gray-500">{formatTime(item.timestamp)}</p>
                   </div>
                 </div>
               );
