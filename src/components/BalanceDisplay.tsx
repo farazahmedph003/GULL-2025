@@ -5,7 +5,7 @@ import { useTopupRequests } from '../hooks/useTopupRequests';
 import { formatCurrency } from '../utils/helpers';
 
 const BalanceDisplay: React.FC = () => {
-  const { balance, loading, error, refresh } = useUserBalance();
+  const { balance, loading, error } = useUserBalance();
   const { showInfo } = useNotifications();
   const { createRequest } = useTopupRequests();
 

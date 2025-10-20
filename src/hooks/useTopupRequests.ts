@@ -50,7 +50,7 @@ export const useTopupRequests = () => {
 
   // Create a new top-up request
   const createRequest = useCallback((currentBalance: number, requestedAmount?: number, message?: string) => {
-    if (!user) return false;
+    if (!user || !user.email) return false;
 
     const newRequest: TopupRequest = {
       id: `request-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,

@@ -1,13 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Transaction, ProjectStatistics } from '../types';
 import { useUserBalance } from './useUserBalance';
-import { useAuth } from '../contexts/AuthContext';
-import { isAdminEmail } from '../config/admin';
 
 export const useTransactions = (projectId: string) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
   const { deductBalance, addBalance } = useUserBalance();
 
   // Load transactions from localStorage

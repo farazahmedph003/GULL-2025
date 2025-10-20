@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useTopupRequests } from '../hooks/useTopupRequests';
-import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency, formatDate } from '../utils/helpers';
 
 interface TopupRequestManagerProps {
@@ -10,7 +9,6 @@ interface TopupRequestManagerProps {
 
 const TopupRequestManager: React.FC<TopupRequestManagerProps> = ({ isOpen, onClose }) => {
   const { getAllRequests, updateRequestStatus, getPendingCount } = useTopupRequests();
-  const { user } = useAuth();
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
   const [adminNotes, setAdminNotes] = useState('');
   const [topupAmount, setTopupAmount] = useState<number>(1000);

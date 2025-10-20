@@ -2,8 +2,6 @@ import React, { useState } from 'react';
 import type { EntryType, Transaction } from '../types';
 import { generateId, isValidNumber, formatCurrency } from '../utils/helpers';
 import { useUserBalance } from '../hooks/useUserBalance';
-import { useAuth } from '../contexts/AuthContext';
-import { isAdminEmail } from '../config/admin';
 
 interface StandardEntryProps {
   projectId: string;
@@ -16,7 +14,6 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
   entryType,
   onSuccess,
 }) => {
-  const { user } = useAuth();
   const { balance, hasSufficientBalance, deductBalance, refresh: refreshBalance } = useUserBalance();
   
   const [numbers, setNumbers] = useState('');

@@ -17,8 +17,6 @@ const NumberBox: React.FC<NumberBoxProps> = ({
   isSelected = false,
 }) => {
   const total = summary.firstTotal + summary.secondTotal;
-  const hasFirst = summary.firstTotal > 0;
-  const hasSecond = summary.secondTotal > 0;
   const hasEntries = summary.entryCount > 0;
 
   // Calculate F and S entry counts from transactions
@@ -95,6 +93,22 @@ const NumberBox: React.FC<NumberBoxProps> = ({
           </span>
         </div>
       </div>
+
+      {/* Special indicators */}
+      {isHighest && hasEntries && (
+        <div className="absolute top-1 right-1">
+          <span className="text-xs bg-red-600 text-white px-1.5 py-0.5 rounded">
+            HIGH
+          </span>
+        </div>
+      )}
+      {isLowest && hasEntries && (
+        <div className="absolute top-1 left-1">
+          <span className="text-xs bg-gray-400 text-white px-1.5 py-0.5 rounded">
+            LOW
+          </span>
+        </div>
+      )}
     </button>
   );
 };
