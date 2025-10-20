@@ -67,6 +67,12 @@ const Dashboard: React.FC = () => {
           }
           refresh();
         }
+      } else if (action.type === 'filter' && action.data?.transactionIds) {
+        // Revert filter deductions by deleting the created deduction transactions
+        for (const transactionId of action.data.transactionIds) {
+          await deleteTransaction(transactionId);
+        }
+        refresh();
       }
     },
     onApply: async (action) => {
@@ -86,6 +92,12 @@ const Dashboard: React.FC = () => {
       } else if (action.type === 'batch' && action.data?.transactionIds) {
         // Redo batch delete
         await bulkDeleteTransactions(action.data.transactionIds);
+        refresh();
+      } else if (action.type === 'filter' && action.data?.transactions) {
+        // Redo filter deductions by re-adding the deduction transactions
+        for (const transaction of action.data.transactions) {
+          await addTransaction(transaction);
+        }
         refresh();
       }
     },
@@ -197,28 +209,28 @@ const Dashboard: React.FC = () => {
         projectId={id}
       />
 
-      <Layout>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="px-4 py-4">
+          {/* Welcome Section */}
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+              Project Overview
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400">
+              Track your {project.entryTypes.join(' and ')} entries with real-time calculations
+            </p>
+          </div>
 
-        {/* Welcome Section */}
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-            Project Overview
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400">
-            Track your {project.entryTypes.join(' and ')} entries with real-time calculations
-          </p>
-        </div>
+          {/* Statistics Grid */}
+          <div className="mb-8">
+            <StatisticsGrid
+              statistics={statistics}
+              onCardClick={handleCardClick}
+            />
+          </div>
 
-        {/* Statistics Grid */}
-        <div className="mb-8">
-          <StatisticsGrid
-            statistics={statistics}
-            onCardClick={handleCardClick}
-          />
-        </div>
-
-        {/* Progress Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {/* Progress Section */}
+          <div className="grid grid-cols-1 gap-6 mb-8">
           {/* Akra Progress */}
           {project.entryTypes.includes('akra') && (
             <div className="relative bg-white dark:bg-gradient-to-br dark:from-slate-800 dark:to-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
@@ -301,25 +313,25 @@ const Dashboard: React.FC = () => {
         </div>
 
 
-        {/* Quick Actions */}
-        <div className="relative bg-white dark:bg-gradient-to-br dark:from-slate-800 dark:to-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
-          {/* Gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-50/20 via-purple-50/10 to-indigo-50/20 dark:from-blue-900/10 dark:via-purple-900/5 dark:to-indigo-900/10 rounded-2xl"></div>
-          
-          <div className="relative z-10">
-            <div className="flex items-center space-x-4 mb-6">
-              <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded-xl shadow-lg">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Quick Actions</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Manage your entries efficiently</p>
-              </div>
-            </div>
+          {/* Quick Actions */}
+          <div className="relative bg-white dark:bg-gradient-to-br dark:from-slate-800 dark:to-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
+            {/* Gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-50/20 via-purple-50/10 to-indigo-50/20 dark:from-blue-900/10 dark:via-purple-900/5 dark:to-indigo-900/10 rounded-2xl"></div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="relative z-10">
+              <div className="flex items-center space-x-4 mb-6">
+                <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded-xl shadow-lg">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">Quick Actions</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Manage your entries efficiently</p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
               {project.entryTypes?.includes('akra') && (
                 <button
                   onClick={() => {
@@ -401,10 +413,11 @@ const Dashboard: React.FC = () => {
                   </div>
                 </button>
               )}
+              </div>
             </div>
           </div>
         </div>
-      </Layout>
+      </div>
 
       {/* Floating Action Buttons */}
       <FloatingActionButton
@@ -425,7 +438,7 @@ const Dashboard: React.FC = () => {
         isOpen={entryPanelOpen}
         onClose={() => setEntryPanelOpen(false)}
         projectId={id || ''}
-        entryType={selectedEntryType}
+        entryType={selectedEntryType === 'akra' ? 'akra' : selectedEntryType === 'ring' ? 'ring' : 'akra'}
         onEntryAdded={handleEntryAdded}
       />
 

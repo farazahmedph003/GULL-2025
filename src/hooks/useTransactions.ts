@@ -55,7 +55,21 @@ export const useTransactions = (projectId: string) => {
     const firstTotal = transactions.reduce((sum, t) => sum + t.first, 0);
     const secondTotal = transactions.reduce((sum, t) => sum + t.second, 0);
     
-    const uniqueNumbers = new Set(transactions.map(t => t.number)).size;
+    // Calculate unique numbers properly handling bulk entries
+    const uniqueNumbersSet = new Set<string>();
+    transactions.forEach(t => {
+      // Check if this is a bulk entry (contains comma or space separated numbers)
+      const isBulkEntry = t.number.includes(',') || t.number.includes(' ');
+      if (isBulkEntry) {
+        // Split bulk entry into individual numbers
+        const numbers = t.number.split(/[,\s]+/).filter(n => n.trim().length > 0);
+        numbers.forEach(num => uniqueNumbersSet.add(num.trim()));
+      } else {
+        // Single entry
+        uniqueNumbersSet.add(t.number);
+      }
+    });
+    const uniqueNumbers = uniqueNumbersSet.size;
 
     return {
       totalEntries: transactions.length,
@@ -74,7 +88,17 @@ export const useTransactions = (projectId: string) => {
 
   // Get transactions by number
   const getByNumber = useCallback((number: string) => {
-    return transactions.filter(t => t.number === number);
+    return transactions.filter(t => {
+      // Check if this transaction is a bulk entry that contains our number
+      const isBulkEntry = t.number.includes(',') || t.number.includes(' ');
+      if (isBulkEntry) {
+        const numbers = t.number.split(/[,\s]+/).map(n => n.trim());
+        return numbers.includes(number);
+      }
+      
+      // For single entries, check exact match
+      return t.number === number;
+    });
   }, [transactions]);
 
   // Get transaction by ID
@@ -193,14 +217,45 @@ export const useTransactions = (projectId: string) => {
     }
   }, [transactions, projectId, deductBalance, addBalance]);
 
-  // Update transaction
-  const updateTransaction = useCallback((transactionId: string, updates: Partial<Transaction>) => {
+  // Update transaction with balance handling
+  const updateTransaction = useCallback(async (transactionId: string, updates: Partial<Transaction>) => {
     try {
+      const originalTransaction = transactions.find(t => t.id === transactionId);
+      if (!originalTransaction) {
+        console.error('Transaction not found for ID:', transactionId);
+        return false;
+      }
+
+      // Calculate balance difference
+      const originalTotal = (originalTransaction.first || 0) + (originalTransaction.second || 0);
+      const newTotal = ((updates.first !== undefined ? updates.first : originalTransaction.first) || 0) + 
+                      ((updates.second !== undefined ? updates.second : originalTransaction.second) || 0);
+      const balanceDifference = newTotal - originalTotal;
+
+      // Handle balance adjustments
+      if (balanceDifference !== 0) {
+        if (balanceDifference > 0) {
+          // Need to deduct more balance
+          const success = await deductBalance(balanceDifference);
+          if (!success) {
+            throw new Error('Failed to deduct balance for transaction update');
+          }
+        } else {
+          // Refund balance
+          const success = await addBalance(Math.abs(balanceDifference));
+          if (!success) {
+            throw new Error('Failed to refund balance for transaction update');
+          }
+        }
+      }
+
+      // Update the transaction
       const updated = transactions.map(t =>
         t.id === transactionId
           ? { ...t, ...updates, updatedAt: new Date().toISOString() }
           : t
       );
+      
       const storageKey = `gull-transactions-${projectId}`;
       localStorage.setItem(storageKey, JSON.stringify(updated));
       setTransactions(updated);
@@ -209,7 +264,7 @@ export const useTransactions = (projectId: string) => {
       console.error('Error updating transaction:', error);
       return false;
     }
-  }, [transactions, projectId]);
+  }, [transactions, projectId, deductBalance, addBalance]);
 
   return {
     transactions,

@@ -94,6 +94,12 @@ const RingPage: React.FC = () => {
           await addTransaction(t);
         }
         refresh();
+      } else if (action.type === 'filter' && action.data?.transactionIds) {
+        // Revert filter deductions by deleting the created deduction transactions
+        for (const transactionId of action.data.transactionIds) {
+          await deleteTransaction(transactionId);
+        }
+        refresh();
       }
     },
     onApply: async (action) => {
@@ -108,6 +114,12 @@ const RingPage: React.FC = () => {
         refresh();
       } else if (action.type === 'batch' && action.data?.transactionIds) {
         await bulkDeleteTransactions(action.data.transactionIds);
+        refresh();
+      } else if (action.type === 'filter' && action.data?.transactions) {
+        // Redo filter deductions by re-adding the deduction transactions
+        for (const transaction of action.data.transactions) {
+          await addTransaction(transaction);
+        }
         refresh();
       }
     },
@@ -131,12 +143,13 @@ const RingPage: React.FC = () => {
   };
 
   const handleSaveFilterResults = async (deductions: Array<{ number: string; firstAmount: number; secondAmount: number }>) => {
-    // Create negative transactions for each deduction
-    const transactionIds: string[] = [];
+    // Store current transactions count to find new ones after adding
+    const beforeCount = transactions.length;
     const affectedNumbers: string[] = [];
+    const deductionTransactions: Omit<Transaction, 'id'>[] = [];
     
     for (const deduction of deductions) {
-      const success = await addTransaction({
+      const transactionData: Omit<Transaction, 'id'> = {
         projectId: id || '',
         number: deduction.number,
         entryType: 'ring',
@@ -146,20 +159,60 @@ const RingPage: React.FC = () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         isFilterDeduction: true,
-      });
-      if (success) {
-        transactionIds.push(`deduction-${Date.now()}-${Math.random()}`);
-      }
+      };
+
+      deductionTransactions.push(transactionData);
       affectedNumbers.push(deduction.number);
+
+      const success = await addTransaction(transactionData);
+      if (!success) {
+        console.error('Failed to add filter transaction');
+        return;
+      }
     }
     
-    addAction('filter', `Applied filter deductions to ${deductions.length} number(s)`, affectedNumbers);
     refresh();
+    
+    // Get the newly created transactions for undo/redo
+    setTimeout(() => {
+      const newTransactions = transactions.slice(beforeCount);
+      const filterTransactions = newTransactions.filter(t => 
+        t.entryType === 'ring' && 
+        t.isFilterDeduction &&
+        affectedNumbers.includes(t.number)
+      );
+      
+      addAction('filter', `Applied filter deductions to ${deductions.length} number(s)`, affectedNumbers, {
+        transactions: deductionTransactions as Transaction[],
+        transactionIds: filterTransactions.map(t => t.id),
+      });
+    }, 50);
   };
 
-  const handleEdit = (transaction: Transaction) => {
-    if (updateTransaction(transaction.id, transaction)) {
-      addAction('edit', `Edited transaction for ${transaction.number}`, [transaction.number]);
+  const handleEdit = async (transaction: Transaction) => {
+    // Find the original transaction before updating
+    const originalTransaction = transactions.find(t => t.id === transaction.id);
+    if (!originalTransaction) {
+      console.error('Original transaction not found');
+      return;
+    }
+
+    // Update the transaction
+    const success = await updateTransaction(transaction.id, transaction);
+    if (success) {
+      // Parse numbers for bulk entries
+      const isBulkEntry = transaction.number.includes(',') || transaction.number.includes(' ');
+      const affectedNumbers = isBulkEntry 
+        ? transaction.number.split(/[,\s]+/).map(n => n.trim())
+        : [transaction.number];
+
+      // Add to history with proper data for undo/redo
+      addAction('edit', `Edited transaction for ${transaction.number}`, affectedNumbers, {
+        transactionId: transaction.id,
+        originalTransaction,
+        updatedTransaction: transaction,
+      });
+      
       refresh();
       setModalNumber(null);
       setTimeout(() => setModalNumber(transaction.number), 100);

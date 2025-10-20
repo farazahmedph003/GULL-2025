@@ -12,21 +12,53 @@ export const groupTransactionsByNumber = (
 
   // Group by number
   filtered.forEach(transaction => {
-    const existing = grouped.get(transaction.number);
+    // Check if this is a bulk entry (contains comma or space separated numbers)
+    const isBulkEntry = transaction.number.includes(',') || transaction.number.includes(' ');
     
-    if (existing) {
-      existing.firstTotal += transaction.first;
-      existing.secondTotal += transaction.second;
-      existing.entryCount += 1;
-      existing.transactions.push(transaction);
-    } else {
-      grouped.set(transaction.number, {
-        number: transaction.number,
-        firstTotal: transaction.first,
-        secondTotal: transaction.second,
-        entryCount: 1,
-        transactions: [transaction],
+    if (isBulkEntry) {
+      // Split bulk entry into individual numbers
+      const numbers = transaction.number.split(/[,\s]+/).filter(n => n.trim().length > 0);
+      
+      // Create individual entries for each number in the bulk
+      numbers.forEach(number => {
+        const trimmedNumber = number.trim();
+        if (!trimmedNumber) return;
+        
+        const existing = grouped.get(trimmedNumber);
+        
+        if (existing) {
+          existing.firstTotal += transaction.first;
+          existing.secondTotal += transaction.second;
+          existing.entryCount += 1;
+          existing.transactions.push(transaction);
+        } else {
+          grouped.set(trimmedNumber, {
+            number: trimmedNumber,
+            firstTotal: transaction.first,
+            secondTotal: transaction.second,
+            entryCount: 1,
+            transactions: [transaction],
+          });
+        }
       });
+    } else {
+      // Handle single entry as before
+      const existing = grouped.get(transaction.number);
+      
+      if (existing) {
+        existing.firstTotal += transaction.first;
+        existing.secondTotal += transaction.second;
+        existing.entryCount += 1;
+        existing.transactions.push(transaction);
+      } else {
+        grouped.set(transaction.number, {
+          number: transaction.number,
+          firstTotal: transaction.first,
+          secondTotal: transaction.second,
+          entryCount: 1,
+          transactions: [transaction],
+        });
+      }
     }
   });
 
@@ -73,9 +105,19 @@ export const getNumberSummary = (
   number: string,
   entryType: EntryType
 ): NumberSummary => {
-  const filtered = transactions.filter(
-    t => t.number === number && t.entryType === entryType
-  );
+  const filtered = transactions.filter(t => {
+    if (t.entryType !== entryType) return false;
+    
+    // Check if this transaction is a bulk entry that contains our number
+    const isBulkEntry = t.number.includes(',') || t.number.includes(' ');
+    if (isBulkEntry) {
+      const numbers = t.number.split(/[,\s]+/).map(n => n.trim());
+      return numbers.includes(number);
+    }
+    
+    // For single entries, check exact match
+    return t.number === number;
+  });
 
   const firstTotal = filtered.reduce((sum, t) => sum + t.first, 0);
   const secondTotal = filtered.reduce((sum, t) => sum + t.second, 0);

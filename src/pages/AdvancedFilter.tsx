@@ -8,7 +8,7 @@ import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
 import { db } from '../services/database';
-import type { EntryType } from '../types';
+import type { EntryType, Transaction } from '../types';
 
 const AdvancedFilter: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -41,13 +41,64 @@ const AdvancedFilter: React.FC = () => {
   const { 
     transactions, 
     refresh: refreshTransactions, 
-    addTransaction
+    addTransaction,
+    deleteTransaction,
+    updateTransaction,
+    bulkDeleteTransactions
   } = useTransactions(id || '');
   const { refresh: refreshBalance } = useUserBalance();
   
-  const { addAction } = useHistory(id || '', {
-    onRevert: () => {},
-    onApply: () => {},
+  const { 
+    undo, 
+    redo, 
+    canUndo, 
+    canRedo,
+    addAction 
+  } = useHistory(id || '', {
+    onRevert: async (action) => {
+      if (action.type === 'add' && action.data?.transactionId) {
+        await deleteTransaction(action.data.transactionId);
+        refresh();
+      } else if (action.type === 'delete' && action.data?.transaction) {
+        await addTransaction(action.data.transaction);
+        refresh();
+      } else if (action.type === 'edit' && action.data?.originalTransaction) {
+        await updateTransaction(action.data.transactionId, action.data.originalTransaction);
+        refresh();
+      } else if (action.type === 'batch' && action.data?.transactions) {
+        for (const t of action.data.transactions) {
+          await addTransaction(t);
+        }
+        refresh();
+      } else if (action.type === 'filter' && action.data?.transactionIds) {
+        // Revert filter deductions by deleting the created deduction transactions
+        for (const transactionId of action.data.transactionIds) {
+          await deleteTransaction(transactionId);
+        }
+        refresh();
+      }
+    },
+    onApply: async (action) => {
+      if (action.type === 'add' && action.data?.transaction) {
+        await addTransaction(action.data.transaction);
+        refresh();
+      } else if (action.type === 'delete' && action.data?.transactionId) {
+        await deleteTransaction(action.data.transactionId);
+        refresh();
+      } else if (action.type === 'edit' && action.data?.updatedTransaction) {
+        await updateTransaction(action.data.transactionId, action.data.updatedTransaction);
+        refresh();
+      } else if (action.type === 'batch' && action.data?.transactionIds) {
+        await bulkDeleteTransactions(action.data.transactionIds);
+        refresh();
+      } else if (action.type === 'filter' && action.data?.transactions) {
+        // Redo filter deductions by re-adding the deduction transactions
+        for (const transaction of action.data.transactions) {
+          await addTransaction(transaction);
+        }
+        refresh();
+      }
+    },
   });
   
   // Comprehensive refresh function
@@ -201,11 +252,14 @@ const AdvancedFilter: React.FC = () => {
     if (!confirmDeduct) return;
 
     try {
+      // Store current transactions count to find new ones after adding
+      const beforeCount = transactions.length;
       const affectedNumbers: string[] = [];
+      const deductionTransactions: Omit<Transaction, 'id'>[] = [];
 
       // Create deduction transactions for each result
       for (const result of firstFilteredResults) {
-        const deductionTransaction = {
+        const transactionData: Omit<Transaction, 'id'> = {
           projectId: id || '',
           number: result.number,
           entryType: selectedType,
@@ -214,17 +268,37 @@ const AdvancedFilter: React.FC = () => {
           notes: `Deducted from Advanced Filter - First`,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
+          isFilterDeduction: true,
         };
 
-        await addTransaction(deductionTransaction);
+        deductionTransactions.push(transactionData);
         affectedNumbers.push(result.number);
+
+        const success = await addTransaction(transactionData);
+        if (!success) {
+          console.error('Failed to add filter transaction');
+          return;
+        }
       }
 
-      // Record in history
-      addAction('filter', `Applied first deductions to ${firstFilteredResults.length} numbers`, affectedNumbers);
+      refresh();
+      
+      // Get the newly created transactions for undo/redo
+      setTimeout(() => {
+        const newTransactions = transactions.slice(beforeCount);
+        const filterTransactions = newTransactions.filter(t => 
+          t.entryType === selectedType && 
+          t.isFilterDeduction &&
+          affectedNumbers.includes(t.number)
+        );
+        
+        addAction('filter', `Applied first deductions to ${firstFilteredResults.length} numbers`, affectedNumbers, {
+          transactions: deductionTransactions as Transaction[],
+          transactionIds: filterTransactions.map(t => t.id),
+        });
+      }, 50);
 
       alert(`✓ Successfully deducted ${firstFilteredResults.length} First entries!`);
-      refresh();
     } catch (error) {
       console.error('Error deducting first results:', error);
       alert('Failed to deduct entries. Please try again.');
@@ -244,11 +318,14 @@ const AdvancedFilter: React.FC = () => {
     if (!confirmDeduct) return;
 
     try {
+      // Store current transactions count to find new ones after adding
+      const beforeCount = transactions.length;
       const affectedNumbers: string[] = [];
+      const deductionTransactions: Omit<Transaction, 'id'>[] = [];
 
       // Create deduction transactions for each result
       for (const result of secondFilteredResults) {
-        const deductionTransaction = {
+        const transactionData: Omit<Transaction, 'id'> = {
           projectId: id || '',
           number: result.number,
           entryType: selectedType,
@@ -257,17 +334,37 @@ const AdvancedFilter: React.FC = () => {
           notes: `Deducted from Advanced Filter - Second`,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
+          isFilterDeduction: true,
         };
 
-        await addTransaction(deductionTransaction);
+        deductionTransactions.push(transactionData);
         affectedNumbers.push(result.number);
+
+        const success = await addTransaction(transactionData);
+        if (!success) {
+          console.error('Failed to add filter transaction');
+          return;
+        }
       }
 
-      // Record in history
-      addAction('filter', `Applied second deductions to ${secondFilteredResults.length} numbers`, affectedNumbers);
+      refresh();
+      
+      // Get the newly created transactions for undo/redo
+      setTimeout(() => {
+        const newTransactions = transactions.slice(beforeCount);
+        const filterTransactions = newTransactions.filter(t => 
+          t.entryType === selectedType && 
+          t.isFilterDeduction &&
+          affectedNumbers.includes(t.number)
+        );
+        
+        addAction('filter', `Applied second deductions to ${secondFilteredResults.length} numbers`, affectedNumbers, {
+          transactions: deductionTransactions as Transaction[],
+          transactionIds: filterTransactions.map(t => t.id),
+        });
+      }, 50);
 
       alert(`✓ Successfully deducted ${secondFilteredResults.length} Second entries!`);
-      refresh();
     } catch (error) {
       console.error('Error deducting second results:', error);
       alert('Failed to deduct entries. Please try again.');
@@ -297,6 +394,10 @@ const AdvancedFilter: React.FC = () => {
         projectDate={project.date} 
         projectId={id}
         onRefresh={refresh}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

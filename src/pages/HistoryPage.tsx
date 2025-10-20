@@ -246,7 +246,8 @@ const HistoryPage: React.FC = () => {
     redo, 
     canUndo, 
     canRedo,
-    history: visibleHistory 
+    history: visibleHistory,
+    addAction
   } = useHistory(projectId || '', {
     onRevert: async (action) => {
       if (action.type === 'add' && action.data?.transactionId) {
@@ -263,6 +264,12 @@ const HistoryPage: React.FC = () => {
           await addTransaction(t);
         }
         refresh();
+      } else if (action.type === 'filter' && action.data?.transactionIds) {
+        // Revert filter deductions by deleting the created deduction transactions
+        for (const transactionId of action.data.transactionIds) {
+          await deleteTransaction(transactionId);
+        }
+        refresh();
       }
     },
     onApply: async (action) => {
@@ -277,6 +284,12 @@ const HistoryPage: React.FC = () => {
         refresh();
       } else if (action.type === 'batch' && action.data?.transactionIds) {
         await bulkDeleteTransactions(action.data.transactionIds);
+        refresh();
+      } else if (action.type === 'filter' && action.data?.transactions) {
+        // Redo filter deductions by re-adding the deduction transactions
+        for (const transaction of action.data.transactions) {
+          await addTransaction(transaction);
+        }
         refresh();
       }
     },
@@ -451,17 +464,43 @@ const HistoryPage: React.FC = () => {
     setEditingTransaction(transaction);
   };
 
-  const handleSaveEdit = (updatedTransaction: Transaction) => {
+  const handleSaveEdit = async (updatedTransaction: Transaction) => {
     try {
-      updateTransaction(updatedTransaction.id, updatedTransaction);
-      setEditingTransaction(null);
-      
-      const isBulk = updatedTransaction.number.includes(',') || updatedTransaction.number.includes(' ');
-      showSuccess(
-        'Transaction Updated',
-        `${isBulk ? 'Bulk' : 'Single'} entry updated successfully`,
-        { position: 'top' }
-      );
+      // Find the original transaction before updating
+      const originalTransaction = transactions.find(t => t.id === updatedTransaction.id);
+      if (!originalTransaction) {
+        console.error('Original transaction not found');
+        showError('Update Failed', 'Original transaction not found', { position: 'top' });
+        return;
+      }
+
+      // Update the transaction
+      const success = await updateTransaction(updatedTransaction.id, updatedTransaction);
+      if (success) {
+        // Parse numbers for bulk entries
+        const isBulkEntry = updatedTransaction.number.includes(',') || updatedTransaction.number.includes(' ');
+        const affectedNumbers = isBulkEntry 
+          ? updatedTransaction.number.split(/[,\s]+/).map(n => n.trim())
+          : [updatedTransaction.number];
+
+        // Add to history with proper data for undo/redo
+        addAction('edit', `Edited transaction for ${updatedTransaction.number}`, affectedNumbers, {
+          transactionId: updatedTransaction.id,
+          originalTransaction,
+          updatedTransaction: updatedTransaction,
+        });
+
+        setEditingTransaction(null);
+        
+        const isBulk = updatedTransaction.number.includes(',') || updatedTransaction.number.includes(' ');
+        showSuccess(
+          'Transaction Updated',
+          `${isBulk ? 'Bulk' : 'Single'} entry updated successfully`,
+          { position: 'top' }
+        );
+      } else {
+        showError('Update Failed', 'Failed to update transaction', { position: 'top' });
+      }
     } catch (error) {
       console.error('Update error:', error);
       showError(

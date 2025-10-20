@@ -94,6 +94,12 @@ const AkraPage: React.FC = () => {
           await addTransaction(t);
         }
         refresh();
+      } else if (action.type === 'filter' && action.data?.transactionIds) {
+        // Revert filter deductions by deleting the created deduction transactions
+        for (const transactionId of action.data.transactionIds) {
+          await deleteTransaction(transactionId);
+        }
+        refresh();
       }
     },
     onApply: async (action) => {
@@ -108,6 +114,12 @@ const AkraPage: React.FC = () => {
         refresh();
       } else if (action.type === 'batch' && action.data?.transactionIds) {
         await bulkDeleteTransactions(action.data.transactionIds);
+        refresh();
+      } else if (action.type === 'filter' && action.data?.transactions) {
+        // Redo filter deductions by re-adding the deduction transactions
+        for (const transaction of action.data.transactions) {
+          await addTransaction(transaction);
+        }
         refresh();
       }
     },
@@ -133,12 +145,13 @@ const AkraPage: React.FC = () => {
   };
 
   const handleSaveFilterResults = async (deductions: Array<{ number: string; firstAmount: number; secondAmount: number }>) => {
-    // Create negative transactions for each deduction
-    const transactionIds: string[] = [];
+    // Store current transactions count to find new ones after adding
+    const beforeCount = transactions.length;
     const affectedNumbers: string[] = [];
+    const deductionTransactions: Omit<Transaction, 'id'>[] = [];
     
     for (const deduction of deductions) {
-      const success = await addTransaction({
+      const transactionData: Omit<Transaction, 'id'> = {
         projectId: id || '',
         number: deduction.number,
         entryType: 'akra',
@@ -148,20 +161,60 @@ const AkraPage: React.FC = () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         isFilterDeduction: true,
-      });
-      if (success) {
-        transactionIds.push(`deduction-${Date.now()}-${Math.random()}`);
-      }
+      };
+
+      deductionTransactions.push(transactionData);
       affectedNumbers.push(deduction.number);
+
+      const success = await addTransaction(transactionData);
+      if (!success) {
+        console.error('Failed to add filter transaction');
+        return;
+      }
     }
     
-    addAction('filter', `Applied filter deductions to ${deductions.length} number(s)`, affectedNumbers);
     refresh();
+    
+    // Get the newly created transactions for undo/redo
+    setTimeout(() => {
+      const newTransactions = transactions.slice(beforeCount);
+      const filterTransactions = newTransactions.filter(t => 
+        t.entryType === 'akra' && 
+        t.isFilterDeduction &&
+        affectedNumbers.includes(t.number)
+      );
+      
+      addAction('filter', `Applied filter deductions to ${deductions.length} number(s)`, affectedNumbers, {
+        transactions: deductionTransactions as Transaction[],
+        transactionIds: filterTransactions.map(t => t.id),
+      });
+    }, 50);
   };
 
-  const handleEdit = (transaction: Transaction) => {
-    if (updateTransaction(transaction.id, transaction)) {
-      addAction('edit', `Edited transaction for ${transaction.number}`, [transaction.number]);
+  const handleEdit = async (transaction: Transaction) => {
+    // Find the original transaction before updating
+    const originalTransaction = transactions.find(t => t.id === transaction.id);
+    if (!originalTransaction) {
+      console.error('Original transaction not found');
+      return;
+    }
+
+    // Update the transaction
+    const success = await updateTransaction(transaction.id, transaction);
+    if (success) {
+      // Parse numbers for bulk entries
+      const isBulkEntry = transaction.number.includes(',') || transaction.number.includes(' ');
+      const affectedNumbers = isBulkEntry 
+        ? transaction.number.split(/[,\s]+/).map(n => n.trim())
+        : [transaction.number];
+
+      // Add to history with proper data for undo/redo
+      addAction('edit', `Edited transaction for ${transaction.number}`, affectedNumbers, {
+        transactionId: transaction.id,
+        originalTransaction,
+        updatedTransaction: transaction,
+      });
+      
       refresh();
       // Refresh the modal by closing and reopening
       setModalNumber(null);
@@ -270,7 +323,7 @@ const AkraPage: React.FC = () => {
       />
 
       {/* Page Header */}
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
+      <div className="w-full px-4 py-4">
         <div className="mb-6">
           <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             Akra (2-digit Numbers)
@@ -305,21 +358,21 @@ const AkraPage: React.FC = () => {
         </div>
 
         {/* Action Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-          <div className="flex-1 max-w-md">
+        <div className="flex flex-col gap-4 mb-6">
+          <div className="w-full">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search numbers (e.g., 01, 1*, *5)"
-              className="input-field"
+              className="input-field w-full"
             />
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex gap-3">
             <button
               onClick={handleImport}
-              className="px-6 py-3 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              className="flex-1 px-4 py-3 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
             >
               <svg
                 className="w-5 h-5 inline mr-2"
@@ -334,12 +387,12 @@ const AkraPage: React.FC = () => {
                   d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
                 />
               </svg>
-              📥 Import CSV
+              Import CSV
             </button>
 
             <button
               onClick={handleExport}
-              className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
             >
               <svg
                 className="w-5 h-5 inline mr-2"
@@ -354,7 +407,7 @@ const AkraPage: React.FC = () => {
                   d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                 />
               </svg>
-              📤 Export CSV
+              Export CSV
             </button>
           </div>
         </div>
@@ -373,7 +426,7 @@ const AkraPage: React.FC = () => {
       {activeTab === 'entries' ? (
         <div className="w-full">
           {/* Premium Statistics */}
-          <div className="px-4 sm:px-6 lg:px-8 mb-6">
+          <div className="px-4 mb-6">
             <PremiumStats 
               summaries={summaries}
               selectedNumbers={selectedNumbers}
@@ -382,7 +435,7 @@ const AkraPage: React.FC = () => {
           </div>
 
           {/* Number Grid - Full Width with proper padding */}
-          <div className="px-4 sm:px-6 lg:px-8">
+          <div className="px-4">
             <NumberGrid
               summaries={summaries}
               entryType="akra"
@@ -395,7 +448,7 @@ const AkraPage: React.FC = () => {
           </div>
         </div>
       ) : (
-        <div className="px-4 sm:px-6 lg:px-8">
+        <div className="px-4">
           <FilterTab 
             summaries={summaries} 
             entryType="akra" 

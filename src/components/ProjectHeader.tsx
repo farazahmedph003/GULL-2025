@@ -29,7 +29,7 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
   return (
     <>
       <div className="bg-gray-800 shadow-sm border-b border-gray-700 sticky top-0 z-40">
-        <div className="w-full px-6 sm:px-12 lg:px-20 xl:px-24 py-4 sm:py-5 lg:py-6">
+        <div className="w-full px-4 py-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
             {/* Left: Menu Button and Project Info */}
             <div className="flex items-center space-x-4 sm:space-x-6">

@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
 import TabNavigation from '../components/TabNavigation';
 import { useTransactions } from '../hooks/useTransactions';
+import { useHistory } from '../hooks/useHistory';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
 import { db } from '../services/database';
 import type { TabItem, EntryType, Transaction } from '../types';
@@ -55,7 +56,56 @@ const FilterCalculate: React.FC = () => {
     loadProject();
   }, [id]);
   
-  const { transactions, addTransaction } = useTransactions(id || '');
+  const { 
+    transactions, 
+    addTransaction,
+    deleteTransaction,
+    updateTransaction,
+    bulkDeleteTransactions
+  } = useTransactions(id || '');
+
+  const { 
+    undo, 
+    redo, 
+    canUndo, 
+    canRedo,
+    addAction 
+  } = useHistory(id || '', {
+    onRevert: async (action) => {
+      if (action.type === 'add' && action.data?.transactionId) {
+        await deleteTransaction(action.data.transactionId);
+      } else if (action.type === 'delete' && action.data?.transaction) {
+        await addTransaction(action.data.transaction);
+      } else if (action.type === 'edit' && action.data?.originalTransaction) {
+        await updateTransaction(action.data.transactionId, action.data.originalTransaction);
+      } else if (action.type === 'batch' && action.data?.transactions) {
+        for (const t of action.data.transactions) {
+          await addTransaction(t);
+        }
+      } else if (action.type === 'filter' && action.data?.transactionIds) {
+        // Revert filter deductions by deleting the created deduction transactions
+        for (const transactionId of action.data.transactionIds) {
+          await deleteTransaction(transactionId);
+        }
+      }
+    },
+    onApply: async (action) => {
+      if (action.type === 'add' && action.data?.transaction) {
+        await addTransaction(action.data.transaction);
+      } else if (action.type === 'delete' && action.data?.transactionId) {
+        await deleteTransaction(action.data.transactionId);
+      } else if (action.type === 'edit' && action.data?.updatedTransaction) {
+        await updateTransaction(action.data.transactionId, action.data.updatedTransaction);
+      } else if (action.type === 'batch' && action.data?.transactionIds) {
+        await bulkDeleteTransactions(action.data.transactionIds);
+      } else if (action.type === 'filter' && action.data?.transactions) {
+        // Redo filter deductions by re-adding the deduction transactions
+        for (const transaction of action.data.transactions) {
+          await addTransaction(transaction);
+        }
+      }
+    },
+  });
 
   // Group transactions
   const summaries = useMemo(
@@ -112,16 +162,23 @@ const FilterCalculate: React.FC = () => {
   };
 
   // Save deductions to database
-  const handleSaveResults = () => {
+  const handleSaveResults = async () => {
     if (!id || calculatedResults.length === 0) return;
 
     if (!confirm(`Save ${calculatedResults.length} deduction entries to database?`)) {
       return;
     }
 
-    calculatedResults.forEach((result) => {
-      if (result.firstResult > 0 || result.secondResult > 0) {
-        const newTransaction: Omit<Transaction, 'id'> = {
+    try {
+      // Store current transactions count to find new ones after adding
+      const beforeCount = transactions.length;
+      const affectedNumbers: string[] = [];
+      const deductionTransactions: Omit<Transaction, 'id'>[] = [];
+
+      const validResults = calculatedResults.filter(result => result.firstResult > 0 || result.secondResult > 0);
+      
+      for (const result of validResults) {
+        const transactionData: Omit<Transaction, 'id'> = {
           projectId: id,
           number: result.number,
           entryType: selectedType,
@@ -130,14 +187,40 @@ const FilterCalculate: React.FC = () => {
           notes: `Filter & Calculate Deduction (Limit: F ${firstLimit || 0}, S ${secondLimit || 0})`,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
+          isFilterDeduction: true,
         };
 
-        addTransaction(newTransaction);
-      }
-    });
+        deductionTransactions.push(transactionData);
+        affectedNumbers.push(result.number);
 
-    alert(`✓ Saved ${calculatedResults.length} deduction entries successfully!`);
-    handleReset();
+        const success = await addTransaction(transactionData);
+        if (!success) {
+          console.error('Failed to add filter transaction');
+          return;
+        }
+      }
+      
+      // Get the newly created transactions for undo/redo
+      setTimeout(() => {
+        const newTransactions = transactions.slice(beforeCount);
+        const filterTransactions = newTransactions.filter(t => 
+          t.entryType === selectedType && 
+          t.isFilterDeduction &&
+          affectedNumbers.includes(t.number)
+        );
+        
+        addAction('filter', `Applied filter deductions to ${validResults.length} number(s)`, affectedNumbers, {
+          transactions: deductionTransactions as Transaction[],
+          transactionIds: filterTransactions.map(t => t.id),
+        });
+      }, 50);
+
+      alert(`✓ Saved ${validResults.length} deduction entries successfully!`);
+      handleReset();
+    } catch (error) {
+      console.error('Error saving filter results:', error);
+      alert('Failed to save results. Please try again.');
+    }
   };
 
   // Reset all
@@ -195,7 +278,14 @@ const FilterCalculate: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
-      <ProjectHeader projectName={project.name} projectDate={project.date} />
+      <ProjectHeader 
+        projectName={project.name} 
+        projectDate={project.date}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+      />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <TabNavigation tabs={tabs} baseClass="mb-6" />
