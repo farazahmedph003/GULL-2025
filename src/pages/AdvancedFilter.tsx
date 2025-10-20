@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
 import EntryPanel from '../components/EntryPanel';
@@ -7,19 +7,37 @@ import { useTransactions } from '../hooks/useTransactions';
 import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
-import { getProject } from '../utils/storage';
+import { db } from '../services/database';
 import type { EntryType } from '../types';
 
 const AdvancedFilter: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [selectedType, setSelectedType] = useState<EntryType>('akra');
   const [entryPanelOpen, setEntryPanelOpen] = useState(false);
+  const [project, setProject] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   
   // Filter states
   const [firstNumbers, setFirstNumbers] = useState('');
   const [secondNumbers, setSecondNumbers] = useState('');
   
-  const project = getProject(id || '');
+  // Load project from database
+  useEffect(() => {
+    const loadProject = async () => {
+      if (!id) return;
+      
+      try {
+        const projectData = await db.getProject(id);
+        setProject(projectData);
+      } catch (error) {
+        console.error('Error loading project:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProject();
+  }, [id]);
   const { 
     transactions, 
     refresh: refreshTransactions, 
@@ -36,6 +54,8 @@ const AdvancedFilter: React.FC = () => {
   const refresh = () => {
     refreshTransactions();
     refreshBalance();
+    // Emit a global event so any subscribed components update immediately
+    window.dispatchEvent(new Event('user-balance-updated'));
   };
 
   // Group transactions

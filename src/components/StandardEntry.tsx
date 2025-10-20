@@ -18,7 +18,6 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
 }) => {
   const { user } = useAuth();
   const { balance, hasSufficientBalance, deductBalance, refresh: refreshBalance } = useUserBalance();
-  const isAdmin = user ? isAdminEmail(user.email) : false;
   
   const [numbers, setNumbers] = useState('');
   const [first, setFirst] = useState('');
@@ -84,8 +83,8 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
       // Total cost for all numbers (bulk uses shared amounts per number)
       const totalCost = totalPerEntry * numberList.length;
 
-      // Check balance for non-admin users
-      if (!isAdmin && !hasSufficientBalance(totalCost)) {
+      // Check balance before proceeding
+      if (!hasSufficientBalance(totalCost)) {
         setErrors(prev => ({
           ...prev,
           balance: `Insufficient balance. You need ${formatCurrency(totalCost)} but only have ${formatCurrency(balance)}.`,
@@ -111,17 +110,15 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         updatedAt: new Date().toISOString(),
       };
 
-      // Deduct balance for non-admin users
-      if (!isAdmin) {
-        const success = await deductBalance(totalCost);
-        if (!success) {
-          setErrors(prev => ({
-            ...prev,
-            balance: 'Failed to deduct balance. Please try again.',
-          }));
-          setIsSubmitting(false);
-          return;
-        }
+      // Deduct balance
+      const success = await deductBalance(totalCost);
+      if (!success) {
+        setErrors(prev => ({
+          ...prev,
+          balance: 'Failed to deduct balance. Please try again.',
+        }));
+        setIsSubmitting(false);
+        return;
       }
 
       // Save to localStorage

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
 import EntryPanel from '../components/EntryPanel';
@@ -12,7 +12,7 @@ import { useTransactions } from '../hooks/useTransactions';
 import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
-import { getProject } from '../utils/storage';
+import { db } from '../services/database';
 import { formatDate } from '../utils/helpers';
 import { exportTransactionsToExcel, importTransactionsFromExcel } from '../utils/excelHandler';
 import { customAlertSuccess, customAlertError, customAlertWarning } from '../utils/customPopups';
@@ -28,8 +28,27 @@ const AkraPage: React.FC = () => {
   const [modalNumber, setModalNumber] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [entryPanelOpen, setEntryPanelOpen] = useState(false);
+  const [project, setProject] = useState<any>(null);
+  const [projectLoading, setProjectLoading] = useState(true);
   
-  const project = getProject(id || '');
+  // Load project from database
+  useEffect(() => {
+    const loadProject = async () => {
+      if (!id) return;
+      
+      try {
+        const projectData = await db.getProject(id);
+        setProject(projectData);
+      } catch (error) {
+        console.error('Error loading project:', error);
+      } finally {
+        setProjectLoading(false);
+      }
+    };
+
+    loadProject();
+  }, [id]);
+  
   const { 
     transactions, 
     loading, 
@@ -196,7 +215,7 @@ const AkraPage: React.FC = () => {
 
   const modalSummary = modalNumber ? summaries.get(modalNumber) : null;
 
-  if (loading) {
+  if (loading || projectLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <ProjectHeader

@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAdmin, useAdminData } from '../hooks/useAdmin';
+import { useTopupRequests } from '../hooks/useTopupRequests';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ThemeToggle from '../components/ThemeToggle';
+import TopupRequestManager from '../components/TopupRequestManager';
 import AdminFinancial from './admin/AdminFinancial';
 import AdminReports from './admin/AdminReports';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -14,11 +16,13 @@ const AdminPanel: React.FC = () => {
   const { user } = useAuth();
   const { isAdmin, loading: authLoading } = useAdmin();
   const { users, reports, stats, loading, topUpBalance, deleteUser, refresh } = useAdminData();
+  const { getPendingCount } = useTopupRequests();
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [selectedUserData, setSelectedUserData] = useState<UserAccount & { projectsCount?: number; totalEntries?: number } | null>(null);
   const [topUpAmount, setTopUpAmount] = useState('');
   const [showTopUpModal, setShowTopUpModal] = useState(false);
   const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
+  const [showTopupRequests, setShowTopupRequests] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'users' | 'financial' | 'reports'>('users');
 
@@ -257,12 +261,28 @@ const AdminPanel: React.FC = () => {
         <div className="card-premium">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">User Management</h2>
-            <button onClick={refresh} className="btn-secondary text-sm">
-              <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Refresh
-            </button>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => setShowTopupRequests(true)} 
+                className="btn-primary text-sm relative"
+              >
+                <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Top-up Requests
+                {getPendingCount() > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold">
+                    {getPendingCount()}
+                  </span>
+                )}
+              </button>
+              <button onClick={refresh} className="btn-secondary text-sm">
+                <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+            </div>
           </div>
 
           {/* Search */}
@@ -612,6 +632,12 @@ const AdminPanel: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* Top-up Request Manager */}
+      <TopupRequestManager 
+        isOpen={showTopupRequests} 
+        onClose={() => setShowTopupRequests(false)} 
+      />
     </div>
   );
 };

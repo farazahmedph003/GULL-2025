@@ -10,7 +10,7 @@ import ProgressBar from '../components/ProgressBar';
 import { useTransactions } from '../hooks/useTransactions';
 import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
-import { getProject } from '../utils/storage';
+import { db } from '../services/database';
 import { formatDate } from '../utils/helpers';
 import type { EntryType, Project } from '../types';
 
@@ -95,20 +95,30 @@ const Dashboard: React.FC = () => {
 
   // Load project
   useEffect(() => {
-    if (!id) {
-      navigate('/');
-      return;
-    }
+    const loadProject = async () => {
+      if (!id) {
+        navigate('/');
+        return;
+      }
 
-    const projectData = getProject(id);
-    if (!projectData) {
-      navigate('/404');
-      return;
-    }
+      try {
+        const projectData = await db.getProject(id);
+        if (!projectData) {
+          navigate('/404');
+          return;
+        }
 
-    setProject(projectData);
-    setSelectedEntryType(projectData.entryTypes[0] || 'akra');
-    setLoading(false);
+        setProject(projectData);
+        setSelectedEntryType(projectData.entryTypes[0] || 'akra');
+      } catch (error) {
+        console.error('Error loading project:', error);
+        navigate('/404');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProject();
   }, [id, navigate]);
 
   // Keyboard shortcuts

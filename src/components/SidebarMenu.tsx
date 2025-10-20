@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { isAdminEmail } from '../config/admin';
-import { getProject } from '../utils/storage';
+import { db } from '../services/database';
 
 interface SidebarMenuProps {
   isOpen: boolean;
@@ -20,12 +20,22 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
 
   // Load project data when projectId changes
   useEffect(() => {
-    if (projectId) {
-      const projectData = getProject(projectId);
-      setProject(projectData);
-    } else {
-      setProject(null);
-    }
+    const loadProject = async () => {
+      if (!projectId) {
+        setProject(null);
+        return;
+      }
+
+      try {
+        const projectData = await db.getProject(projectId);
+        setProject(projectData);
+      } catch (error) {
+        console.error('Error loading project:', error);
+        setProject(null);
+      }
+    };
+
+    loadProject();
   }, [projectId]);
 
   // Handle escape key to close sidebar
@@ -180,7 +190,7 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
 
       {/* Sidebar */}
       <div
-        className={`fixed top-0 left-0 h-full w-80 bg-gray-900 shadow-2xl transform transition-transform duration-300 ease-out z-50 ${
+        className={`fixed top-0 left-0 h-full w-64 sm:w-72 lg:w-80 bg-gray-900 shadow-2xl transform transition-transform duration-300 ease-out z-50 ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >

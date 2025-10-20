@@ -1,14 +1,12 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
-import EntryPanel from '../components/EntryPanel';
-import FloatingActionButton from '../components/FloatingActionButton';
 import { useTransactions } from '../hooks/useTransactions';
 import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useConfirmation } from '../hooks/useConfirmation.tsx';
-import { getProject } from '../utils/storage';
+import { db } from '../services/database';
 import { formatDate, formatCurrency, formatTime } from '../utils/helpers';
 import { exportTransactionsToExcel, importTransactionsFromExcel } from '../utils/excelHandler';
 import type { Transaction } from '../types';
@@ -200,7 +198,30 @@ const EditModal: React.FC<EditModalProps> = ({ transaction, onSave, onCancel }) 
 
 const HistoryPage: React.FC = () => {
   const { id: projectId } = useParams<{ id: string }>();
-  const project = projectId ? getProject(projectId) : null;
+  const [project, setProject] = useState<any>(null);
+  const [projectLoading, setProjectLoading] = useState(true);
+  
+  // Load project from database
+  useEffect(() => {
+    const loadProject = async () => {
+      if (!projectId) {
+        setProjectLoading(false);
+        return;
+      }
+
+      try {
+        const projectData = await db.getProject(projectId);
+        setProject(projectData);
+      } catch (error) {
+        console.error('Error loading project:', error);
+      } finally {
+        setProjectLoading(false);
+      }
+    };
+
+    loadProject();
+  }, [projectId]);
+  
   const { 
     transactions, 
     updateTransaction, 
@@ -267,7 +288,7 @@ const HistoryPage: React.FC = () => {
   const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [entryPanelOpen, setEntryPanelOpen] = useState(false);
+
 
   // Create combined history view with current transactions and deleted transactions
   const combinedHistory = useMemo(() => {
@@ -547,7 +568,7 @@ const HistoryPage: React.FC = () => {
     }
   };
 
-  if (!project || !projectId) {
+  if (!project || !projectId || projectLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
         <p className="text-gray-600 dark:text-gray-400">Project not found</p>
@@ -695,32 +716,7 @@ const HistoryPage: React.FC = () => {
               </button>
       </div>
 
-      {/* Floating Add Entry Button */}
-      <FloatingActionButton
-        onClick={() => setEntryPanelOpen(true)}
-        position="bottom-right"
-        color="secondary"
-        label="Add Entry (Ctrl+/)"
-        performanceMode="stable"
-        showTooltip={false}
-        icon={
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        }
-      />
-
-      {/* Entry Panel */}
-      <EntryPanel
-        isOpen={entryPanelOpen}
-        onClose={() => setEntryPanelOpen(false)}
-        projectId={projectId || ''}
-        entryType={'akra'}
-        onEntryAdded={() => {
-          refresh();
-          setEntryPanelOpen(false);
-        }}
-      />
+      
           </div>
         </div>
 

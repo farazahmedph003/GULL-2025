@@ -9,8 +9,7 @@ import ProjectForm from '../components/ProjectForm';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ProfileDropdown from '../components/ProfileDropdown';
 import type { Project } from '../types';
-import { getProjects, saveProject, deleteProject } from '../utils/storage';
-import { isOfflineMode } from '../lib/supabase';
+import { db } from '../services/database';
 
 const ProjectSelection: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -22,21 +21,30 @@ const ProjectSelection: React.FC = () => {
   // No longer automatically redirect admins - they can use projects too
 
   useEffect(() => {
-    // Load projects from localStorage (user-specific)
-    const loadProjects = () => {
-      if (user) {
-        const savedProjects = getProjects(user.id);
-        setProjects(savedProjects);
-      } else {
+    // Load projects from Supabase database
+    const loadProjects = async () => {
+      if (!user) {
         setProjects([]);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      try {
+        const dbProjects = await db.getUserProjects(user.id);
+        setProjects(dbProjects);
+        console.log('Projects loaded from database:', dbProjects.length);
+      } catch (error) {
+        console.error('Error loading projects from database:', error);
+        setProjects([]);
+      } finally {
+        setLoading(false);
+      }
     };
 
     loadProjects();
   }, [user]);
 
-  const handleCreateProject = (project: Project) => {
+  const handleCreateProject = async (project: Project) => {
     // Ensure user is logged in before creating a project
     if (!user || !user.id) {
       console.error('Cannot create project: User is not logged in');
@@ -44,23 +52,37 @@ const ProjectSelection: React.FC = () => {
       return;
     }
 
-    // Associate project with current user
-    const projectWithUser = {
-      ...project,
-      userId: user.id,
-    };
-    
-    console.log('Creating project for user:', user.email, 'User ID:', user.id);
-    saveProject(projectWithUser);
-    setProjects((prev) => [...prev, projectWithUser]);
-    console.log('Project created and saved successfully');
+    try {
+      // Create project in Supabase database
+      const dbProject = await db.createProject(user.id, {
+        name: project.name,
+        entryTypes: project.entryTypes,
+        date: project.date,
+      });
+
+      // Update local state with the created project
+      setProjects((prev) => [...prev, dbProject]);
+      console.log('Project created in database successfully:', dbProject.name);
+      
+    } catch (error) {
+      console.error('Error creating project:', error);
+      alert('Failed to create project. Please check your internet connection and try again.');
+    }
   };
 
-  const handleDeleteProject = (projectId: string) => {
-    deleteProject(projectId);
-    setProjects((prev) => prev.filter((p) => p.id !== projectId));
-    // Also delete project transactions
-    localStorage.removeItem(`gull-transactions-${projectId}`);
+  const handleDeleteProject = async (projectId: string) => {
+    try {
+      // Delete from Supabase database
+      await db.deleteProject(projectId);
+      
+      // Update local state
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      console.log('Project deleted from database successfully');
+      
+    } catch (error) {
+      console.error('Error deleting project:', error);
+      alert('Failed to delete project. Please check your internet connection and try again.');
+    }
   };
 
   const header = (
@@ -71,11 +93,6 @@ const ProjectSelection: React.FC = () => {
         </h1>
         <p className="text-sm text-gray-300 mt-1">
           Accounting Management System
-          {isOfflineMode() && (
-            <span className="ml-2 px-2 py-0.5 bg-blue-900/30 text-blue-200 rounded text-xs font-medium">
-              🔒 Offline Mode
-            </span>
-          )}
         </p>
       </div>
       <div className="flex items-center space-x-3">

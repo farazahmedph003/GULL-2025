@@ -9,7 +9,6 @@ export const useTransactions = (projectId: string) => {
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
   const { deductBalance, addBalance } = useUserBalance();
-  const isAdmin = user ? isAdminEmail(user.email) : false;
 
   // Load transactions from localStorage
   const loadTransactions = useCallback(() => {
@@ -95,8 +94,8 @@ export const useTransactions = (projectId: string) => {
       // Calculate refund amount
       const refundAmount = (transactionToDelete.first || 0) + (transactionToDelete.second || 0);
       
-      // Refund balance for non-admin users (only for positive amounts)
-      if (!isAdmin && refundAmount > 0) {
+      // Refund balance for positive amounts
+      if (refundAmount > 0) {
         const success = await addBalance(refundAmount);
         if (!success) {
           throw new Error('Failed to refund balance');
@@ -104,7 +103,7 @@ export const useTransactions = (projectId: string) => {
       }
 
       // Deduct balance for negative amounts (reverse deductions)
-      if (!isAdmin && refundAmount < 0) {
+      if (refundAmount < 0) {
         const success = await deductBalance(Math.abs(refundAmount));
         if (!success) {
           throw new Error('Failed to reverse deduction');
@@ -120,7 +119,7 @@ export const useTransactions = (projectId: string) => {
       console.error('Error deleting transaction:', error);
       return false;
     }
-  }, [transactions, projectId, isAdmin, deductBalance, addBalance]);
+  }, [transactions, projectId, deductBalance, addBalance]);
 
   // Bulk delete transactions with balance refunds
   const bulkDeleteTransactions = useCallback(async (transactionIds: string[]) => {
@@ -132,8 +131,8 @@ export const useTransactions = (projectId: string) => {
         return sum + (t.first || 0) + (t.second || 0);
       }, 0);
 
-      // Refund balance for non-admin users (only for positive amounts)
-      if (!isAdmin && totalRefund > 0) {
+      // Refund balance for positive amounts
+      if (totalRefund > 0) {
         const success = await addBalance(totalRefund);
         if (!success) {
           throw new Error('Failed to refund balance');
@@ -141,7 +140,7 @@ export const useTransactions = (projectId: string) => {
       }
 
       // Deduct balance for negative amounts (reverse deductions)
-      if (!isAdmin && totalRefund < 0) {
+      if (totalRefund < 0) {
         const success = await deductBalance(Math.abs(totalRefund));
         if (!success) {
           throw new Error('Failed to reverse deduction');
@@ -157,7 +156,7 @@ export const useTransactions = (projectId: string) => {
       console.error('Error bulk deleting transactions:', error);
       return false;
     }
-  }, [transactions, projectId, isAdmin, deductBalance, addBalance]);
+  }, [transactions, projectId, deductBalance, addBalance]);
 
   // Add transaction with balance integration
   const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>) => {
@@ -170,8 +169,8 @@ export const useTransactions = (projectId: string) => {
       // Calculate total cost for balance deduction
       const totalCost = (newTransaction.first || 0) + (newTransaction.second || 0);
       
-      // Deduct balance for non-admin users (only for positive amounts)
-      if (!isAdmin && totalCost > 0) {
+      // Deduct balance for positive amounts
+      if (totalCost > 0) {
         const success = await deductBalance(totalCost);
         if (!success) {
           throw new Error('Failed to deduct balance');
@@ -179,7 +178,7 @@ export const useTransactions = (projectId: string) => {
       }
 
       // Add balance for negative amounts (refunds/deductions)
-      if (!isAdmin && totalCost < 0) {
+      if (totalCost < 0) {
         const success = await addBalance(Math.abs(totalCost));
         if (!success) {
           throw new Error('Failed to add balance');
@@ -195,7 +194,7 @@ export const useTransactions = (projectId: string) => {
       console.error('Error adding transaction:', error);
       return false;
     }
-  }, [transactions, projectId, isAdmin, deductBalance, addBalance]);
+  }, [transactions, projectId, deductBalance, addBalance]);
 
   // Update transaction
   const updateTransaction = useCallback((transactionId: string, updates: Partial<Transaction>) => {

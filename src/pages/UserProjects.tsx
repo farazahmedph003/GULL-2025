@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ProjectCard from '../components/ProjectCard';
 import ThemeToggle from '../components/ThemeToggle';
-import { getAllProjects } from '../utils/storage';
+import { db } from '../services/database';
 import type { Project } from '../types';
 
 const UserProjects: React.FC = () => {
@@ -12,10 +12,24 @@ const UserProjects: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
 
   useEffect(() => {
-    const all = getAllProjects();
-    const owned = all.filter(p => p.userId === uid);
-    setProjects(owned);
-    setLoading(false);
+    const loadProjects = async () => {
+      if (!uid) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const userProjects = await db.getUserProjects(uid);
+        setProjects(userProjects);
+      } catch (error) {
+        console.error('Error loading user projects:', error);
+        setProjects([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProjects();
   }, [uid]);
 
   if (loading) {

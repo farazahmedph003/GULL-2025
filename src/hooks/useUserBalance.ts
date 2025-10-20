@@ -10,25 +10,36 @@ export interface UserBalance {
 
 export const useUserBalance = () => {
   const { user } = useAuth();
+  // Use a stable offline user id when no authenticated user is present
+  const effectiveUserId = (() => {
+    if (user?.id) return user.id as string;
+    let id = localStorage.getItem('gull_offline_user_id');
+    if (!id) {
+      id = 'offline-user';
+      localStorage.setItem('gull_offline_user_id', id);
+    }
+    return id;
+  })();
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Fetch user balance
   const fetchBalance = useCallback(async () => {
-    if (!user) {
-      setBalance(0);
-      setLoading(false);
-      return;
-    }
+    console.log('fetchBalance called for userId:', effectiveUserId);
+    
+    // Always allow fetching in offline mode using effectiveUserId
 
     setLoading(true);
     setError(null);
 
-    if (isOfflineMode() || !supabase) {
+    if (isOfflineMode() || !supabase || !user) {
       // Offline mode: use local storage
       const localBalances = JSON.parse(localStorage.getItem('gull_user_balances') || '{}');
-      setBalance(localBalances[user.id] || 1000); // Default to 1000 for offline
+      const newBalance = localBalances[effectiveUserId] ?? 1000; // Default to 1000 for offline
+      console.log('Offline balance fetched:', newBalance);
+      setBalance(newBalance);
+      // Don't dispatch event here to avoid infinite loop
       setLoading(false);
     } else {
       try {
@@ -40,18 +51,22 @@ export const useUserBalance = () => {
 
         if (fetchError) throw fetchError;
 
-        setBalance(data?.balance || 0);
+        const newBalance = data?.balance || 0;
+        setBalance(newBalance);
+        // Don't dispatch event here to avoid infinite loop
       } catch (err) {
         console.error('Error fetching balance:', err);
         setError('Failed to fetch balance');
         // Fallback to local storage
         const localBalances = JSON.parse(localStorage.getItem('gull_user_balances') || '{}');
-        setBalance(localBalances[user.id] || 0);
+        const newBalance = localBalances[effectiveUserId] || 0;
+        setBalance(newBalance);
+        // Don't dispatch event here to avoid infinite loop
       } finally {
         setLoading(false);
       }
     }
-  }, [user]);
+  }, [user, effectiveUserId]);
 
   useEffect(() => {
     fetchBalance();
@@ -68,19 +83,21 @@ export const useUserBalance = () => {
   // Deduct balance
   const deductBalance = useCallback(
     async (amount: number): Promise<boolean> => {
-      if (!user) return false;
+      // In offline mode we still allow deductions using effectiveUserId
 
       if (!hasSufficientBalance(amount)) {
         setError('Insufficient balance');
         return false;
       }
 
-      if (isOfflineMode() || !supabase) {
+      if (isOfflineMode() || !supabase || !user) {
         // Offline mode: update local storage
         const localBalances = JSON.parse(localStorage.getItem('gull_user_balances') || '{}');
-        localBalances[user.id] = (localBalances[user.id] || 0) - amount;
+        localBalances[effectiveUserId] = (localBalances[effectiveUserId] || 0) - amount;
         localStorage.setItem('gull_user_balances', JSON.stringify(localBalances));
-        setBalance(localBalances[user.id]);
+        const newBalance = localBalances[effectiveUserId];
+        setBalance(newBalance);
+        window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
         return true;
       } else {
         try {
@@ -93,6 +110,7 @@ export const useUserBalance = () => {
           if (updateError) throw updateError;
 
           setBalance(newBalance);
+          window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
           return true;
         } catch (err) {
           console.error('Error deducting balance:', err);
@@ -101,20 +119,22 @@ export const useUserBalance = () => {
         }
       }
     },
-    [user, balance, hasSufficientBalance]
+    [user, balance, hasSufficientBalance, effectiveUserId]
   );
 
   // Add balance (for admin top-ups)
   const addBalance = useCallback(
     async (amount: number): Promise<boolean> => {
-      if (!user) return false;
+      // In offline mode we still allow top-ups using effectiveUserId
 
-      if (isOfflineMode() || !supabase) {
+      if (isOfflineMode() || !supabase || !user) {
         // Offline mode: update local storage
         const localBalances = JSON.parse(localStorage.getItem('gull_user_balances') || '{}');
-        localBalances[user.id] = (localBalances[user.id] || 0) + amount;
+        localBalances[effectiveUserId] = (localBalances[effectiveUserId] || 0) + amount;
         localStorage.setItem('gull_user_balances', JSON.stringify(localBalances));
-        setBalance(localBalances[user.id]);
+        const newBalance = localBalances[effectiveUserId];
+        setBalance(newBalance);
+        window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
         return true;
       } else {
         try {
@@ -127,6 +147,7 @@ export const useUserBalance = () => {
           if (updateError) throw updateError;
 
           setBalance(newBalance);
+          window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
           return true;
         } catch (err) {
           console.error('Error adding balance:', err);
@@ -135,8 +156,24 @@ export const useUserBalance = () => {
         }
       }
     },
-    [user, balance]
+    [user, balance, effectiveUserId]
   );
+
+  // Listen for global balance updates
+  useEffect(() => {
+    const handler = (event: any) => {
+      // Check if this balance update is for the current user
+      const eventUserId = event.detail?.userId;
+      
+      // If no userId in event or it matches current user, refresh
+      if (!eventUserId || eventUserId === effectiveUserId) {
+        fetchBalance();
+      }
+    };
+    
+    window.addEventListener('user-balance-updated', handler as any);
+    return () => window.removeEventListener('user-balance-updated', handler as any);
+  }, [fetchBalance, effectiveUserId]);
 
   return {
     balance,

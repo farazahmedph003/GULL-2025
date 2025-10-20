@@ -70,11 +70,35 @@ export class DatabaseService {
       id: data.id,
       name: data.name,
       date: data.created_at,
-      entryTypes: ['akra', 'ring'] as ('akra' | 'ring')[],
+      entryTypes: data.entry_types || ['akra', 'ring'],
       createdAt: data.created_at,
       updatedAt: data.updated_at,
       userId: data.user_id,
     };
+  }
+
+  async getUserProjects(userId: string): Promise<Project[]> {
+    if (!this.isOnline() || !supabase) {
+      throw new Error('Database not available in offline mode');
+    }
+
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return data.map(project => ({
+      id: project.id,
+      name: project.name,
+      date: project.created_at,
+      entryTypes: project.entry_types || ['akra', 'ring'],
+      createdAt: project.created_at,
+      updatedAt: project.updated_at,
+      userId: project.user_id,
+    }));
   }
 
   async createProject(userId: string, project: Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'userId'>): Promise<Project> {
@@ -88,6 +112,7 @@ export class DatabaseService {
         user_id: userId,
         name: project.name,
         description: null,
+        entry_types: project.entryTypes,
       })
       .select()
       .single();
@@ -98,7 +123,7 @@ export class DatabaseService {
       id: data.id,
       name: data.name,
       date: data.created_at,
-      entryTypes: project.entryTypes,
+      entryTypes: data.entry_types || ['akra', 'ring'],
       createdAt: data.created_at,
       updatedAt: data.updated_at,
       userId: data.user_id,

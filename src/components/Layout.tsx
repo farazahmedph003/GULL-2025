@@ -11,19 +11,19 @@ const Layout: React.FC<LayoutProps> = ({ children, header, footer }) => {
     <div className="min-h-screen flex flex-col bg-background-lightSecondary dark:bg-gray-900">
       {header && (
         <header className="bg-gray-800 shadow-sm border-b border-gray-700">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 max-w-[100vw] sm:max-w-[720px] md:max-w-[960px] lg:max-w-[1120px] xl:max-w-[1400px]">
             {header}
           </div>
         </header>
       )}
       
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 max-w-[100vw] sm:max-w-[720px] md:max-w-[960px] lg:max-w-[1120px] xl:max-w-[1400px]">
         {children}
       </main>
       
       {footer && (
         <footer className="bg-gray-800 border-t border-gray-700">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 max-w-[100vw] sm:max-w-[720px] md:max-w-[960px] lg:max-w-[1120px] xl:max-w-[1400px]">
             {footer}
           </div>
         </footer>

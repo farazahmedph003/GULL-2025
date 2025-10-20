@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
 import TabNavigation from '../components/TabNavigation';
 import { useTransactions } from '../hooks/useTransactions';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
-import { getProject } from '../utils/storage';
+import { db } from '../services/database';
 import type { TabItem, EntryType, Transaction } from '../types';
 
 type ComparisonType = '>=' | '>' | '<=' | '<' | '==';
@@ -34,8 +34,27 @@ const FilterCalculate: React.FC = () => {
   // Results
   const [calculatedResults, setCalculatedResults] = useState<CalculationResult[]>([]);
   const [showSaveButton, setShowSaveButton] = useState(false);
+  const [project, setProject] = useState<any>(null);
+  const [projectLoading, setProjectLoading] = useState(true);
   
-  const project = getProject(id || '');
+  // Load project from database
+  useEffect(() => {
+    const loadProject = async () => {
+      if (!id) return;
+      
+      try {
+        const projectData = await db.getProject(id);
+        setProject(projectData);
+      } catch (error) {
+        console.error('Error loading project:', error);
+      } finally {
+        setProjectLoading(false);
+      }
+    };
+
+    loadProject();
+  }, [id]);
+  
   const { transactions, addTransaction } = useTransactions(id || '');
 
   // Group transactions
@@ -163,7 +182,7 @@ const FilterCalculate: React.FC = () => {
     { id: 'history', label: 'History', path: `/project/${id}/history` },
   ];
 
-  if (!project) {
+  if (!project || projectLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-gray-500">Project not found</p>
