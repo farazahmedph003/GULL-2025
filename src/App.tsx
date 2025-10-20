@@ -15,6 +15,8 @@ import ProjectSelection from './pages/ProjectSelection';
 import Dashboard from './pages/Dashboard';
 import AkraPage from './pages/AkraPage';
 import RingPage from './pages/RingPage';
+import OpenPage from './pages/OpenPage';
+import PacketPage from './pages/PacketPage';
 import AdvancedFilter from './pages/AdvancedFilter';
 import FilterCalculate from './pages/FilterCalculate';
 import HistoryPage from './pages/HistoryPage';
@@ -106,6 +108,22 @@ const AppWithNotifications: React.FC = () => {
                 element={
                   <ProtectedRoute>
                     <RingPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/project/:id/open"
+                element={
+                  <ProtectedRoute>
+                    <OpenPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/project/:id/packet"
+                element={
+                  <ProtectedRoute>
+                    <PacketPage />
                   </ProtectedRoute>
                 }
               />

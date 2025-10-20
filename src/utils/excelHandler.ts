@@ -154,7 +154,7 @@ export interface ImportResult {
 export const importTransactionsFromExcel = (
   file: File,
   projectId: string,
-  entryType: 'akra' | 'ring'
+  entryType: 'open' | 'akra' | 'ring' | 'packet'
 ): Promise<ImportResult> => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -209,7 +209,24 @@ export const importTransactionsFromExcel = (
             }
 
             // Validate number format
-            const expectedLength = entryType === 'akra' ? 2 : 3;
+            let expectedLength: number;
+            switch (entryType) {
+              case 'open':
+                expectedLength = 1;
+                break;
+              case 'akra':
+                expectedLength = 2;
+                break;
+              case 'ring':
+                expectedLength = 3;
+                break;
+              case 'packet':
+                expectedLength = 4;
+                break;
+              default:
+                expectedLength = 2;
+            }
+            
             if (number.length !== expectedLength) {
               errors.push(
                 `Row ${rowNum}: Invalid number format. Expected ${expectedLength} digits, got "${number}"`

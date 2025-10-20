@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import type { FilterOperator, FilterResult, NumberSummary } from '../types';
+import type { FilterOperator, FilterResult, NumberSummary, EntryType } from '../types';
 
 interface FilterTabProps {
   summaries: Map<string, NumberSummary>;
-  entryType: 'akra' | 'ring';
+  entryType: EntryType;
   projectId: string;
   onSaveResults: (deductions: Array<{ number: string; firstAmount: number; secondAmount: number }>) => Promise<void>;
 }

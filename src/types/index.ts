@@ -1,6 +1,6 @@
 // Core data types for GULL Accounting Management System
 
-export type EntryType = 'akra' | 'ring';
+export type EntryType = 'akra' | 'ring' | 'open' | 'packet';
 export type AmountType = 'first' | 'second';
 export type FilterOperator = '>=' | '>' | '<=' | '<' | '==';
 export type ActionType = 'add' | 'edit' | 'delete' | 'filter' | 'import' | 'batch';
@@ -21,7 +21,7 @@ export interface Project {
 export interface Transaction {
   id: string;
   projectId: string;
-  number: string; // '00'-'99' for Akra, '000'-'999' for Ring
+  number: string; // '0'-'9' for Open, '00'-'99' for Akra, '000'-'999' for Ring, '0000'-'9999' for Packet
   entryType: EntryType;
   first: number;
   second: number;

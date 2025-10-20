@@ -212,6 +212,12 @@ export const validate = {
     }
   },
 
+  openNumber: (value: string): void => {
+    if (!/^\d{1}$/.test(value)) {
+      throw new ValidationError('Open number must be exactly 1 digit');
+    }
+  },
+
   akraNumber: (value: string): void => {
     if (!/^\d{2}$/.test(value)) {
       throw new ValidationError('Akra number must be exactly 2 digits');
@@ -221,6 +227,12 @@ export const validate = {
   ringNumber: (value: string): void => {
     if (!/^\d{3}$/.test(value)) {
       throw new ValidationError('Ring number must be exactly 3 digits');
+    }
+  },
+
+  packetNumber: (value: string): void => {
+    if (!/^\d{4}$/.test(value)) {
+      throw new ValidationError('Packet number must be exactly 4 digits');
     }
   },
 };

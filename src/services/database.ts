@@ -1,5 +1,5 @@
 import { supabase, isOfflineMode } from '../lib/supabase';
-import type { Project, Transaction, FilterPreset, ActionHistory } from '../types';
+import type { Project, Transaction, FilterPreset, ActionHistory, EntryType } from '../types';
 
 // ============================================
 // DATABASE SERVICE
@@ -43,7 +43,7 @@ export class DatabaseService {
       id: row.id,
       name: row.name,
       date: row.created_at,
-      entryTypes: ['akra', 'ring'] as ('akra' | 'ring')[],
+      entryTypes: (row.entry_types as EntryType[]) || ['akra', 'ring'],
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       userId: row.user_id,
@@ -70,7 +70,7 @@ export class DatabaseService {
       id: data.id,
       name: data.name,
       date: data.created_at,
-      entryTypes: data.entry_types || ['akra', 'ring'],
+      entryTypes: (data.entry_types as EntryType[]) || ['akra', 'ring'],
       createdAt: data.created_at,
       updatedAt: data.updated_at,
       userId: data.user_id,
@@ -94,7 +94,7 @@ export class DatabaseService {
       id: project.id,
       name: project.name,
       date: project.created_at,
-      entryTypes: project.entry_types || ['akra', 'ring'],
+      entryTypes: (project.entry_types as EntryType[]) || ['akra', 'ring'],
       createdAt: project.created_at,
       updatedAt: project.updated_at,
       userId: project.user_id,
@@ -104,6 +104,20 @@ export class DatabaseService {
   async createProject(userId: string, project: Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'userId'>): Promise<Project> {
     if (!this.isOnline() || !supabase) {
       throw new Error('Database not available in offline mode');
+    }
+
+    console.log('Creating project with data:', {
+      user_id: userId,
+      name: project.name,
+      entry_types: project.entryTypes
+    });
+
+    // Validate entry types before sending to database
+    const validEntryTypes = ['open', 'akra', 'ring', 'packet'];
+    const invalidEntryTypes = project.entryTypes.filter(type => !validEntryTypes.includes(type));
+    
+    if (invalidEntryTypes.length > 0) {
+      throw new Error(`Invalid entry types: ${invalidEntryTypes.join(', ')}. Valid types are: ${validEntryTypes.join(', ')}`);
     }
 
     const { data, error } = await supabase
@@ -117,13 +131,22 @@ export class DatabaseService {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Database error creating project:', error);
+      
+      // Provide more specific error message for entry type issues
+      if (error.message && (error.message.includes('entry_types') || error.message.includes('check constraint') || error.message.includes('projects_entry_types_check'))) {
+        throw new Error('Database constraint error: The selected entry types (Open, Packet) are not yet supported by the database schema. Please select only Akra and/or Ring entry types for now.');
+      }
+      
+      throw error;
+    }
 
     return {
       id: data.id,
       name: data.name,
       date: data.created_at,
-      entryTypes: data.entry_types || ['akra', 'ring'],
+      entryTypes: (data.entry_types as EntryType[]) || ['akra', 'ring'],
       createdAt: data.created_at,
       updatedAt: data.updated_at,
       userId: data.user_id,
@@ -179,7 +202,7 @@ export class DatabaseService {
       id: row.id,
       projectId: row.project_id,
       number: row.number,
-      entryType: row.entry_type as 'akra' | 'ring',
+      entryType: row.entry_type as EntryType,
       first: row.first_amount,
       second: row.second_amount,
       notes: row.notes || undefined,
@@ -319,7 +342,7 @@ export class DatabaseService {
   // FILTER PRESETS
   // ============================================
 
-  async getFilterPresets(userId: string, entryType: 'akra' | 'ring'): Promise<FilterPreset[]> {
+  async getFilterPresets(userId: string, entryType: EntryType): Promise<FilterPreset[]> {
     if (!this.isOnline() || !supabase) {
       throw new Error('Database not available in offline mode');
     }
@@ -336,7 +359,7 @@ export class DatabaseService {
     return data.map(row => ({
       id: row.id,
       name: row.name,
-      entryType: row.entry_type as 'akra' | 'ring',
+      entryType: row.entry_type as EntryType,
       firstQuery: row.first_query || undefined,
       secondQuery: row.second_query || undefined,
       createdAt: row.created_at,

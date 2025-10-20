@@ -68,21 +68,21 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
       return [
         {
           id: 'projects',
-          label: '📁 My Projects',
+          label: 'My Projects',
           path: '/',
           icon: '📁',
           adminOnly: false,
         },
         {
           id: 'admin',
-          label: '👑 Admin Panel',
+          label: 'Admin Panel',
           path: '/admin',
           icon: '👑',
           adminOnly: true,
         },
         {
           id: 'profile',
-          label: '👤 Profile',
+          label: 'Profile',
           path: '/profile',
           icon: '👤',
           adminOnly: false,
@@ -93,31 +93,55 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
     const items = [
       {
         id: 'dashboard',
-        label: '📊 Dashboard',
+        label: 'Dashboard',
         path: `/project/${projectId}`,
         icon: '📊',
         adminOnly: false,
       },
     ];
 
-    // Add Akra menu item only if project supports akra entries
+    // Add menu items in the correct sequence: Open → Akra → Ring → Packet
+    
+    // Add Open menu item first
+    if (project?.entryTypes?.includes('open')) {
+      items.push({
+        id: 'open',
+        label: 'Open (0)',
+        path: `/project/${projectId}/open`,
+        icon: '🔓',
+        adminOnly: false,
+      });
+    }
+
+    // Add Akra menu item
     if (project?.entryTypes?.includes('akra')) {
       items.push({
         id: 'akra',
-        label: '🔢 Akra (00)',
+        label: 'Akra (00)',
         path: `/project/${projectId}/akra`,
         icon: '🔢',
         adminOnly: false,
       });
     }
 
-    // Add Ring menu item only if project supports ring entries
+    // Add Ring menu item
     if (project?.entryTypes?.includes('ring')) {
       items.push({
         id: 'ring',
-        label: '🎯 Ring (000)',
+        label: 'Ring (000)',
         path: `/project/${projectId}/ring`,
         icon: '🎯',
+        adminOnly: false,
+      });
+    }
+
+    // Add Packet menu item last
+    if (project?.entryTypes?.includes('packet')) {
+      items.push({
+        id: 'packet',
+        label: 'Packet (0000)',
+        path: `/project/${projectId}/packet`,
+        icon: '📦',
         adminOnly: false,
       });
     }
@@ -126,14 +150,14 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
     items.push(
       {
         id: 'advanced-filter',
-        label: '🔍 Advanced Filter',
+        label: 'Advanced Filter',
         path: `/project/${projectId}/advanced-filter`,
         icon: '🔍',
         adminOnly: false,
       },
       {
         id: 'history',
-        label: '📚 History',
+        label: 'History',
         path: `/project/${projectId}/history`,
         icon: '📚',
         adminOnly: false,
@@ -148,21 +172,21 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
       },
       {
         id: 'projects',
-        label: '📁 My Projects',
+        label: 'My Projects',
         path: '/',
         icon: '📁',
         adminOnly: false,
       },
       {
         id: 'admin',
-        label: '👑 Admin Panel',
+        label: 'Admin Panel',
         path: '/admin',
         icon: '👑',
         adminOnly: true,
       },
       {
         id: 'profile',
-        label: '👤 Profile',
+        label: 'Profile',
         path: '/profile',
         icon: '👤',
         adminOnly: false,

@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import NumberBox from './NumberBox';
+import PacketGrid from './PacketGrid';
 import type { NumberSummary, EntryType } from '../types';
 import { getAllPossibleNumbers, getHighestLowestNumbers } from '../utils/transactionHelpers';
 
@@ -69,10 +70,35 @@ const NumberGrid: React.FC<NumberGridProps> = ({
     }
   };
 
-  // Fixed grid columns - exactly 8 cards per row for Akra
-  const gridCols = entryType === 'akra' 
-    ? 'grid-cols-8'
-    : 'grid-cols-8';
+  // Grid columns based on entry type
+  const gridCols = (() => {
+    switch (entryType) {
+      case 'open':
+        return 'grid-cols-5'; // 5 columns for 0-9 as requested
+      case 'akra':
+        return 'grid-cols-8'; // 8 columns for 00-99
+      case 'ring':
+        return 'grid-cols-8'; // 8 columns for 000-999
+      case 'packet':
+        return 'grid-cols-5'; // 5 columns for 0000-9999 as requested (packet will use special display)
+      default:
+        return 'grid-cols-8';
+    }
+  })();
+
+  // For packet entry type, use special PacketGrid
+  if (entryType === 'packet') {
+    return (
+      <PacketGrid
+        summaries={summaries}
+        onNumberClick={onNumberClick}
+        searchQuery={searchQuery}
+        selectedNumbers={selectedNumbers}
+        onSelectionChange={onSelectionChange}
+        selectionMode={selectionMode}
+      />
+    );
+  }
 
   return (
     <div className="space-y-4 w-full">

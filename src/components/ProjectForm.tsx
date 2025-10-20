@@ -156,7 +156,29 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, onCancel }) => {
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
               Entry Types <span className="text-red-500">*</span>
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <label className={`flex items-center p-4 border rounded-xl cursor-pointer transition-all duration-200 ${
+                entryTypes.includes('open') 
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' 
+                  : 'border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700/50 hover:border-blue-300 dark:hover:border-blue-500'
+              }`}>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={entryTypes.includes('open')}
+                    onChange={() => handleEntryTypeToggle('open')}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                  <div className="ml-3">
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-3 h-3 rounded-full ${entryTypes.includes('open') ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
+                      <span className="font-medium text-gray-900 dark:text-white">Open</span>
+                    </div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">1-digit: 0-9</p>
+                  </div>
+                </div>
+              </label>
+
               <label className={`flex items-center p-4 border rounded-xl cursor-pointer transition-all duration-200 ${
                 entryTypes.includes('akra') 
                   ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' 
@@ -197,6 +219,28 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, onCancel }) => {
                       <span className="font-medium text-gray-900 dark:text-white">Ring</span>
                     </div>
                     <p className="text-sm text-gray-500 dark:text-gray-400">3-digit: 000-999</p>
+                  </div>
+                </div>
+              </label>
+
+              <label className={`flex items-center p-4 border rounded-xl cursor-pointer transition-all duration-200 ${
+                entryTypes.includes('packet') 
+                  ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20' 
+                  : 'border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700/50 hover:border-orange-300 dark:hover:border-orange-500'
+              }`}>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={entryTypes.includes('packet')}
+                    onChange={() => handleEntryTypeToggle('packet')}
+                    className="w-5 h-5 text-orange-600 border-gray-300 rounded focus:ring-orange-500 focus:ring-2"
+                  />
+                  <div className="ml-3">
+                    <div className="flex items-center space-x-2">
+                      <div className={`w-3 h-3 rounded-full ${entryTypes.includes('packet') ? 'bg-orange-500' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
+                      <span className="font-medium text-gray-900 dark:text-white">Packet</span>
+                    </div>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">4-digit: 0000-9999</p>
                   </div>
                 </div>
               </label>

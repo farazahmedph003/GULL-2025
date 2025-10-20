@@ -35,9 +35,24 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
       const invalidNumbers = numberList.filter(n => !isValidNumber(n, entryType));
       
       if (invalidNumbers.length > 0) {
-        newErrors.numbers = `Invalid numbers: ${invalidNumbers.join(', ')}. Expected ${
-          entryType === 'akra' ? '2-digit (00-99)' : '3-digit (000-999)'
-        } format.`;
+        let expectedFormat: string;
+        switch (entryType) {
+          case 'open':
+            expectedFormat = '1-digit (0-9)';
+            break;
+          case 'akra':
+            expectedFormat = '2-digit (00-99)';
+            break;
+          case 'ring':
+            expectedFormat = '3-digit (000-999)';
+            break;
+          case 'packet':
+            expectedFormat = '4-digit (0000-9999)';
+            break;
+          default:
+            expectedFormat = 'valid format';
+        }
+        newErrors.numbers = `Invalid numbers: ${invalidNumbers.join(', ')}. Expected ${expectedFormat} format.`;
       }
     }
 

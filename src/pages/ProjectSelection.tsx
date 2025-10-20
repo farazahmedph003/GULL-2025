@@ -66,7 +66,25 @@ const ProjectSelection: React.FC = () => {
       
     } catch (error) {
       console.error('Error creating project:', error);
-      alert('Failed to create project. Please check your internet connection and try again.');
+      
+      // Provide more specific error messages based on the error type
+      let errorMessage = 'Failed to create project. ';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('Database not available')) {
+          errorMessage += 'Database connection issue. Please check your internet connection and try again.';
+        } else if (error.message.includes('entry_types') || error.message.includes('constraint')) {
+          errorMessage += 'The selected entry types (Open, Packet) are not supported yet by the database. Please select only Akra and/or Ring for now, or contact support for assistance.';
+        } else if (error.message.includes('duplicate') || error.message.includes('unique')) {
+          errorMessage += 'A project with this name already exists. Please choose a different name.';
+        } else {
+          errorMessage += `Error: ${error.message}`;
+        }
+      } else {
+        errorMessage += 'Please check your internet connection and try again.';
+      }
+      
+      alert(errorMessage);
     }
   };
 

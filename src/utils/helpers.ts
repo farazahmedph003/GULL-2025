@@ -29,16 +29,39 @@ export const formatTimestamp = (timestamp: string): string => {
 
 // Validate number format
 export const isValidNumber = (value: string, entryType: EntryType): boolean => {
-  if (entryType === 'akra') {
-    return /^\d{2}$/.test(value) && parseInt(value) >= 0 && parseInt(value) <= 99;
-  } else {
-    return /^\d{3}$/.test(value) && parseInt(value) >= 0 && parseInt(value) <= 999;
+  switch (entryType) {
+    case 'open':
+      return /^\d{1}$/.test(value) && parseInt(value) >= 0 && parseInt(value) <= 9;
+    case 'akra':
+      return /^\d{2}$/.test(value) && parseInt(value) >= 0 && parseInt(value) <= 99;
+    case 'ring':
+      return /^\d{3}$/.test(value) && parseInt(value) >= 0 && parseInt(value) <= 999;
+    case 'packet':
+      return /^\d{4}$/.test(value) && parseInt(value) >= 0 && parseInt(value) <= 9999;
+    default:
+      return false;
   }
 };
 
 // Format number with leading zeros
 export const formatNumber = (value: number, entryType: EntryType): string => {
-  const length = entryType === 'akra' ? 2 : 3;
+  let length: number;
+  switch (entryType) {
+    case 'open':
+      length = 1;
+      break;
+    case 'akra':
+      length = 2;
+      break;
+    case 'ring':
+      length = 3;
+      break;
+    case 'packet':
+      length = 4;
+      break;
+    default:
+      length = 2;
+  }
   return value.toString().padStart(length, '0');
 };
 

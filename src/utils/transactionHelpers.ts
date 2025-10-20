@@ -36,8 +36,29 @@ export const groupTransactionsByNumber = (
 // Get all possible numbers for entry type
 export const getAllPossibleNumbers = (entryType: EntryType): string[] => {
   const numbers: string[] = [];
-  const max = entryType === 'akra' ? 100 : 1000;
-  const length = entryType === 'akra' ? 2 : 3;
+  let max: number;
+  let length: number;
+
+  switch (entryType) {
+    case 'open':
+      max = 10;
+      length = 1;
+      break;
+    case 'akra':
+      max = 100;
+      length = 2;
+      break;
+    case 'ring':
+      max = 1000;
+      length = 3;
+      break;
+    case 'packet':
+      max = 10000;
+      length = 4;
+      break;
+    default:
+      return [];
+  }
 
   for (let i = 0; i < max; i++) {
     numbers.push(i.toString().padStart(length, '0'));

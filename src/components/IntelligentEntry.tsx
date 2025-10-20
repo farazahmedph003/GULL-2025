@@ -38,6 +38,24 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     const parseErrors: string[] = [];
     const lines = text.split('\n').filter(line => line.trim());
 
+    // Get the digit pattern based on entry type
+    const getDigitPattern = () => {
+      switch (entryType) {
+        case 'open':
+          return '\\d{1}';
+        case 'akra':
+          return '\\d{2}';
+        case 'ring':
+          return '\\d{3}';
+        case 'packet':
+          return '\\d{4}';
+        default:
+          return '\\d{2,3}';
+      }
+    };
+
+    const digitPattern = getDigitPattern();
+
     lines.forEach((line, index) => {
       const lineNum = index + 1;
       
@@ -51,17 +69,20 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       const normalized = line.trim().replace(/\s+/g, ' ');
       
       // Try pattern with separators (: or -)
-      let match = normalized.match(/^(\d{2,3})[\s:-]+(\d+(?:\.\d+)?)[\s:-]+(\d+(?:\.\d+)?)$/);
+      const separatorRegex = new RegExp(`^(\\d{1,4})[\\s:-]+(\\d+(?:\\.\\d+)?)[\\s:-]+(\\d+(?:\\.\\d+)?)$`);
+      let match = normalized.match(separatorRegex);
       
       if (!match) {
         // Try pattern with labels
-        match = normalized.match(/^(\d{2,3})\s+(?:F|first):?(\d+(?:\.\d+)?)\s+(?:S|second):?(\d+(?:\.\d+)?)$/i);
+        const labelRegex = new RegExp(`^(\\d{1,4})\\s+(?:F|first):?(\\d+(?:\\.\\d+)?)\\s+(?:S|second):?(\\d+(?:\\.\\d+)?)$`, 'i');
+        match = normalized.match(labelRegex);
       }
       
       if (!match) {
         // Try simple space-separated pattern
         const parts = normalized.split(/\s+/);
-        if (parts.length === 3 && /^\d{2,3}$/.test(parts[0]) && !isNaN(Number(parts[1])) && !isNaN(Number(parts[2]))) {
+        const numberRegex = new RegExp(`^${digitPattern}$`);
+        if (parts.length === 3 && numberRegex.test(parts[0]) && !isNaN(Number(parts[1])) && !isNaN(Number(parts[2]))) {
           match = [normalized, parts[0], parts[1], parts[2]];
         }
       }
