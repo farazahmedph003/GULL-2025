@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { isAdminEmail } from '../config/admin';
 import type { UserAccount, UserReport, AdminStats, BalanceTransaction } from '../types/admin';
-import { supabase, isOfflineMode } from '../lib/supabase';
+import { supabase, supabaseAdmin, isOfflineMode } from '../lib/supabase';
 import { playMoneyDepositSound } from '../utils/audioFeedback';
 
 export const useAdmin = () => {
@@ -101,12 +101,27 @@ export const useAdminData = () => {
                 console.log('Admin role updated successfully');
                 // Update the local profile data to reflect the change
                 currentUserProfile.role = 'admin';
+                // Re-fetch profiles to ensure the change is reflected
+                const { data: updatedProfiles } = await supabase
+                  .from('profiles')
+                  .select('user_id, email, display_name, role, balance, is_online, last_login_at, created_at, updated_at')
+                  .order('created_at', { ascending: false });
+                profiles = updatedProfiles;
+                currentUserProfile = profiles?.find(p => p.user_id === currentUser?.id);
               }
             } catch (error) {
               console.warn('Failed to update admin role:', error);
             }
           }
         }
+        
+        // Verify admin role is properly set
+        console.log('🔍 Final admin role verification:', {
+          currentUserEmail: currentUser?.email,
+          currentUserProfile: currentUserProfile,
+          isAdminRole: currentUserProfile?.role === 'admin',
+          adminEmails: ['gmpfaraz@gmail.com']
+        });
 
         // Fetch all projects to get counts per user
         let projects: any[] = [];
@@ -130,12 +145,40 @@ export const useAdminData = () => {
           .limit(1);
         console.log('Test projects query:', { testProjects, testError });
 
-          // Try admin query first, but always fallback to per-user query due to RLS issues
-          const { data: projectsData, error: projectsQueryError } = await supabase
-            .from('projects')
-            .select('id, user_id, name, created_at');
+          // Try admin query first using service role client (bypasses RLS)
+          let projectsData: any[] = [];
+          let projectsQueryError: any = null;
+          
+          if (supabaseAdmin) {
+            console.log('🔧 Using service role client for admin query (bypasses RLS)');
+            try {
+              const { data, error } = await supabaseAdmin
+                .from('projects')
+                .select('id, user_id, name, created_at');
+              
+              projectsData = data || [];
+              projectsQueryError = error;
+              console.log('🔧 Service role admin query result:', { 
+                projectsCount: projectsData?.length || 0,
+                projects: projectsData, 
+                error: projectsQueryError
+              });
+            } catch (error) {
+              console.warn('Service role admin query failed:', error);
+              projectsQueryError = error;
+            }
+          } else {
+            console.log('⚠️ Service role client not available, falling back to regular client');
+            // Fallback to regular client
+            const { data, error } = await supabase
+              .from('projects')
+              .select('id, user_id, name, created_at');
 
-          projects = projectsData || [];
+            projectsData = data || [];
+            projectsQueryError = error;
+          }
+
+          projects = projectsData;
           projectsError = projectsQueryError;
           
           console.log('Admin data - Projects fetched:', { 
@@ -188,17 +231,28 @@ export const useAdminData = () => {
           projects = [];
         }
 
-        // Fetch all transactions to get entry counts and totals
+        // Fetch all transactions to get entry counts and totals using service role
         let transactions: any[] = [];
         let transactionsError: any = null;
         
         try {
-          const { data: transactionsData, error: transactionsQueryError } = await supabase
-            .from('transactions')
-            .select('id, project_id, first_amount, second_amount');
-          
-          transactions = transactionsData || [];
-          transactionsError = transactionsQueryError;
+          if (supabaseAdmin) {
+            console.log('🔧 Using service role client for transactions query');
+            const { data: transactionsData, error: transactionsQueryError } = await supabaseAdmin
+              .from('transactions')
+              .select('id, project_id, first_amount, second_amount');
+            
+            transactions = transactionsData || [];
+            transactionsError = transactionsQueryError;
+          } else {
+            console.log('⚠️ Service role client not available for transactions, using regular client');
+            const { data: transactionsData, error: transactionsQueryError } = await supabase
+              .from('transactions')
+              .select('id, project_id, first_amount, second_amount');
+            
+            transactions = transactionsData || [];
+            transactionsError = transactionsQueryError;
+          }
           
           console.log('Admin data - Transactions fetched:', { 
             transactionsCount: transactions?.length || 0,

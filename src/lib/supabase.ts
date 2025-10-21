@@ -2,11 +2,13 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_KEY || '';
 // Force online mode - only enable offline mode if explicitly set to true
 const offlineMode = import.meta.env.VITE_ENABLE_OFFLINE_MODE === 'true';
 
 // Create Supabase client with better error handling and connection testing
 let supabase: any = null;
+let supabaseAdmin: any = null;
 
 try {
   // Only create client if we have the required configuration
@@ -27,25 +29,49 @@ try {
       },
     });
     
+    // Create admin client with service role key (bypasses RLS)
+    if (supabaseServiceKey) {
+      supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+        db: {
+          schema: 'public',
+        },
+        global: {
+          headers: {
+            'X-Client-Info': 'gull-accounting-system-admin',
+          },
+        },
+      });
+      console.log('Supabase admin client initialized with service role');
+    } else {
+      console.warn('Supabase service key not provided - admin operations may be limited');
+    }
+    
     // Test the connection
     console.log('Supabase client initialized:', {
       url: supabaseUrl,
       hasKey: !!supabaseAnonKey,
+      hasServiceKey: !!supabaseServiceKey,
       offlineMode,
     });
   } else {
     console.warn('Supabase configuration missing:', {
       hasUrl: !!supabaseUrl,
       hasKey: !!supabaseAnonKey,
+      hasServiceKey: !!supabaseServiceKey,
       offlineMode,
     });
   }
 } catch (error) {
   console.error('Failed to initialize Supabase client:', error);
   supabase = null;
+  supabaseAdmin = null;
 }
 
-export { supabase };
+export { supabase, supabaseAdmin };
 
 // Check if Supabase is configured and working
 export const isSupabaseConfigured = (): boolean => {
