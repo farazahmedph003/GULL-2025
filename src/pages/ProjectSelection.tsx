@@ -10,10 +10,12 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import ProfileDropdown from '../components/ProfileDropdown';
 import type { Project } from '../types';
 import { db } from '../services/database';
+import { isSupabaseConfigured, isOfflineMode } from '../lib/supabase';
 
 const ProjectSelection: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user ? isAdminEmail(user.email) : false;
@@ -29,6 +31,7 @@ const ProjectSelection: React.FC = () => {
         return;
       }
 
+      setError(null);
       try {
         const dbProjects = await db.getUserProjects(user.id);
         setProjects(dbProjects);
@@ -36,6 +39,15 @@ const ProjectSelection: React.FC = () => {
       } catch (error) {
         console.error('Error loading projects from database:', error);
         setProjects([]);
+        let errorMessage = 'Failed to load projects.';
+        if (isOfflineMode()) {
+          errorMessage = 'Database is in offline mode. Please check your connection settings.';
+        } else if (!isSupabaseConfigured()) {
+          errorMessage = 'Database is not properly configured. Please check your environment settings.';
+        } else if (error instanceof Error) {
+          errorMessage = error.message;
+        }
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
@@ -159,6 +171,21 @@ const ProjectSelection: React.FC = () => {
         <div className="mb-8">
           <ProjectForm onSubmit={handleCreateProject} />
         </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="mb-8 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 text-red-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              <div>
+                <h3 className="text-sm font-medium text-red-800 dark:text-red-200">Failed to load projects</h3>
+                <p className="text-sm text-red-600 dark:text-red-300 mt-1">{error}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Projects Grid */}
         {projects.length > 0 ? (

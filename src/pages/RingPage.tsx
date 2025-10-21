@@ -8,9 +8,11 @@ import FilterTab from '../components/FilterTab';
 import TransactionModal from '../components/TransactionModal';
 import LoadingSpinner from '../components/LoadingSpinner';
 import PremiumStats from '../components/PremiumStats';
+import StatisticsGrid from '../components/StatisticsGrid';
 import { useTransactions } from '../hooks/useTransactions';
 import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
+import { useNotifications } from '../contexts/NotificationContext';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
 import { db } from '../services/database';
 import { formatDate } from '../utils/helpers';
@@ -65,6 +67,7 @@ const RingPage: React.FC = () => {
   } = useTransactions(id || '');
   
   const { refresh: refreshBalance } = useUserBalance();
+  const { showSuccess, showError } = useNotifications();
   
   // Comprehensive refresh function
   const refresh = () => {
@@ -131,62 +134,132 @@ const RingPage: React.FC = () => {
     [transactions]
   );
 
+  // Calculate Ring-specific statistics
+  const ringStats = useMemo(() => {
+    const ringTransactions = transactions.filter(t => t.entryType === 'ring');
+    const firstTotal = ringTransactions.reduce((sum, t) => sum + t.first, 0);
+    const secondTotal = ringTransactions.reduce((sum, t) => sum + t.second, 0);
+    
+    // Calculate unique numbers properly handling bulk entries
+    const uniqueNumbersSet = new Set<string>();
+    ringTransactions.forEach(t => {
+      const isBulkEntry = t.number.includes(',') || t.number.includes(' ');
+      if (isBulkEntry) {
+        const numbers = t.number.split(/[,\s]+/).filter(n => n.trim().length > 0);
+        numbers.forEach(num => uniqueNumbersSet.add(num.trim()));
+      } else {
+        uniqueNumbersSet.add(t.number);
+      }
+    });
+
+    return {
+      totalEntries: ringTransactions.length,
+      akraEntries: 0, // Not relevant for Ring page
+      ringEntries: ringTransactions.length,
+      firstTotal,
+      secondTotal,
+      uniqueNumbers: uniqueNumbersSet.size,
+    };
+  }, [transactions]);
+
   const handleNumberClick = (number: string) => {
     setModalNumber(number);
   };
 
   const handleDelete = async (transactionId: string) => {
+    const transaction = transactions.find(t => t.id === transactionId);
     if (await deleteTransaction(transactionId)) {
       addAction('delete', `Deleted transaction`, []);
       refresh();
+      await showSuccess(
+        'Transaction Deleted',
+        `Successfully deleted ${transaction?.entryType || 'transaction'} entry for number ${transaction?.number || 'unknown'}`,
+        { duration: 3000 }
+      );
+    } else {
+      await showError(
+        'Delete Failed',
+        'Failed to delete transaction. Please try again.',
+        { duration: 5000 }
+      );
     }
   };
 
   const handleSaveFilterResults = async (deductions: Array<{ number: string; firstAmount: number; secondAmount: number }>) => {
-    // Store current transactions count to find new ones after adding
-    const beforeCount = transactions.length;
-    const affectedNumbers: string[] = [];
-    const deductionTransactions: Omit<Transaction, 'id'>[] = [];
-    
-    for (const deduction of deductions) {
-      const transactionData: Omit<Transaction, 'id'> = {
-        projectId: id || '',
-        number: deduction.number,
-        entryType: 'ring',
-        first: -deduction.firstAmount, // Negative to deduct
-        second: -deduction.secondAmount, // Negative to deduct
-        notes: 'Filter deduction',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        isFilterDeduction: true,
-      };
-
-      deductionTransactions.push(transactionData);
-      affectedNumbers.push(deduction.number);
-
-      const success = await addTransaction(transactionData);
-      if (!success) {
-        console.error('Failed to add filter transaction');
-        return;
-      }
-    }
-    
-    refresh();
-    
-    // Get the newly created transactions for undo/redo
-    setTimeout(() => {
-      const newTransactions = transactions.slice(beforeCount);
-      const filterTransactions = newTransactions.filter(t => 
-        t.entryType === 'ring' && 
-        t.isFilterDeduction &&
-        affectedNumbers.includes(t.number)
-      );
+    try {
+      // Store current transactions count to find new ones after adding
+      const beforeCount = transactions.length;
+      const affectedNumbers: string[] = [];
+      const deductionTransactions: Omit<Transaction, 'id'>[] = [];
+      let successCount = 0;
+      let errorCount = 0;
       
-      addAction('filter', `Applied filter deductions to ${deductions.length} number(s)`, affectedNumbers, {
-        transactions: deductionTransactions as Transaction[],
-        transactionIds: filterTransactions.map(t => t.id),
-      });
-    }, 50);
+      for (const deduction of deductions) {
+        const transactionData: Omit<Transaction, 'id'> = {
+          projectId: id || '',
+          number: deduction.number,
+          entryType: 'ring',
+          first: -deduction.firstAmount, // Negative to deduct
+          second: -deduction.secondAmount, // Negative to deduct
+          notes: 'Filter deduction',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          isFilterDeduction: true,
+        };
+
+        deductionTransactions.push(transactionData);
+        affectedNumbers.push(deduction.number);
+
+        const success = await addTransaction(transactionData);
+        if (success) {
+          successCount++;
+        } else {
+          errorCount++;
+          console.error('Failed to add filter transaction for:', deduction.number);
+        }
+      }
+      
+      refresh();
+      
+      // Get the newly created transactions for undo/redo
+      setTimeout(() => {
+        const newTransactions = transactions.slice(beforeCount);
+        const filterTransactions = newTransactions.filter(t => 
+          t.entryType === 'ring' && 
+          t.isFilterDeduction &&
+          affectedNumbers.includes(t.number)
+        );
+        
+        addAction('filter', `Applied filter deductions to ${deductions.length} number(s)`, affectedNumbers, {
+          transactions: deductionTransactions as Transaction[],
+          transactionIds: filterTransactions.map(t => t.id),
+        });
+      }, 50);
+
+      // Show success notification
+      if (successCount > 0) {
+        await showSuccess(
+          'Filter Deductions Applied',
+          `Successfully applied deductions to ${successCount} number(s)`,
+          { duration: 3000 }
+        );
+      }
+
+      if (errorCount > 0) {
+        await showError(
+          'Some Deductions Failed',
+          `Failed to apply deductions to ${errorCount} number(s). Please try again.`,
+          { duration: 5000 }
+        );
+      }
+    } catch (error) {
+      console.error('Error in handleSaveFilterResults:', error);
+      await showError(
+        'Filter Operation Failed',
+        'An error occurred while applying filter deductions. Please try again.',
+        { duration: 5000 }
+      );
+    }
   };
 
   const handleEdit = async (transaction: Transaction) => {
@@ -328,6 +401,14 @@ const RingPage: React.FC = () => {
           <p className="text-gray-600 dark:text-gray-400">
             View and manage entries for numbers 000-999
           </p>
+        </div>
+
+        {/* Ring Statistics */}
+        <div className="mb-8">
+          <StatisticsGrid
+            statistics={ringStats}
+            entryType="ring"
+          />
         </div>
 
         {/* Tab Selection */}

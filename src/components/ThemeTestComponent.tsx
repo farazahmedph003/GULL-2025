@@ -6,11 +6,11 @@ const ThemeTestComponent: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const { showSuccess, showError, showWarning, showInfo } = useNotifications();
 
-  const testNotifications = () => {
-    showSuccess('Light Mode Test', 'This is a success notification in light mode!');
-    showError('Error Test', 'This is an error notification in light mode!');
-    showWarning('Warning Test', 'This is a warning notification in light mode!');
-    showInfo('Info Test', 'This is an info notification in light mode!');
+  const testNotifications = async () => {
+    await showSuccess('Light Mode Test', 'This is a success notification in light mode!');
+    await showError('Error Test', 'This is an error notification in light mode!');
+    await showWarning('Warning Test', 'This is a warning notification in light mode!');
+    await showInfo('Info Test', 'This is an info notification in light mode!');
   };
 
   return (

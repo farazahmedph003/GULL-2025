@@ -1,22 +1,59 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Transaction, ProjectStatistics } from '../types';
 import { useUserBalance } from './useUserBalance';
+import { useAuth } from '../contexts/AuthContext';
+import { db } from '../services/database';
+import { isSupabaseConfigured, isOfflineMode } from '../lib/supabase';
 
 export const useTransactions = (projectId: string) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { deductBalance, addBalance } = useUserBalance();
+  const { user } = useAuth();
 
-  // Load transactions from localStorage
-  const loadTransactions = useCallback(() => {
+  // Load transactions from database or localStorage as fallback
+  const loadTransactions = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
     try {
-      const storageKey = `gull-transactions-${projectId}`;
-      const data = localStorage.getItem(storageKey);
-      const parsed = data ? JSON.parse(data) : [];
-      setTransactions(parsed);
+      if (isSupabaseConfigured() && projectId) {
+        // Try to load from database first
+        const dbTransactions = await db.getTransactions(projectId);
+        setTransactions(dbTransactions);
+        console.log('Transactions loaded from database:', dbTransactions.length);
+      } else {
+        // Fallback to localStorage
+        const storageKey = `gull-transactions-${projectId}`;
+        const data = localStorage.getItem(storageKey);
+        const parsed = data ? JSON.parse(data) : [];
+        setTransactions(parsed);
+        console.log('Transactions loaded from localStorage:', parsed.length);
+      }
     } catch (error) {
       console.error('Error loading transactions:', error);
-      setTransactions([]);
+      // Fallback to localStorage on database error
+      try {
+        const storageKey = `gull-transactions-${projectId}`;
+        const data = localStorage.getItem(storageKey);
+        const parsed = data ? JSON.parse(data) : [];
+        setTransactions(parsed);
+        
+        let errorMessage = 'Failed to load transactions from database.';
+        if (isOfflineMode()) {
+          errorMessage = 'Database is in offline mode. Using local storage.';
+        } else if (!isSupabaseConfigured()) {
+          errorMessage = 'Database is not configured. Using local storage.';
+        } else if (error instanceof Error) {
+          errorMessage = `Database error: ${error.message}. Using local storage.`;
+        }
+        setError(errorMessage);
+      } catch (localError) {
+        console.error('Error loading from localStorage:', localError);
+        setTransactions([]);
+        setError('Failed to load transactions from both database and local storage.');
+      }
     } finally {
       setLoading(false);
     }
@@ -29,23 +66,8 @@ export const useTransactions = (projectId: string) => {
 
   // Refresh transactions
   const refresh = useCallback(() => {
-    setLoading(true);
-    // Small delay to ensure UI updates
-    setTimeout(() => {
-      try {
-        const storageKey = `gull-transactions-${projectId}`;
-        const data = localStorage.getItem(storageKey);
-        const parsed = data ? JSON.parse(data) : [];
-        // Force a new array reference to trigger re-render
-        setTransactions([...parsed]);
-      } catch (error) {
-        console.error('Error refreshing transactions:', error);
-        setTransactions([]);
-      } finally {
-        setLoading(false);
-      }
-    }, 100);
-  }, [projectId]);
+    loadTransactions();
+  }, [loadTransactions]);
 
   // Calculate statistics
   const getStatistics = useCallback((): ProjectStatistics => {
@@ -269,6 +291,7 @@ export const useTransactions = (projectId: string) => {
   return {
     transactions,
     loading,
+    error,
     refresh,
     getStatistics,
     getByEntryType,

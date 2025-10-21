@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, isOfflineMode } from '../lib/supabase';
+import { db } from '../services/database';
+import { playMoneyDeductSound, playMoneyDepositSound } from '../utils/audioFeedback';
 
 export interface UserBalance {
   balance: number;
@@ -98,6 +100,9 @@ export const useUserBalance = () => {
         const newBalance = localBalances[effectiveUserId];
         setBalance(newBalance);
         window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
+        
+        // Play deduction sound
+        playMoneyDeductSound(amount);
         return true;
       } else {
         try {
@@ -111,6 +116,9 @@ export const useUserBalance = () => {
 
           setBalance(newBalance);
           window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
+          
+          // Play deduction sound
+          playMoneyDeductSound(amount);
           return true;
         } catch (err) {
           console.error('Error deducting balance:', err);
@@ -135,6 +143,9 @@ export const useUserBalance = () => {
         const newBalance = localBalances[effectiveUserId];
         setBalance(newBalance);
         window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
+        
+        // Play deposit sound
+        playMoneyDepositSound(amount);
         return true;
       } else {
         try {
@@ -148,6 +159,9 @@ export const useUserBalance = () => {
 
           setBalance(newBalance);
           window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
+          
+          // Play deposit sound
+          playMoneyDepositSound(amount);
           return true;
         } catch (err) {
           console.error('Error adding balance:', err);
@@ -174,6 +188,30 @@ export const useUserBalance = () => {
     window.addEventListener('user-balance-updated', handler as any);
     return () => window.removeEventListener('user-balance-updated', handler as any);
   }, [fetchBalance, effectiveUserId]);
+
+  // Subscribe to realtime balance changes
+  useEffect(() => {
+    if (!user || isOfflineMode()) {
+      return;
+    }
+
+    const unsubscribe = db.subscribeToUserBalance(user.id, (payload) => {
+      console.log('Realtime balance update received:', payload);
+      
+      // Extract new balance from the payload
+      const event = payload as any;
+      if (event?.new?.balance !== undefined) {
+        setBalance(event.new.balance);
+      } else {
+        // Fallback: refresh balance from database
+        fetchBalance();
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [user, fetchBalance]);
 
   return {
     balance,

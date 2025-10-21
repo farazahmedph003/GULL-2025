@@ -110,7 +110,25 @@ const ProfileDropdown: React.FC = () => {
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50 animate-slide-in">
+        <div className="absolute right-0 mt-2 w-80 bg-white/95 dark:bg-gray-800/95 backdrop-blur-lg rounded-xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 overflow-hidden z-50 transform transition-all duration-300 ease-out"
+             style={{
+               animation: 'dropdownSlide 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+               transformOrigin: 'top right'
+             }}>
+          <style>
+            {`
+              @keyframes dropdownSlide {
+                0% {
+                  opacity: 0;
+                  transform: translateY(-10px) scale(0.95);
+                }
+                100% {
+                  opacity: 1;
+                  transform: translateY(0) scale(1);
+                }
+              }
+            `}
+          </style>
           {/* Current Account */}
           <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 p-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">

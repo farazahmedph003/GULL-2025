@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { FilterOperator, FilterResult, NumberSummary, EntryType } from '../types';
+import { useNotifications } from '../contexts/NotificationContext';
 
 interface FilterTabProps {
   summaries: Map<string, NumberSummary>;
@@ -9,6 +10,7 @@ interface FilterTabProps {
 }
 
 const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResults }) => {
+  const { showError, showWarning } = useNotifications();
   const [firstOperator, setFirstOperator] = useState<FilterOperator>('>=');
   const [firstValue, setFirstValue] = useState('');
   const [secondOperator, setSecondOperator] = useState<FilterOperator>('>=');
@@ -111,7 +113,11 @@ const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResul
         }));
 
       if (deductions.length === 0) {
-        alert('No deductions to save. All calculated results are zero.');
+        await showWarning(
+          'No Deductions to Save',
+          'All calculated results are zero. Nothing to save.',
+          { duration: 3000 }
+        );
         return;
       }
 
@@ -125,10 +131,13 @@ const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResul
       setFirstLimit('');
       setSecondLimit('');
       
-      alert(`Successfully saved ${deductions.length} deduction(s)!`);
     } catch (error) {
       console.error('Failed to save results:', error);
-      alert('Failed to save results. Please try again.');
+      await showError(
+        'Save Failed',
+        'Failed to save filter results. Please try again.',
+        { duration: 5000 }
+      );
     }
   };
 

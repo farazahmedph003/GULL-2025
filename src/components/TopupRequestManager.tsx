@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTopupRequests } from '../hooks/useTopupRequests';
 import { formatCurrency, formatDate } from '../utils/helpers';
+import { playMoneyDepositSound } from '../utils/audioFeedback';
 
 interface TopupRequestManagerProps {
   isOpen: boolean;
@@ -9,7 +10,6 @@ interface TopupRequestManagerProps {
 
 const TopupRequestManager: React.FC<TopupRequestManagerProps> = ({ isOpen, onClose }) => {
   const { getAllRequests, updateRequestStatus, getPendingCount } = useTopupRequests();
-  const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
   const [adminNotes, setAdminNotes] = useState('');
   const [topupAmount, setTopupAmount] = useState<number>(1000);
 
@@ -65,7 +65,9 @@ const TopupRequestManager: React.FC<TopupRequestManagerProps> = ({ isOpen, onClo
         // Update request status
         updateRequestStatus(requestId, 'approved', adminNotes || `Approved with ${formatCurrency(topupAmount)} top-up`);
         
-        setSelectedRequest(null);
+        // Play deposit sound for successful top-up approval
+        playMoneyDepositSound(topupAmount);
+        
         setAdminNotes('');
         setTopupAmount(1000);
         
@@ -81,7 +83,6 @@ const TopupRequestManager: React.FC<TopupRequestManagerProps> = ({ isOpen, onClo
 
   const handleReject = (requestId: string) => {
     updateRequestStatus(requestId, 'rejected', adminNotes || 'Request rejected');
-    setSelectedRequest(null);
     setAdminNotes('');
   };
 

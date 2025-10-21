@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import EditTransactionModal from './EditTransactionModal';
 import type { Transaction, NumberSummary } from '../types';
 import { formatTimestamp } from '../utils/helpers';
+import { playDeleteSound } from '../utils/audioFeedback';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -101,6 +102,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
 
   const handleDelete = (transactionId: string) => {
     if (showDeleteConfirm === transactionId) {
+      playDeleteSound();
       onDelete?.(transactionId);
       setShowDeleteConfirm(null);
     } else {

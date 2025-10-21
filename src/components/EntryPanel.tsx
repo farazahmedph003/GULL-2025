@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import StandardEntry from './StandardEntry';
 import IntelligentEntry from './IntelligentEntry';
+import type { EntryType } from '../types';
 
 interface EntryPanelProps {
   isOpen: boolean;
   onClose: () => void;
   projectId: string;
-  entryType: 'akra' | 'ring';
+  entryType: EntryType;
   onEntryAdded?: () => void;
 }
 
@@ -51,7 +52,14 @@ const EntryPanel: React.FC<EntryPanelProps> = ({
               Add Entry
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              {entryType === 'akra' ? '2-digit numbers (00-99)' : '3-digit numbers (000-999)'}
+              {entryType === 'akra' 
+                ? '2-digit numbers (00-99)' 
+                : entryType === 'ring' 
+                  ? '3-digit numbers (000-999)'
+                  : entryType === 'open'
+                    ? '1-digit numbers (0-9)'
+                    : '4-digit numbers (0000-9999)'
+              }
             </p>
           </div>
           <button

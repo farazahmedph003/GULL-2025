@@ -7,7 +7,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import ThemeToggle from '../components/ThemeToggle';
 import TopupRequestManager from '../components/TopupRequestManager';
 import AdminFinancial from './admin/AdminFinancial';
-import AdminReports from './admin/AdminReports';
+import AdminSettings from './admin/AdminSettings';
 import AnimatedNumber from '../components/AnimatedNumber';
 import type { UserAccount } from '../types/admin';
 
@@ -24,7 +24,7 @@ const AdminPanel: React.FC = () => {
   const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
   const [showTopupRequests, setShowTopupRequests] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'users' | 'financial' | 'reports'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'financial' | 'settings'>('users');
 
   if (authLoading || loading) {
     return (
@@ -170,20 +170,20 @@ const AdminPanel: React.FC = () => {
             💰 Financial
           </button>
           <button
-            onClick={() => setActiveTab('reports')}
+            onClick={() => setActiveTab('settings')}
             className={`px-6 py-3 rounded-xl font-semibold transition-all whitespace-nowrap ${
-              activeTab === 'reports'
-                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
+              activeTab === 'settings'
+                ? 'bg-gradient-to-r from-gray-500 to-slate-500 text-white shadow-lg'
                 : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
             }`}
           >
-            📊 Reports
+            ⚙️ Settings
           </button>
         </div>
 
         {/* Render based on active tab */}
         {activeTab === 'financial' && <AdminFinancial />}
-        {activeTab === 'reports' && <AdminReports />}
+        {activeTab === 'settings' && <AdminSettings />}
         
         {/* User Management Tab (default) */}
         {activeTab === 'users' && (
@@ -331,6 +331,15 @@ const AdminPanel: React.FC = () => {
                 ) : (
                   filteredUsers.map((user) => {
                     const userReport = reports.find(r => r.userId === user.userId);
+                    
+                    // Debug logging for project count issue
+                    if (!userReport || userReport.projectCount === 0) {
+                      console.log(`🔍 Debug - User: ${user.displayName} (${user.userId})`, {
+                        userReport,
+                        allReports: reports.map(r => ({ userId: r.userId, projectCount: r.projectCount })),
+                        foundReport: reports.find(r => r.userId === user.userId)
+                      });
+                    }
                     return (
                     <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                       <td className="px-6 py-4 whitespace-nowrap">

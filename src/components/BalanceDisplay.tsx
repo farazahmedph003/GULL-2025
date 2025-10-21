@@ -3,6 +3,7 @@ import { useUserBalance } from '../hooks/useUserBalance';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useTopupRequests } from '../hooks/useTopupRequests';
 import { formatCurrency } from '../utils/helpers';
+import { playTopupRequestSound } from '../utils/audioFeedback';
 
 const BalanceDisplay: React.FC = () => {
   const { balance, loading, error } = useUserBalance();
@@ -46,6 +47,9 @@ const BalanceDisplay: React.FC = () => {
     const success = createRequest(balance, undefined, 'User requested balance top-up');
     
     if (success) {
+      // Play top-up request sound
+      playTopupRequestSound();
+      
       showInfo(
         'Top-up Request Sent',
         'Your request has been sent to the admin. They will be notified to add funds to your account.',

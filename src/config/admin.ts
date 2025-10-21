@@ -40,3 +40,65 @@ export const isAdminEmail = (email: string | null): boolean => {
   return ADMIN_EMAILS.includes(email.toLowerCase());
 };
 
+// Feature flags for admin control
+export const FEATURE_FLAGS = {
+  enableRegistration: true,
+  enableEmailVerification: false,
+  enableMaintenanceMode: false,
+  enableAutoTopupApproval: false,
+  enableAdvancedReports: true,
+  enableBulkOperations: true,
+  enableDataExport: true,
+  enableDebugMode: false,
+} as const;
+
+// Admin roles
+export const ADMIN_ROLES = {
+  SUPER_ADMIN: 'super_admin',
+  ADMIN: 'admin',
+  MODERATOR: 'moderator',
+} as const;
+
+// System settings interface
+export interface SystemSettings {
+  entryCosts: {
+    akra: number;
+    ring: number;
+  };
+  defaultBalance: number;
+  minTopupAmount: number;
+  maxTopupAmount: number;
+  autoApproveTopups: boolean;
+  maintenanceMode: boolean;
+  featureFlags: typeof FEATURE_FLAGS;
+}
+
+// Default system settings
+export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
+  entryCosts: ENTRY_COST,
+  defaultBalance: DEFAULT_BALANCE,
+  minTopupAmount: MIN_TOPUP_AMOUNT,
+  maxTopupAmount: MAX_TOPUP_AMOUNT,
+  autoApproveTopups: false,
+  maintenanceMode: false,
+  featureFlags: FEATURE_FLAGS,
+};
+
+// Utility functions to get current system settings
+export const getCurrentSystemSettings = (): SystemSettings => {
+  try {
+    const saved = localStorage.getItem('admin-system-settings');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (error) {
+    console.error('Failed to load system settings:', error);
+  }
+  return DEFAULT_SYSTEM_SETTINGS;
+};
+
+export const getEntryCost = (entryType: 'akra' | 'ring'): number => {
+  const settings = getCurrentSystemSettings();
+  return settings.entryCosts[entryType];
+};
+

@@ -1,4 +1,4 @@
-import { supabase, isOfflineMode } from '../lib/supabase';
+import { supabase, isOfflineMode, isSupabaseConfigured, isSupabaseConnected } from '../lib/supabase';
 import type { Project, Transaction, FilterPreset, ActionHistory, EntryType } from '../types';
 
 // ============================================
@@ -19,7 +19,64 @@ export class DatabaseService {
 
   // Check if online mode is available
   isOnline(): boolean {
-    return !isOfflineMode() && !!supabase;
+    return isSupabaseConnected();
+  }
+
+  // Retry mechanism for network requests
+  private async withRetry<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    delay: number = 1000
+  ): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error as Error;
+        console.warn(`Database operation attempt ${attempt} failed:`, error);
+        
+        if (attempt < maxRetries) {
+          // Check if it's a network-related error that might be retryable
+          const isRetryable = this.isRetryableError(error);
+          if (isRetryable) {
+            console.log(`Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay *= 2; // Exponential backoff
+            continue;
+          }
+        }
+        break;
+      }
+    }
+    
+    throw lastError;
+  }
+
+  // Check if an error is retryable
+  private isRetryableError(error: any): boolean {
+    if (!error) return false;
+    
+    const errorMessage = error.message?.toLowerCase() || '';
+    const errorCode = error.code || error.name || '';
+    
+    // Network-related errors that might be temporary
+    const retryablePatterns = [
+      'network',
+      'timeout',
+      'connection',
+      'fetch',
+      'load failed',
+      'socket',
+      'enotfound',
+      'econnreset',
+      'etimedout'
+    ];
+    
+    return retryablePatterns.some(pattern => 
+      errorMessage.includes(pattern) || errorCode.toLowerCase().includes(pattern)
+    );
   }
 
   // ============================================
@@ -27,90 +84,130 @@ export class DatabaseService {
   // ============================================
 
   async getProjects(userId: string): Promise<Project[]> {
-    if (!this.isOnline() || !supabase) {
-      throw new Error('Database not available in offline mode');
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase is not properly configured. Please check your environment settings.');
     }
 
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+    if (!supabase) {
+      throw new Error('Database connection is not available. Please check your internet connection.');
+    }
 
-    if (error) throw error;
-    
-    return data.map(row => ({
-      id: row.id,
-      name: row.name,
-      date: row.created_at,
-      entryTypes: (row.entry_types as EntryType[]) || ['akra', 'ring'],
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      userId: row.user_id,
-    }));
+    return this.withRetry(async () => {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Database error in getProjects:', error);
+        throw error;
+      }
+      
+      return data.map(row => ({
+        id: row.id,
+        name: row.name,
+        date: row.created_at,
+        entryTypes: (row.entry_types as EntryType[]) || ['akra', 'ring'],
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        userId: row.user_id,
+      }));
+    });
   }
 
   async getProject(projectId: string): Promise<Project | null> {
-    if (!this.isOnline() || !supabase) {
-      throw new Error('Database not available in offline mode');
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase is not properly configured. Please check your environment settings.');
     }
 
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('id', projectId)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') return null; // Not found
-      throw error;
+    if (!supabase) {
+      throw new Error('Database connection is not available. Please check your internet connection.');
     }
 
-    return {
-      id: data.id,
-      name: data.name,
-      date: data.created_at,
-      entryTypes: (data.entry_types as EntryType[]) || ['akra', 'ring'],
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-      userId: data.user_id,
-    };
+    return this.withRetry(async () => {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('id', projectId)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') return null; // Not found
+        console.error('Database error in getProject:', error);
+        throw error;
+      }
+
+      return {
+        id: data.id,
+        name: data.name,
+        date: data.created_at,
+        entryTypes: (data.entry_types as EntryType[]) || ['akra', 'ring'],
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        userId: data.user_id,
+      };
+    });
   }
 
   async getUserProjects(userId: string): Promise<Project[]> {
-    if (!this.isOnline() || !supabase) {
-      throw new Error('Database not available in offline mode');
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase is not properly configured. Please check your environment settings.');
     }
 
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+    if (!supabase) {
+      throw new Error('Database connection is not available. Please check your internet connection.');
+    }
 
-    if (error) throw error;
+    return this.withRetry(async () => {
+      console.log('getUserProjects - Querying projects for user_id:', userId);
+      
+      // First check if user is authenticated
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      console.log('getUserProjects - Auth check:', { user: user?.id, authError });
+      
+      // Check if user has a profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('user_id, role')
+        .eq('user_id', userId)
+        .single();
+      console.log('getUserProjects - Profile check:', { profile, profileError });
+      
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
 
-    return data.map(project => ({
-      id: project.id,
-      name: project.name,
-      date: project.created_at,
-      entryTypes: (project.entry_types as EntryType[]) || ['akra', 'ring'],
-      createdAt: project.created_at,
-      updatedAt: project.updated_at,
-      userId: project.user_id,
-    }));
+      console.log('getUserProjects - Query result:', { data, error, userId });
+
+      if (error) {
+        console.error('Database error in getUserProjects:', error);
+        throw error;
+      }
+
+      console.log('getUserProjects - Raw projects data:', data);
+      return data.map(project => ({
+        id: project.id,
+        name: project.name,
+        date: project.created_at,
+        entryTypes: (project.entry_types as EntryType[]) || ['akra', 'ring'],
+        createdAt: project.created_at,
+        updatedAt: project.updated_at,
+        userId: project.user_id,
+      }));
+    });
   }
 
   async createProject(userId: string, project: Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'userId'>): Promise<Project> {
-    if (!this.isOnline() || !supabase) {
-      throw new Error('Database not available in offline mode');
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase is not properly configured. Please check your environment settings.');
     }
 
-    console.log('Creating project with data:', {
-      user_id: userId,
-      name: project.name,
-      entry_types: project.entryTypes
-    });
+    if (!supabase) {
+      throw new Error('Database connection is not available. Please check your internet connection.');
+    }
 
     // Validate entry types before sending to database
     const validEntryTypes = ['open', 'akra', 'ring', 'packet'];
@@ -120,37 +217,46 @@ export class DatabaseService {
       throw new Error(`Invalid entry types: ${invalidEntryTypes.join(', ')}. Valid types are: ${validEntryTypes.join(', ')}`);
     }
 
-    const { data, error } = await supabase
-      .from('projects')
-      .insert({
-        user_id: userId,
+    return this.withRetry(async () => {
+      console.log('Creating project with user_id:', userId, 'and project data:', {
         name: project.name,
-        description: null,
-        entry_types: project.entryTypes,
-      })
-      .select()
-      .single();
+        entry_types: project.entryTypes
+      });
 
-    if (error) {
-      console.error('Database error creating project:', error);
-      
-      // Provide more specific error message for entry type issues
-      if (error.message && (error.message.includes('entry_types') || error.message.includes('check constraint') || error.message.includes('projects_entry_types_check'))) {
-        throw new Error('Database constraint error: The selected entry types (Open, Packet) are not yet supported by the database schema. Please select only Akra and/or Ring entry types for now.');
+      const { data, error } = await supabase
+        .from('projects')
+        .insert({
+          user_id: userId,
+          name: project.name,
+          description: null,
+          entry_types: project.entryTypes,
+        })
+        .select()
+        .single();
+
+      console.log('Project creation result:', { data, error, userId });
+
+      if (error) {
+        console.error('Database error creating project:', error);
+        
+        // Provide more specific error message for entry type issues
+        if (error.message && (error.message.includes('entry_types') || error.message.includes('check constraint') || error.message.includes('projects_entry_types_check'))) {
+          throw new Error('Database constraint error: The selected entry types (Open, Packet) are not yet supported by the database schema. Please select only Akra and/or Ring entry types for now.');
+        }
+        
+        throw error;
       }
-      
-      throw error;
-    }
 
-    return {
-      id: data.id,
-      name: data.name,
-      date: data.created_at,
-      entryTypes: (data.entry_types as EntryType[]) || ['akra', 'ring'],
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
-      userId: data.user_id,
-    };
+      return {
+        id: data.id,
+        name: data.name,
+        date: data.created_at,
+        entryTypes: (data.entry_types as EntryType[]) || ['akra', 'ring'],
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        userId: data.user_id,
+      };
+    });
   }
 
   async updateProject(projectId: string, updates: Partial<Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'userId'>>): Promise<void> {
@@ -186,29 +292,38 @@ export class DatabaseService {
   // ============================================
 
   async getTransactions(projectId: string): Promise<Transaction[]> {
-    if (!this.isOnline() || !supabase) {
-      throw new Error('Database not available in offline mode');
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase is not properly configured. Please check your environment settings.');
     }
 
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('project_id', projectId)
-      .order('created_at', { ascending: true });
+    if (!supabase) {
+      throw new Error('Database connection is not available. Please check your internet connection.');
+    }
 
-    if (error) throw error;
+    return this.withRetry(async () => {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: true });
 
-    return data.map(row => ({
-      id: row.id,
-      projectId: row.project_id,
-      number: row.number,
-      entryType: row.entry_type as EntryType,
-      first: row.first_amount,
-      second: row.second_amount,
-      notes: row.notes || undefined,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+      if (error) {
+        console.error('Database error in getTransactions:', error);
+        throw error;
+      }
+
+      return data.map(row => ({
+        id: row.id,
+        projectId: row.project_id,
+        number: row.number,
+        entryType: row.entry_type as EntryType,
+        first: row.first_amount,
+        second: row.second_amount,
+        notes: row.notes || undefined,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    });
   }
 
   async createTransaction(userId: string, transaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>): Promise<Transaction> {
@@ -501,6 +616,81 @@ export class DatabaseService {
         },
         callback
       )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }
+
+  /**
+   * Subscribe to user balance changes for push notifications
+   */
+  subscribeToUserBalance(userId: string, callback: (payload: unknown) => void) {
+    if (!this.isOnline() || !supabase) {
+      return () => {}; // Return empty unsubscribe function
+    }
+
+    const subscription = supabase
+      .channel(`user_balance:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `user_id=eq.${userId}`,
+        },
+        callback
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }
+
+  /**
+   * Subscribe to transactions updates for a specific user (all their projects)
+   * This will catch transactions from other devices/sessions
+   */
+  subscribeToUserTransactions(userId: string, callback: (payload: unknown) => void) {
+    if (!this.isOnline() || !supabase) {
+      return () => {}; // Return empty unsubscribe function
+    }
+
+    const subscription = supabase
+      .channel(`user_transactions:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'transactions',
+          filter: `user_id=eq.${userId}`,
+        },
+        callback
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }
+
+  /**
+   * Subscribe to system-wide notifications or admin actions
+   */
+  subscribeToSystemEvents(userId: string, callback: (payload: unknown) => void) {
+    if (!this.isOnline() || !supabase) {
+      return () => {}; // Return empty unsubscribe function
+    }
+
+    // For now, we'll use a custom channel for system events
+    // This could be extended to listen to specific admin action tables
+    const subscription = supabase
+      .channel(`system_events:${userId}`)
+      .on('broadcast', { event: 'system_notification' }, callback)
       .subscribe();
 
     return () => {

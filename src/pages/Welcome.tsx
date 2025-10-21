@@ -146,7 +146,7 @@ const Welcome: React.FC = () => {
           )}
 
           {mode === 'signin' && (
-            <div>
+            <div className="relative z-10 p-8">
               <button
                 onClick={() => {
                   setMode('welcome');
@@ -177,6 +177,11 @@ const Welcome: React.FC = () => {
                     className="input-field"
                     placeholder="you@example.com"
                     disabled={loading}
+                    autoComplete="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    required
                   />
                 </div>
 
@@ -191,6 +196,8 @@ const Welcome: React.FC = () => {
                     className="input-field"
                     placeholder="••••••••"
                     disabled={loading}
+                    autoComplete="current-password"
+                    required
                   />
                 </div>
 
@@ -231,7 +238,7 @@ const Welcome: React.FC = () => {
           )}
 
           {mode === 'signup' && (
-            <div>
+            <div className="relative z-10 p-8">
               <button
                 onClick={() => {
                   setMode('welcome');
@@ -262,6 +269,10 @@ const Welcome: React.FC = () => {
                     className="input-field"
                     placeholder="John Doe"
                     disabled={loading}
+                    autoComplete="name"
+                    autoCapitalize="words"
+                    autoCorrect="on"
+                    spellCheck="true"
                   />
                 </div>
 
@@ -276,6 +287,11 @@ const Welcome: React.FC = () => {
                     className="input-field"
                     placeholder="you@example.com"
                     disabled={loading}
+                    autoComplete="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    required
                   />
                 </div>
 
@@ -290,6 +306,9 @@ const Welcome: React.FC = () => {
                     className="input-field"
                     placeholder="••••••••"
                     disabled={loading}
+                    autoComplete="new-password"
+                    required
+                    minLength={6}
                   />
                   <p className="mt-1 text-xs text-gray-500">Minimum 6 characters</p>
                 </div>

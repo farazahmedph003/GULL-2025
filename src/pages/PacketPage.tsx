@@ -8,6 +8,7 @@ import FilterTab from '../components/FilterTab';
 import TransactionModal from '../components/TransactionModal';
 import LoadingSpinner from '../components/LoadingSpinner';
 import PremiumStats from '../components/PremiumStats';
+import StatisticsGrid from '../components/StatisticsGrid';
 import { useTransactions } from '../hooks/useTransactions';
 import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
@@ -130,6 +131,34 @@ const PacketPage: React.FC = () => {
     () => groupTransactionsByNumber(transactions, 'packet'),
     [transactions]
   );
+
+  // Calculate Packet-specific statistics
+  const packetStats = useMemo(() => {
+    const packetTransactions = transactions.filter(t => t.entryType === 'packet');
+    const firstTotal = packetTransactions.reduce((sum, t) => sum + t.first, 0);
+    const secondTotal = packetTransactions.reduce((sum, t) => sum + t.second, 0);
+    
+    // Calculate unique numbers properly handling bulk entries
+    const uniqueNumbersSet = new Set<string>();
+    packetTransactions.forEach(t => {
+      const isBulkEntry = t.number.includes(',') || t.number.includes(' ');
+      if (isBulkEntry) {
+        const numbers = t.number.split(/[,\s]+/).filter(n => n.trim().length > 0);
+        numbers.forEach(num => uniqueNumbersSet.add(num.trim()));
+      } else {
+        uniqueNumbersSet.add(t.number);
+      }
+    });
+
+    return {
+      totalEntries: packetTransactions.length,
+      akraEntries: 0, // Not relevant for Packet page
+      ringEntries: 0, // Not relevant for Packet page
+      firstTotal,
+      secondTotal,
+      uniqueNumbers: uniqueNumbersSet.size,
+    };
+  }, [transactions]);
 
   const handleNumberClick = (number: string) => {
     setModalNumber(number);
@@ -327,6 +356,14 @@ const PacketPage: React.FC = () => {
           <p className="text-gray-600 dark:text-gray-400">
             View and manage entries for numbers 0000-9999. Only numbers with entries are displayed.
           </p>
+        </div>
+
+        {/* Packet Statistics */}
+        <div className="mb-8">
+          <StatisticsGrid
+            statistics={packetStats}
+            entryType="packet"
+          />
         </div>
 
         {/* Tab Selection */}

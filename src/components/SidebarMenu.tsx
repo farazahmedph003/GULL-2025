@@ -3,11 +3,21 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { isAdminEmail } from '../config/admin';
 import { db } from '../services/database';
+import { playNavigateSound } from '../utils/audioFeedback';
 
 interface SidebarMenuProps {
   isOpen: boolean;
   onClose: () => void;
   projectId?: string;
+}
+
+interface MenuItem {
+  id: string;
+  label: string;
+  path: string;
+  icon: string;
+  adminOnly: boolean;
+  isDivider?: boolean;
 }
 
 const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: propProjectId }) => {
@@ -63,7 +73,7 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
   }, [isOpen]);
 
   // Build menu items based on project entry types
-  const buildMenuItems = () => {
+  const buildMenuItems = (): MenuItem[] => {
     if (!projectId) {
       return [
         {
@@ -85,6 +95,13 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
           label: 'Profile',
           path: '/profile',
           icon: '👤',
+          adminOnly: false,
+        },
+        {
+          id: 'settings',
+          label: 'Settings',
+          path: '/settings',
+          icon: '⚙️',
           adminOnly: false,
         },
       ];
@@ -169,7 +186,7 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
         icon: '',
         adminOnly: false,
         isDivider: true,
-      },
+      } as MenuItem,
       {
         id: 'projects',
         label: 'My Projects',
@@ -190,6 +207,13 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
         path: '/profile',
         icon: '👤',
         adminOnly: false,
+      },
+      {
+        id: 'settings',
+        label: 'Settings',
+        path: '/settings',
+        icon: '⚙️',
+        adminOnly: false,
       }
     );
 
@@ -199,6 +223,7 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
   const menuItems = buildMenuItems();
 
   const handleNavigation = (path: string) => {
+    playNavigateSound();
     navigate(path);
     onClose();
   };
@@ -258,7 +283,7 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
             {menuItems
               .filter(item => !item.adminOnly || isAdmin)
               .map((item) => {
-                if ((item as any).isDivider) {
+                if (item.isDivider) {
                   return (
                     <div key={item.id} className="relative my-6">
                       {/* Decorative divider with gradient */}

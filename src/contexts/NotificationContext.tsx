@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
+import { pushNotificationService } from '../services/pushNotifications';
+import { playNotificationByType } from '../utils/audioFeedback';
 
 export type NotificationType = 'success' | 'error' | 'warning' | 'info';
 
@@ -15,17 +17,18 @@ export interface Notification {
     onClick: () => void;
     style?: 'primary' | 'secondary';
   }>;
+  showAsPushNotification?: boolean; // Whether to also show as browser push notification
 }
 
 interface NotificationContextType {
   notifications: Notification[];
-  addNotification: (notification: Omit<Notification, 'id'>) => string;
+  addNotification: (notification: Omit<Notification, 'id'>) => Promise<string>;
   removeNotification: (id: string) => void;
   clearAllNotifications: () => void;
-  showSuccess: (title: string, message?: string, options?: Partial<Notification>) => string;
-  showError: (title: string, message?: string, options?: Partial<Notification>) => string;
-  showWarning: (title: string, message?: string, options?: Partial<Notification>) => string;
-  showInfo: (title: string, message?: string, options?: Partial<Notification>) => string;
+  showSuccess: (title: string, message?: string, options?: Partial<Notification>) => Promise<string>;
+  showError: (title: string, message?: string, options?: Partial<Notification>) => Promise<string>;
+  showWarning: (title: string, message?: string, options?: Partial<Notification>) => Promise<string>;
+  showInfo: (title: string, message?: string, options?: Partial<Notification>) => Promise<string>;
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
@@ -45,16 +48,47 @@ interface NotificationProviderProps {
 export const NotificationProvider: React.FC<NotificationProviderProps> = ({ children }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  const addNotification = useCallback((notification: Omit<Notification, 'id'>): string => {
+  const removeNotification = useCallback((id: string) => {
+    setNotifications(prev => prev.filter(notification => notification.id !== id));
+  }, []);
+
+  const addNotification = useCallback(async (notification: Omit<Notification, 'id'>): Promise<string> => {
     const id = `notification-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newNotification: Notification = {
       id,
       duration: 5000, // Default 5 seconds
       position: 'top', // Default to top
+      showAsPushNotification: false, // Default to false
       ...notification,
     };
 
     setNotifications(prev => [...prev, newNotification]);
+
+    // Play sound based on notification type
+    try {
+      await playNotificationByType(newNotification.type);
+    } catch (error) {
+      console.warn('Failed to play notification sound:', error);
+    }
+
+    // Show as browser push notification if requested and app is not visible
+    if (newNotification.showAsPushNotification) {
+      const isVisible = pushNotificationService.isAppVisible();
+      const permission = pushNotificationService.getPermissionState();
+      
+      if (!isVisible && permission === 'granted') {
+        try {
+          await pushNotificationService.showNotification({
+            title: newNotification.title,
+            body: newNotification.message,
+            tag: id,
+            data: { notificationType: newNotification.type },
+          });
+        } catch (error) {
+          console.error('Error showing push notification:', error);
+        }
+      }
+    }
 
     // Auto dismiss if duration is set
     if (newNotification.duration && newNotification.duration > 0) {
@@ -64,19 +98,15 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     }
 
     return id;
-  }, []);
-
-  const removeNotification = useCallback((id: string) => {
-    setNotifications(prev => prev.filter(notification => notification.id !== id));
-  }, []);
+  }, [removeNotification]);
 
   const clearAllNotifications = useCallback(() => {
     setNotifications([]);
   }, []);
 
   // Convenience methods
-  const showSuccess = useCallback((title: string, message?: string, options?: Partial<Notification>) => {
-    return addNotification({
+  const showSuccess = useCallback(async (title: string, message?: string, options?: Partial<Notification>) => {
+    return await addNotification({
       type: 'success',
       title,
       message,
@@ -84,8 +114,8 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     });
   }, [addNotification]);
 
-  const showError = useCallback((title: string, message?: string, options?: Partial<Notification>) => {
-    return addNotification({
+  const showError = useCallback(async (title: string, message?: string, options?: Partial<Notification>) => {
+    return await addNotification({
       type: 'error',
       title,
       message,
@@ -94,8 +124,8 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     });
   }, [addNotification]);
 
-  const showWarning = useCallback((title: string, message?: string, options?: Partial<Notification>) => {
-    return addNotification({
+  const showWarning = useCallback(async (title: string, message?: string, options?: Partial<Notification>) => {
+    return await addNotification({
       type: 'warning',
       title,
       message,
@@ -103,8 +133,8 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     });
   }, [addNotification]);
 
-  const showInfo = useCallback((title: string, message?: string, options?: Partial<Notification>) => {
-    return addNotification({
+  const showInfo = useCallback(async (title: string, message?: string, options?: Partial<Notification>) => {
+    return await addNotification({
       type: 'info',
       title,
       message,

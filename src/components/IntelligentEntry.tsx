@@ -3,7 +3,8 @@ import type { EntryType, Transaction } from '../types';
 import { generateId, isValidNumber, formatCurrency } from '../utils/helpers';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { useAuth } from '../contexts/AuthContext';
-import { isAdminEmail } from '../config/admin';
+import { isAdminEmail, getEntryCost } from '../config/admin';
+import { useNotifications } from '../contexts/NotificationContext';
 
 interface IntelligentEntryProps {
   projectId: string;
@@ -24,6 +25,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
 }) => {
   const { user } = useAuth();
   const { balance, hasSufficientBalance, deductBalance, refresh: refreshBalance } = useUserBalance();
+  const { showSuccess, showError } = useNotifications();
   const isAdmin = user ? isAdminEmail(user.email) : false;
   
   const [inputText, setInputText] = useState('');
@@ -133,9 +135,10 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
 
     setBalanceError(null);
 
-    // Calculate total cost
+    // Calculate total cost (betting amounts + entry costs)
+    const entryCostPerNumber = (entryType === 'akra' || entryType === 'ring') ? getEntryCost(entryType) : 0;
     const totalCost = parsedEntries.reduce(
-      (sum, entry) => sum + entry.first + entry.second,
+      (sum, entry) => sum + entry.first + entry.second + entryCostPerNumber,
       0
     );
 
@@ -208,13 +211,21 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       // Refresh balance display
       refreshBalance();
 
-      // Show success
-      // Success - no alert, silent success
+      // Success notification
+      await showSuccess(
+        'Entries Added Successfully',
+        `Added ${parsedEntries.length} ${entryType} ${parsedEntries.length === 1 ? 'entry' : 'entries'} for ${formatCurrency(totalCost)}`,
+        { duration: 3000 }
+      );
 
       onSuccess();
     } catch (error) {
       console.error('Error adding transactions:', error);
-      alert('An error occurred while adding transactions.');
+      await showError(
+        'Error Adding Entries',
+        'An error occurred while adding transactions. Please try again.',
+        { duration: 5000 }
+      );
     }
   };
 

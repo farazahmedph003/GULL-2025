@@ -22,15 +22,6 @@ const SummaryCard: React.FC<SummaryCardProps> = ({
   color = 'secondary',
   onClick,
 }) => {
-  const colorClasses = {
-    primary: 'bg-gradient-to-br from-primary to-primary-light',
-    secondary: 'bg-gradient-to-br from-secondary to-secondary-light',
-    accent: 'bg-gradient-to-br from-accent to-accent-light',
-    success: 'bg-gradient-to-br from-green-500 to-green-600',
-    warning: 'bg-gradient-to-br from-yellow-500 to-yellow-600',
-    danger: 'bg-gradient-to-br from-red-500 to-red-600',
-  };
-
   const getGradientBg = () => {
     switch (color) {
       case 'secondary':

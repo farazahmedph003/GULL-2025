@@ -4,40 +4,40 @@ import { useNotifications } from '../contexts/NotificationContext';
 const NotificationDemo: React.FC = () => {
   const { showSuccess, showError, showWarning, showInfo } = useNotifications();
 
-  const handleSuccess = () => {
-    showSuccess(
+  const handleSuccess = async () => {
+    await showSuccess(
       'Operation Successful',
       'Your action was completed successfully!',
       { position: 'top', duration: 3000 }
     );
   };
 
-  const handleError = () => {
-    showError(
+  const handleError = async () => {
+    await showError(
       'Operation Failed',
       'Something went wrong. Please try again.',
       { position: 'top' }
     );
   };
 
-  const handleWarning = () => {
-    showWarning(
+  const handleWarning = async () => {
+    await showWarning(
       'Warning',
       'This action may have unintended consequences.',
       { position: 'bottom', duration: 5000 }
     );
   };
 
-  const handleInfo = () => {
-    showInfo(
+  const handleInfo = async () => {
+    await showInfo(
       'Information',
       'Here is some useful information for you.',
       { position: 'bottom', duration: 4000 }
     );
   };
 
-  const handleWithActions = () => {
-    showSuccess(
+  const handleWithActions = async () => {
+    await showSuccess(
       'Action Required',
       'Please confirm your action to proceed.',
       {

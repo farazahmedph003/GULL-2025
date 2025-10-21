@@ -163,13 +163,29 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, onCancel }) => {
                   : 'border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700/50 hover:border-blue-300 dark:hover:border-blue-500'
               }`}>
                 <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={entryTypes.includes('open')}
-                    onChange={() => handleEntryTypeToggle('open')}
-                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                  />
-                  <div className="ml-3">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      checked={entryTypes.includes('open')}
+                      onChange={() => handleEntryTypeToggle('open')}
+                      className="sr-only"
+                    />
+                    <div 
+                      onClick={() => handleEntryTypeToggle('open')}
+                      className={`w-6 h-6 rounded-lg border-2 transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                        entryTypes.includes('open')
+                          ? 'bg-gradient-to-r from-blue-500 to-blue-600 border-blue-500 shadow-lg shadow-blue-500/25'
+                          : 'border-gray-300 dark:border-gray-600 hover:border-blue-400 hover:shadow-md'
+                      }`}
+                    >
+                      {entryTypes.includes('open') && (
+                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+                  <div className="ml-4">
                     <div className="flex items-center space-x-2">
                       <div className={`w-3 h-3 rounded-full ${entryTypes.includes('open') ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
                       <span className="font-medium text-gray-900 dark:text-white">Open</span>
@@ -185,13 +201,29 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, onCancel }) => {
                   : 'border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700/50 hover:border-emerald-300 dark:hover:border-emerald-500'
               }`}>
                 <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={entryTypes.includes('akra')}
-                    onChange={() => handleEntryTypeToggle('akra')}
-                    className="w-5 h-5 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 focus:ring-2"
-                  />
-                  <div className="ml-3">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      checked={entryTypes.includes('akra')}
+                      onChange={() => handleEntryTypeToggle('akra')}
+                      className="sr-only"
+                    />
+                    <div 
+                      onClick={() => handleEntryTypeToggle('akra')}
+                      className={`w-6 h-6 rounded-lg border-2 transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                        entryTypes.includes('akra')
+                          ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 border-emerald-500 shadow-lg shadow-emerald-500/25'
+                          : 'border-gray-300 dark:border-gray-600 hover:border-emerald-400 hover:shadow-md'
+                      }`}
+                    >
+                      {entryTypes.includes('akra') && (
+                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+                  <div className="ml-4">
                     <div className="flex items-center space-x-2">
                       <div className={`w-3 h-3 rounded-full ${entryTypes.includes('akra') ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
                       <span className="font-medium text-gray-900 dark:text-white">Akra</span>
@@ -207,13 +239,29 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, onCancel }) => {
                   : 'border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700/50 hover:border-purple-300 dark:hover:border-purple-500'
               }`}>
                 <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={entryTypes.includes('ring')}
-                    onChange={() => handleEntryTypeToggle('ring')}
-                    className="w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500 focus:ring-2"
-                  />
-                  <div className="ml-3">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      checked={entryTypes.includes('ring')}
+                      onChange={() => handleEntryTypeToggle('ring')}
+                      className="sr-only"
+                    />
+                    <div 
+                      onClick={() => handleEntryTypeToggle('ring')}
+                      className={`w-6 h-6 rounded-lg border-2 transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                        entryTypes.includes('ring')
+                          ? 'bg-gradient-to-r from-purple-500 to-purple-600 border-purple-500 shadow-lg shadow-purple-500/25'
+                          : 'border-gray-300 dark:border-gray-600 hover:border-purple-400 hover:shadow-md'
+                      }`}
+                    >
+                      {entryTypes.includes('ring') && (
+                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+                  <div className="ml-4">
                     <div className="flex items-center space-x-2">
                       <div className={`w-3 h-3 rounded-full ${entryTypes.includes('ring') ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
                       <span className="font-medium text-gray-900 dark:text-white">Ring</span>
@@ -229,13 +277,29 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, onCancel }) => {
                   : 'border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700/50 hover:border-orange-300 dark:hover:border-orange-500'
               }`}>
                 <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={entryTypes.includes('packet')}
-                    onChange={() => handleEntryTypeToggle('packet')}
-                    className="w-5 h-5 text-orange-600 border-gray-300 rounded focus:ring-orange-500 focus:ring-2"
-                  />
-                  <div className="ml-3">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      checked={entryTypes.includes('packet')}
+                      onChange={() => handleEntryTypeToggle('packet')}
+                      className="sr-only"
+                    />
+                    <div 
+                      onClick={() => handleEntryTypeToggle('packet')}
+                      className={`w-6 h-6 rounded-lg border-2 transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                        entryTypes.includes('packet')
+                          ? 'bg-gradient-to-r from-orange-500 to-orange-600 border-orange-500 shadow-lg shadow-orange-500/25'
+                          : 'border-gray-300 dark:border-gray-600 hover:border-orange-400 hover:shadow-md'
+                      }`}
+                    >
+                      {entryTypes.includes('packet') && (
+                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+                  <div className="ml-4">
                     <div className="flex items-center space-x-2">
                       <div className={`w-3 h-3 rounded-full ${entryTypes.includes('packet') ? 'bg-orange-500' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
                       <span className="font-medium text-gray-900 dark:text-white">Packet</span>

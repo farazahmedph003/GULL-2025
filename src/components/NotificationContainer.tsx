@@ -38,20 +38,6 @@ const NotificationItem: React.FC<NotificationItemProps> = ({ notification, onClo
     }
   };
 
-  const getBackgroundColor = () => {
-    switch (notification.type) {
-      case 'success':
-        return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
-      case 'error':
-        return 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
-      case 'warning':
-        return 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800';
-      case 'info':
-        return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800';
-      default:
-        return 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800';
-    }
-  };
 
   const getTextColor = () => {
     switch (notification.type) {
@@ -69,32 +55,46 @@ const NotificationItem: React.FC<NotificationItemProps> = ({ notification, onClo
   };
 
   return (
-    <div className={`relative w-full ${getBackgroundColor()} border rounded-lg shadow-lg p-3 sm:p-4 transform transition-all duration-300 ease-in-out animate-slide-in`}>
-      <div className="flex items-start">
+    <div className={`relative w-full backdrop-blur-lg bg-white/90 dark:bg-gray-800/90 border border-white/20 dark:border-gray-700/50 rounded-2xl shadow-2xl p-4 sm:p-5 transform transition-all duration-500 ease-out`}
+         style={{
+           animation: 'slideDownFromTop 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+           boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.05)'
+         }}>
+      {/* Premium gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent rounded-2xl pointer-events-none"></div>
+      
+      <div className="relative flex items-start">
         <div className="flex-shrink-0">
-          <div className="w-5 h-5 sm:w-6 sm:h-6">
-            {getIcon()}
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+            notification.type === 'success' ? 'bg-green-100 dark:bg-green-900/30' :
+            notification.type === 'error' ? 'bg-red-100 dark:bg-red-900/30' :
+            notification.type === 'warning' ? 'bg-yellow-100 dark:bg-yellow-900/30' :
+            'bg-blue-100 dark:bg-blue-900/30'
+          }`}>
+            <div className="w-5 h-5">
+              {getIcon()}
+            </div>
           </div>
         </div>
-        <div className="ml-2 sm:ml-3 flex-1 min-w-0">
-          <h3 className={`text-xs sm:text-sm font-semibold ${getTextColor()} break-words`}>
+        <div className="ml-3 sm:ml-4 flex-1 min-w-0">
+          <h3 className={`text-sm sm:text-base font-bold ${getTextColor()} break-words leading-tight`}>
             {notification.title}
           </h3>
           {notification.message && (
-            <p className={`mt-1 text-xs sm:text-sm ${getTextColor()} opacity-90 break-words`}>
+            <p className={`mt-2 text-xs sm:text-sm ${getTextColor()} opacity-80 break-words leading-relaxed`}>
               {notification.message}
             </p>
           )}
           {notification.actions && notification.actions.length > 0 && (
-            <div className="mt-2 sm:mt-3 flex flex-wrap gap-1 sm:gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               {notification.actions.map((action, index) => (
                 <button
                   key={index}
                   onClick={action.onClick}
-                  className={`px-2 py-1 sm:px-3 sm:py-1 text-xs font-medium rounded-md transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
                     action.style === 'primary'
-                      ? 'bg-blue-600 text-white hover:bg-blue-700'
-                      : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl transform hover:scale-105'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600'
                   }`}
                 >
                   {action.label}
@@ -106,10 +106,10 @@ const NotificationItem: React.FC<NotificationItemProps> = ({ notification, onClo
         <div className="ml-2 sm:ml-4 flex-shrink-0">
           <button
             onClick={() => onClose(notification.id)}
-            className={`inline-flex ${getTextColor()} hover:opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 rounded-md p-1`}
+            className={`inline-flex w-7 h-7 rounded-full items-center justify-center ${getTextColor()} hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 hover:scale-110`}
           >
             <span className="sr-only">Close</span>
-            <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -130,9 +130,23 @@ const NotificationContainer: React.FC<NotificationContainerProps> = ({ notificat
 
   return (
     <>
-      {/* Top Notifications - Mobile & Desktop Responsive */}
+      {/* Top Notifications - Dropdown from top */}
       {topNotifications.length > 0 && (
-        <div className="fixed top-2 right-2 left-2 sm:top-4 sm:right-4 sm:left-auto z-50 space-y-2 max-w-sm sm:max-w-md">
+        <div className="fixed top-0 left-0 right-0 z-50 px-4 pt-4 space-y-3 max-w-md mx-auto">
+          <style>
+            {`
+              @keyframes slideDownFromTop {
+                0% {
+                  opacity: 0;
+                  transform: translateY(-100%);
+                }
+                100% {
+                  opacity: 1;
+                  transform: translateY(0);
+                }
+              }
+            `}
+          </style>
           {topNotifications.map((notification) => (
             <NotificationItem
               key={notification.id}

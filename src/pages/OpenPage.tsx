@@ -8,6 +8,7 @@ import FilterTab from '../components/FilterTab';
 import TransactionModal from '../components/TransactionModal';
 import LoadingSpinner from '../components/LoadingSpinner';
 import PremiumStats from '../components/PremiumStats';
+import StatisticsGrid from '../components/StatisticsGrid';
 import { useTransactions } from '../hooks/useTransactions';
 import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
@@ -130,6 +131,34 @@ const OpenPage: React.FC = () => {
     () => groupTransactionsByNumber(transactions, 'open'),
     [transactions]
   );
+
+  // Calculate Open-specific statistics
+  const openStats = useMemo(() => {
+    const openTransactions = transactions.filter(t => t.entryType === 'open');
+    const firstTotal = openTransactions.reduce((sum, t) => sum + t.first, 0);
+    const secondTotal = openTransactions.reduce((sum, t) => sum + t.second, 0);
+    
+    // Calculate unique numbers properly handling bulk entries
+    const uniqueNumbersSet = new Set<string>();
+    openTransactions.forEach(t => {
+      const isBulkEntry = t.number.includes(',') || t.number.includes(' ');
+      if (isBulkEntry) {
+        const numbers = t.number.split(/[,\s]+/).filter(n => n.trim().length > 0);
+        numbers.forEach(num => uniqueNumbersSet.add(num.trim()));
+      } else {
+        uniqueNumbersSet.add(t.number);
+      }
+    });
+
+    return {
+      totalEntries: openTransactions.length,
+      akraEntries: 0, // Not relevant for Open page
+      ringEntries: 0, // Not relevant for Open page
+      firstTotal,
+      secondTotal,
+      uniqueNumbers: uniqueNumbersSet.size,
+    };
+  }, [transactions]);
 
   const handleNumberClick = (number: string) => {
     setModalNumber(number);
@@ -327,6 +356,14 @@ const OpenPage: React.FC = () => {
           <p className="text-gray-600 dark:text-gray-400">
             View and manage entries for numbers 0-9
           </p>
+        </div>
+
+        {/* Open Statistics */}
+        <div className="mb-8">
+          <StatisticsGrid
+            statistics={openStats}
+            entryType="open"
+          />
         </div>
 
         {/* Tab Selection */}

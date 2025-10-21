@@ -22,10 +22,11 @@ export interface CustomConfirmOptions {
 }
 
 // Global notification functions (these will be set by the app)
-let globalShowSuccess: (title: string, message?: string, options?: CustomAlertOptions) => string;
-let globalShowError: (title: string, message?: string, options?: CustomAlertOptions) => string;
-let globalShowWarning: (title: string, message?: string, options?: CustomAlertOptions) => string;
-let globalShowInfo: (title: string, message?: string, options?: CustomAlertOptions) => string;
+// Note: These are now async functions but we maintain backward compatibility
+let globalShowSuccess: (title: string, message?: string, options?: CustomAlertOptions) => string | Promise<string>;
+let globalShowError: (title: string, message?: string, options?: CustomAlertOptions) => string | Promise<string>;
+let globalShowWarning: (title: string, message?: string, options?: CustomAlertOptions) => string | Promise<string>;
+let globalShowInfo: (title: string, message?: string, options?: CustomAlertOptions) => string | Promise<string>;
 let globalConfirm: (message: string, options?: CustomConfirmOptions) => Promise<boolean>;
 
 // Initialize the global functions

@@ -139,3 +139,20 @@ export interface ChartData {
   color?: string;
 }
 
+// Push Notification Types
+export type NotificationPermission = 'default' | 'granted' | 'denied';
+
+export interface PushNotificationEvent {
+  type: 'balance_change' | 'transaction_update' | 'admin_action' | 'system_event';
+  title: string;
+  message: string;
+  data?: Record<string, any>;
+  timestamp: string;
+}
+
+export interface PushNotificationState {
+  permission: NotificationPermission;
+  enabled: boolean;
+  supported: boolean;
+}
+

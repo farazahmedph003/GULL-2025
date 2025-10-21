@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import type { NumberSummary, EntryType } from '../types';
+import type { NumberSummary } from '../types';
 import { getAllPossibleNumbers, getHighestLowestNumbers } from '../utils/transactionHelpers';
 
 interface PacketGridProps {

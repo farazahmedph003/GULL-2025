@@ -12,6 +12,7 @@ import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { db } from '../services/database';
 import { formatDate } from '../utils/helpers';
+import { playReloadSound, playUndoSound, playRedoSound } from '../utils/audioFeedback';
 import type { EntryType, Project } from '../types';
 
 const Dashboard: React.FC = () => {
@@ -35,6 +36,7 @@ const Dashboard: React.FC = () => {
   
   // Comprehensive refresh function
   const refresh = () => {
+    playReloadSound();
     refreshTransactions();
     refreshBalance();
   };
@@ -140,6 +142,7 @@ const Dashboard: React.FC = () => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         if (canUndo) {
+          playUndoSound();
           undo();
         }
       }
@@ -148,6 +151,7 @@ const Dashboard: React.FC = () => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
         e.preventDefault();
         if (canRedo) {
+          playRedoSound();
           redo();
         }
       }

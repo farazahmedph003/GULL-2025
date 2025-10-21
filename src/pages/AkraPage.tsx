@@ -8,9 +8,11 @@ import FilterTab from '../components/FilterTab';
 import TransactionModal from '../components/TransactionModal';
 import LoadingSpinner from '../components/LoadingSpinner';
 import PremiumStats from '../components/PremiumStats';
+import StatisticsGrid from '../components/StatisticsGrid';
 import { useTransactions } from '../hooks/useTransactions';
 import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
+import { useNotifications } from '../contexts/NotificationContext';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
 import { db } from '../services/database';
 import { formatDate } from '../utils/helpers';
@@ -65,6 +67,7 @@ const AkraPage: React.FC = () => {
   } = useTransactions(id || '');
   
   const { refresh: refreshBalance } = useUserBalance();
+  const { showSuccess, showError } = useNotifications();
   
   // Comprehensive refresh function
   const refresh = () => {
@@ -131,6 +134,34 @@ const AkraPage: React.FC = () => {
     [transactions]
   );
 
+  // Calculate Akra-specific statistics
+  const akraStats = useMemo(() => {
+    const akraTransactions = transactions.filter(t => t.entryType === 'akra');
+    const firstTotal = akraTransactions.reduce((sum, t) => sum + t.first, 0);
+    const secondTotal = akraTransactions.reduce((sum, t) => sum + t.second, 0);
+    
+    // Calculate unique numbers properly handling bulk entries
+    const uniqueNumbersSet = new Set<string>();
+    akraTransactions.forEach(t => {
+      const isBulkEntry = t.number.includes(',') || t.number.includes(' ');
+      if (isBulkEntry) {
+        const numbers = t.number.split(/[,\s]+/).filter(n => n.trim().length > 0);
+        numbers.forEach(num => uniqueNumbersSet.add(num.trim()));
+      } else {
+        uniqueNumbersSet.add(t.number);
+      }
+    });
+
+    return {
+      totalEntries: akraTransactions.length,
+      akraEntries: akraTransactions.length,
+      ringEntries: 0, // Not relevant for Akra page
+      firstTotal,
+      secondTotal,
+      uniqueNumbers: uniqueNumbersSet.size,
+    };
+  }, [transactions]);
+
   // Tabs moved to sidebar menu
 
   const handleNumberClick = (number: string) => {
@@ -138,9 +169,21 @@ const AkraPage: React.FC = () => {
   };
 
   const handleDelete = async (transactionId: string) => {
+    const transaction = transactions.find(t => t.id === transactionId);
     if (await deleteTransaction(transactionId)) {
       addAction('delete', `Deleted transaction`, []);
       refresh();
+      await showSuccess(
+        'Transaction Deleted',
+        `Successfully deleted ${transaction?.entryType || 'transaction'} entry for number ${transaction?.number || 'unknown'}`,
+        { duration: 3000 }
+      );
+    } else {
+      await showError(
+        'Delete Failed',
+        'Failed to delete transaction. Please try again.',
+        { duration: 5000 }
+      );
     }
   };
 
@@ -322,19 +365,27 @@ const AkraPage: React.FC = () => {
         projectId={id}
       />
 
-      {/* Page Header */}
-      <div className="w-full px-4 py-4">
-        <div className="mb-6">
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-            Akra (2-digit Numbers)
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400">
-            View and manage entries for numbers 00-99
-          </p>
-        </div>
+        {/* Page Header */}
+        <div className="w-full px-4 py-4">
+          <div className="mb-6">
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+              Akra (2-digit Numbers)
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400">
+              View and manage entries for numbers 00-99
+            </p>
+          </div>
 
-        {/* Tab Selection */}
-        <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
+          {/* Akra Statistics */}
+          <div className="mb-8">
+            <StatisticsGrid
+              statistics={akraStats}
+              entryType="akra"
+            />
+          </div>
+
+          {/* Tab Selection */}
+          <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
           <button
             onClick={() => setActiveTab('entries')}
             className={`px-6 py-3 text-sm font-medium transition-colors ${

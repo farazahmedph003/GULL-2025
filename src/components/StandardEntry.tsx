@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import type { EntryType, Transaction } from '../types';
 import { generateId, isValidNumber, formatCurrency } from '../utils/helpers';
 import { useUserBalance } from '../hooks/useUserBalance';
+import { useNotifications } from '../contexts/NotificationContext';
+import { playSuccessSound } from '../utils/audioFeedback';
+import { getEntryCost } from '../config/admin';
 
 interface StandardEntryProps {
   projectId: string;
@@ -12,9 +15,11 @@ interface StandardEntryProps {
 const StandardEntry: React.FC<StandardEntryProps> = ({
   projectId,
   entryType,
-  onSuccess,
+  onSuccess: _onSuccess,
 }) => {
   const { balance, hasSufficientBalance, deductBalance, refresh: refreshBalance } = useUserBalance();
+  const { showSuccess, showError } = useNotifications();
+  const numbersInputRef = useRef<HTMLTextAreaElement>(null);
   
   const [numbers, setNumbers] = useState('');
   const [first, setFirst] = useState('');
@@ -90,10 +95,12 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
       const firstAmount = first.trim() ? Number(first) : 0;
       const secondAmount = second.trim() ? Number(second) : 0;
       
-      // Calculate total amount per entry
-      const totalPerEntry = firstAmount + secondAmount;
-      // Total cost for all numbers (bulk uses shared amounts per number)
-      const totalCost = totalPerEntry * numberList.length;
+      // Calculate user betting amounts per entry
+      const bettingAmountPerEntry = firstAmount + secondAmount;
+      // Calculate entry cost per number
+      const entryCostPerNumber = (entryType === 'akra' || entryType === 'ring') ? getEntryCost(entryType) : 0;
+      // Total cost: betting amounts + entry costs for each number
+      const totalCost = (bettingAmountPerEntry + entryCostPerNumber) * numberList.length;
 
       // Check balance before proceeding
       if (!hasSufficientBalance(totalCost)) {
@@ -149,12 +156,30 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
       // Refresh balance display
       refreshBalance();
 
-      // Success - no alert, silent success
+      // Play success sound
+      playSuccessSound();
 
-      onSuccess();
+      // Success notification
+      await showSuccess(
+        'Entry Added Successfully',
+        `Added ${numberList.length} ${entryType} ${numberList.length === 1 ? 'entry' : 'entries'} for ${formatCurrency(totalCost)}`,
+        { duration: 3000 }
+      );
+
+      // Focus back to number input for next entry
+      setTimeout(() => {
+        numbersInputRef.current?.focus();
+      }, 100);
+
+      // Don't call onSuccess() to keep the form open for multiple entries
+      // onSuccess();
     } catch (error) {
       console.error('Error adding transaction:', error);
-      alert('An error occurred while adding the transaction.');
+      await showError(
+        'Error Adding Entry',
+        'An error occurred while adding the transaction. Please try again.',
+        { duration: 5000 }
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -177,12 +202,31 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         </div>
       )}
 
+      {/* Entry Cost Information */}
+      {(entryType === 'akra' || entryType === 'ring') && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+          <div className="flex items-center space-x-3">
+            <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="flex-1">
+              <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-1">Entry Cost</h4>
+              <p className="text-sm text-blue-600 dark:text-blue-400">
+                {entryType === 'akra' ? 'Akra' : 'Ring'} entries have a base cost of {formatCurrency(getEntryCost(entryType))} per number, 
+                plus your betting amounts (FIRST + SECOND).
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Numbers Input */}
       <div>
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           Numbers <span className="text-danger">*</span>
         </label>
         <textarea
+          ref={numbersInputRef}
           value={numbers}
           onChange={(e) => {
             setNumbers(e.target.value);
@@ -259,9 +303,12 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         <button
           type="submit"
           disabled={isSubmitting}
-          className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
-          {isSubmitting ? 'Adding...' : 'Add Entry'}
+          {isSubmitting && (
+            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+          )}
+          {isSubmitting ? 'Adding Entry...' : 'Add Entry'}
         </button>
       </div>
     </form>

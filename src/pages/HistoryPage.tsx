@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
+import StatisticsGrid from '../components/StatisticsGrid';
 import { useTransactions } from '../hooks/useTransactions';
 import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
@@ -9,7 +10,7 @@ import { useConfirmation } from '../hooks/useConfirmation.tsx';
 import { db } from '../services/database';
 import { formatDate, formatCurrency, formatTime } from '../utils/helpers';
 import { exportTransactionsToExcel, importTransactionsFromExcel } from '../utils/excelHandler';
-import type { Transaction } from '../types';
+import type { Transaction, EntryType, ProjectStatistics } from '../types';
 
 interface EditModalProps {
   transaction: Transaction;
@@ -296,7 +297,7 @@ const HistoryPage: React.FC = () => {
   });
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'akra' | 'ring'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'open' | 'akra' | 'ring' | 'packet'>('all');
   const [filterEntry, setFilterEntry] = useState<'all' | 'first' | 'second' | 'both'>('all');
   const [selectedTransactions, setSelectedTransactions] = useState<Set<string>>(new Set());
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -367,11 +368,15 @@ const HistoryPage: React.FC = () => {
     return combinedHistory.filter((item) => {
       // Filter by entry type (we need to determine this from the numbers)
       if (filterType !== 'all') {
+        const isOpen = item.numbers.some(n => n.length === 1);
         const isAkra = item.numbers.some(n => n.length === 2);
         const isRing = item.numbers.some(n => n.length === 3);
+        const isPacket = item.numbers.some(n => n.length === 4);
         
+        if (filterType === 'open' && !isOpen) return false;
         if (filterType === 'akra' && !isAkra) return false;
         if (filterType === 'ring' && !isRing) return false;
+        if (filterType === 'packet' && !isPacket) return false;
       }
 
       // Filter by first/second/both
@@ -385,6 +390,44 @@ const HistoryPage: React.FC = () => {
       return true;
     });
   }, [combinedHistory, filterType, filterEntry, searchTerm]);
+
+  // Calculate filtered statistics based on filterType
+  const filteredStats = useMemo((): ProjectStatistics => {
+    // Get the actual transactions that match the current filter
+    const filteredTransactions = filterType === 'all' 
+      ? transactions 
+      : transactions.filter(t => {
+          if (filterType === 'open') return t.entryType === 'open';
+          if (filterType === 'akra') return t.entryType === 'akra';
+          if (filterType === 'ring') return t.entryType === 'ring';
+          if (filterType === 'packet') return t.entryType === 'packet';
+          return true;
+        });
+
+    const firstTotal = filteredTransactions.reduce((sum, t) => sum + t.first, 0);
+    const secondTotal = filteredTransactions.reduce((sum, t) => sum + t.second, 0);
+    
+    // Calculate unique numbers properly handling bulk entries
+    const uniqueNumbersSet = new Set<string>();
+    filteredTransactions.forEach(t => {
+      const isBulkEntry = t.number.includes(',') || t.number.includes(' ');
+      if (isBulkEntry) {
+        const numbers = t.number.split(/[,\s]+/).filter(n => n.trim().length > 0);
+        numbers.forEach(num => uniqueNumbersSet.add(num.trim()));
+      } else {
+        uniqueNumbersSet.add(t.number);
+      }
+    });
+
+    return {
+      totalEntries: filteredTransactions.length,
+      akraEntries: transactions.filter(t => t.entryType === 'akra').length,
+      ringEntries: transactions.filter(t => t.entryType === 'ring').length,
+      firstTotal,
+      secondTotal,
+      uniqueNumbers: uniqueNumbersSet.size,
+    };
+  }, [transactions, filterType]);
 
   const handleSelectTransaction = (transactionId: string) => {
     const newSelected = new Set(selectedTransactions);
@@ -715,12 +758,14 @@ const HistoryPage: React.FC = () => {
               </label>
               <select
                 value={filterType}
-                onChange={(e) => setFilterType(e.target.value as 'all' | 'akra' | 'ring')}
+                onChange={(e) => setFilterType(e.target.value as 'all' | 'open' | 'akra' | 'ring' | 'packet')}
                 className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">All Types</option>
+                <option value="open">Open (1-digit)</option>
                 <option value="akra">Akra (2-digit)</option>
                 <option value="ring">Ring (3-digit)</option>
+                <option value="packet">Packet (4-digit)</option>
               </select>
             </div>
 
@@ -759,78 +804,12 @@ const HistoryPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Statistics Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="card-premium hover-lift animate-slide-in-bottom bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Entries</p>
-                <p className="text-3xl font-bold text-blue-600 dark:text-blue-400 mt-2">{filteredHistory.length}</p>
-              </div>
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center animate-float shadow-glow">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div className="card-premium hover-lift animate-slide-in-bottom bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl" style={{ animationDelay: '0.1s' }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">First PKR</p>
-                <p className="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">
-                  {formatCurrency(
-                    filteredHistory.reduce((sum, item) => sum + (item.first || 0), 0)
-                  )}
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-500 rounded-xl flex items-center justify-center animate-float shadow-glow" style={{ animationDelay: '0.5s' }}>
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div className="card-premium hover-lift animate-slide-in-bottom bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl" style={{ animationDelay: '0.2s' }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Second PKR</p>
-                <p className="text-3xl font-bold text-purple-600 dark:text-purple-400 mt-2">
-                  {formatCurrency(
-                    filteredHistory.reduce((sum, item) => sum + (item.second || 0), 0)
-                  )}
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center animate-float shadow-glow" style={{ animationDelay: '1s' }}>
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div className="card-premium hover-lift animate-slide-in-bottom bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl" style={{ animationDelay: '0.3s' }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total PKR</p>
-                <p className="text-3xl font-bold text-amber-600 dark:text-amber-400 mt-2">
-                  {formatCurrency(
-                    filteredHistory.reduce(
-                      (sum, item) => sum + (item.first || 0) + (item.second || 0),
-                      0
-                    )
-                  )}
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl flex items-center justify-center animate-float shadow-glow" style={{ animationDelay: '1.5s' }}>
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-              </div>
-            </div>
-          </div>
+        {/* Filtered Statistics */}
+        <div className="mb-8">
+          <StatisticsGrid
+            statistics={filteredStats}
+            entryType={filterType === 'all' ? undefined : (filterType as EntryType)}
+          />
         </div>
 
         {/* Select All Button */}
@@ -843,13 +822,13 @@ const HistoryPage: React.FC = () => {
               {/* Gradient overlay */}
               <div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 to-pink-600/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
               
-              <div className="relative z-10 flex items-center space-x-2">
-                <div className="w-5 h-5 rounded-lg bg-white/20 flex items-center justify-center">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              <div className="relative z-10 flex items-center space-x-3">
+                <div className="w-6 h-6 rounded-lg bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center shadow-lg">
+                  <svg className="w-4 h-4 text-white drop-shadow-sm" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <span>
+                <span className="font-semibold tracking-wide">
                   {selectedTransactions.size === filteredHistory.filter(item => item.type === 'added' && item.transactionId).length ? 'Deselect All' : 'Select All'}
                 </span>
               </div>
@@ -918,12 +897,28 @@ const HistoryPage: React.FC = () => {
                           </h3>
                         </div>
                         {item.transactionId && (
-                          <input
-                            type="checkbox"
-                            checked={selectedTransactions.has(item.transactionId)}
-                            onChange={() => handleSelectTransaction(item.transactionId!)}
-                            className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 flex-shrink-0"
-                          />
+                          <div className="relative">
+                            <input
+                              type="checkbox"
+                              checked={selectedTransactions.has(item.transactionId)}
+                              onChange={() => handleSelectTransaction(item.transactionId!)}
+                              className="sr-only"
+                            />
+                            <div 
+                              onClick={() => handleSelectTransaction(item.transactionId!)}
+                              className={`w-6 h-6 rounded-lg border-2 transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                                selectedTransactions.has(item.transactionId)
+                                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-purple-500 shadow-lg shadow-purple-500/25'
+                                  : 'border-gray-300 dark:border-gray-600 hover:border-purple-400 hover:shadow-md'
+                              }`}
+                            >
+                              {selectedTransactions.has(item.transactionId) && (
+                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </div>
+                          </div>
                         )}
                       </div>
                       {item.transactionId && (
