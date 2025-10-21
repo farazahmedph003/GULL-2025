@@ -49,7 +49,7 @@ export const useAdminData = () => {
         console.log('Profiles query result:', { profiles, error });
         
         // Check if current user has a profile
-        let currentUserProfile = profiles?.find(p => p.user_id === currentUser?.id);
+        let currentUserProfile = profiles?.find((p: any) => p.user_id === currentUser?.id);
         console.log('Current user profile:', currentUserProfile);
         console.log('Is current user admin?', currentUserProfile?.role === 'admin');
         
@@ -76,7 +76,7 @@ export const useAdminData = () => {
                 .select('user_id, email, display_name, role, balance, is_online, last_login_at, created_at, updated_at')
                 .order('created_at', { ascending: false });
               profiles = updatedProfiles;
-              currentUserProfile = profiles?.find(p => p.user_id === currentUser?.id);
+              currentUserProfile = profiles?.find((p: any) => p.user_id === currentUser?.id);
             }
           } catch (err) {
             console.warn('Failed to create profile:', err);
@@ -107,7 +107,7 @@ export const useAdminData = () => {
                   .select('user_id, email, display_name, role, balance, is_online, last_login_at, created_at, updated_at')
                   .order('created_at', { ascending: false });
                 profiles = updatedProfiles;
-                currentUserProfile = profiles?.find(p => p.user_id === currentUser?.id);
+                currentUserProfile = profiles?.find((p: any) => p.user_id === currentUser?.id);
               }
             } catch (error) {
               console.warn('Failed to update admin role:', error);
@@ -286,20 +286,20 @@ export const useAdminData = () => {
         });
 
         console.log('Admin data - Project count map after processing:', projectCountMap);
-        console.log('Admin data - Available user IDs from profiles:', (profiles || []).map(p => ({ user_id: p.user_id, email: p.email, display_name: p.display_name })));
+        console.log('Admin data - Available user IDs from profiles:', (profiles || []).map((p: any) => ({ user_id: p.user_id, email: p.email, display_name: p.display_name })));
         console.log('Admin data - Project ID to User ID mapping:', projectIdToUserIdMap);
         
         // Additional debugging: Check if project user IDs match profile user IDs
-        const profileUserIds = (profiles || []).map(p => p.user_id);
+        const profileUserIds = (profiles || []).map((p: any) => p.user_id);
         const projectUserIds = Object.keys(projectCountMap);
         console.log('🔍 Profile User IDs:', profileUserIds);
         console.log('🔍 Project User IDs:', projectUserIds);
-        console.log('🔍 Matching user IDs:', profileUserIds.filter(id => projectUserIds.includes(id)));
+        console.log('🔍 Matching user IDs:', profileUserIds.filter((id: string) => projectUserIds.includes(id)));
         
         // Final verification - check if any users have projects based on the count map
         Object.keys(projectCountMap).forEach(userId => {
           const count = projectCountMap[userId];
-          const profile = profiles?.find(p => p.user_id === userId);
+          const profile = profiles?.find((p: any) => p.user_id === userId);
           console.log(`🔢 User ${profile?.display_name || userId} has ${count} projects`);
         });
 
@@ -317,7 +317,7 @@ export const useAdminData = () => {
           }
         });
 
-        const mapped: UserAccount[] = (profiles || []).map((p) => ({
+        const mapped: UserAccount[] = (profiles || []).map((p: any) => ({
           id: p.user_id,
           userId: p.user_id,
           email: p.email || '',
@@ -429,7 +429,7 @@ export const useAdminData = () => {
             schema: 'public',
             table: 'projects',
           },
-          (payload) => {
+          (payload: any) => {
             console.log('🔥 REAL-TIME UPDATE: Project change detected:', {
               event: payload.eventType,
               new: payload.new,
@@ -444,7 +444,7 @@ export const useAdminData = () => {
             }, 500); // Small delay to ensure database consistency
           }
         )
-        .subscribe((status) => {
+        .subscribe((status: any) => {
           console.log('Real-time subscription status:', status);
           if (status === 'SUBSCRIBED') {
             console.log('✅ Real-time subscription active for projects table');

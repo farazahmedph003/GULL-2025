@@ -6,7 +6,7 @@ import { isOfflineMode, isSupabaseConfigured, isSupabaseConnected } from '../../
 import type { EntryType, Project, Transaction, ProjectStatistics } from '../../types';
 
 const AdminFinancial: React.FC = () => {
-  const { users, loading, refresh: refreshAdminData } = useAdminData();
+  const { users, loading } = useAdminData();
   const [timeRange, setTimeRange] = useState<'today' | 'week' | 'month' | 'all'>('all');
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);

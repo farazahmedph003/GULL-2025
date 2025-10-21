@@ -1,4 +1,4 @@
-import { supabase, isOfflineMode, isSupabaseConfigured, isSupabaseConnected } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, isSupabaseConnected } from '../lib/supabase';
 import type { Project, Transaction, FilterPreset, ActionHistory, EntryType } from '../types';
 
 // ============================================
@@ -28,7 +28,7 @@ export class DatabaseService {
     maxRetries: number = 3,
     delay: number = 1000
   ): Promise<T> {
-    let lastError: Error;
+    let lastError: Error | undefined;
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -51,7 +51,7 @@ export class DatabaseService {
       }
     }
     
-    throw lastError;
+    throw lastError || new Error('Database operation failed after all retries');
   }
 
   // Check if an error is retryable
@@ -104,7 +104,7 @@ export class DatabaseService {
         throw error;
       }
       
-      return data.map(row => ({
+      return data.map((row: any) => ({
         id: row.id,
         name: row.name,
         date: row.created_at,
@@ -188,7 +188,7 @@ export class DatabaseService {
       }
 
       console.log('getUserProjects - Raw projects data:', data);
-      return data.map(project => ({
+      return data.map((project: any) => ({
         id: project.id,
         name: project.name,
         date: project.created_at,
@@ -312,7 +312,7 @@ export class DatabaseService {
         throw error;
       }
 
-      return data.map(row => ({
+      return data.map((row: any) => ({
         id: row.id,
         projectId: row.project_id,
         number: row.number,
@@ -424,7 +424,7 @@ export class DatabaseService {
 
     if (error) throw error;
 
-    return data.map(row => ({
+    return data.map((row: any) => ({
       id: row.id,
       projectId: row.project_id,
       type: row.action_type as 'add' | 'edit' | 'delete' | 'filter' | 'import' | 'batch',
@@ -471,7 +471,7 @@ export class DatabaseService {
 
     if (error) throw error;
 
-    return data.map(row => ({
+    return data.map((row: any) => ({
       id: row.id,
       name: row.name,
       entryType: row.entry_type as EntryType,

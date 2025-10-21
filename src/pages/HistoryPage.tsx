@@ -8,7 +8,7 @@ import { useUserBalance } from '../hooks/useUserBalance';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useConfirmation } from '../hooks/useConfirmation.tsx';
 import { db } from '../services/database';
-import { formatDate, formatCurrency, formatTime } from '../utils/helpers';
+import { formatDate, formatTime } from '../utils/helpers';
 import { exportTransactionsToExcel, importTransactionsFromExcel } from '../utils/excelHandler';
 import type { Transaction, EntryType, ProjectStatistics } from '../types';
 

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Transaction, ProjectStatistics } from '../types';
 import { useUserBalance } from './useUserBalance';
-import { useAuth } from '../contexts/AuthContext';
 import { db } from '../services/database';
 import { isSupabaseConfigured, isOfflineMode } from '../lib/supabase';
 
@@ -10,7 +9,6 @@ export const useTransactions = (projectId: string) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { deductBalance, addBalance } = useUserBalance();
-  const { user } = useAuth();
 
   // Load transactions from database or localStorage as fallback
   const loadTransactions = useCallback(async () => {
