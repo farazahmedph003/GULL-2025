@@ -172,13 +172,7 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ isOpen, onClose, projectId: p
         icon: '🔍',
         adminOnly: false,
       },
-      {
-        id: 'history',
-        label: 'History',
-        path: `/project/${projectId}/history`,
-        icon: '📚',
-        adminOnly: false,
-      },
+      // History remains removed
       {
         id: 'divider',
         label: '',

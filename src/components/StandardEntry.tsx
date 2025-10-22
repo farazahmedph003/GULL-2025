@@ -101,13 +101,15 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         return num.padStart(lengths[type], '0');
       };
       
-      // Categorize numbers based on your requirements:
-      // 0-9 (single digits) → Open entries
-      // 0000-9999 (4 digits) → Packet entries
+      // Categorize numbers based on digit length:
+      // 1 digit (0-9) → Open entries
+      // 2 digits (00-99) → Akra entries
+      // 3 digits (000-999) → Ring entries
+      // 4 digits (0000-9999) → Packet entries
       const categorizedNumbers = {
         open: numberList.filter(n => n.length === 1),
-        akra: [], // Not used based on your requirements
-        ring: [], // Not used based on your requirements  
+        akra: numberList.filter(n => n.length === 2),
+        ring: numberList.filter(n => n.length === 3),
         packet: numberList.filter(n => n.length === 4),
       };
       
@@ -295,7 +297,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
               setNumbers(e.target.value);
               if (errors.numbers) setErrors(prev => ({ ...prev, numbers: undefined }));
             }}
-            placeholder="e.g., 0 1 2 3 OR 0000 0001 0002"
+            placeholder="e.g., 0 1 2 (open) OR 00 01 02 (akra) OR 000 001 (ring) OR 0000 0001 (packet)"
             className={`w-full px-4 py-3 text-base border rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${errors.numbers ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
             autoComplete="off"
             inputMode="text"

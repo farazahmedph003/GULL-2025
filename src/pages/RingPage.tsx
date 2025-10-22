@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
-import EntryPanel from '../components/EntryPanel';
-import FloatingActionButton from '../components/FloatingActionButton';
+// Removed bottom sheet EntryPanel; using fresh inline panel instead
+import FreshEntryPanel from '../components/FreshEntryPanel';
+// import FloatingActionButton from '../components/FloatingActionButton';
 import NumberGrid from '../components/NumberGrid';
 import FilterTab from '../components/FilterTab';
 import TransactionModal from '../components/TransactionModal';
@@ -29,7 +30,7 @@ const RingPage: React.FC = () => {
   const [selectedNumbers, setSelectedNumbers] = useState<Set<string>>(new Set());
   const [modalNumber, setModalNumber] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [entryPanelOpen, setEntryPanelOpen] = useState(false);
+  // Removed floating sheet state
   const [project, setProject] = useState<any>(null);
   const [projectLoading, setProjectLoading] = useState(true);
   const [manualRefreshing, setManualRefreshing] = useState(false);
@@ -97,13 +98,7 @@ const RingPage: React.FC = () => {
     refreshBalance();
   };
   
-  const { 
-    canUndo, 
-    canRedo, 
-    undo, 
-    redo, 
-    addAction 
-  } = useHistory(id || '', {
+  const { addAction } = useHistory(id || '', {
     onRevert: async (action) => {
       if (action.type === 'add' && action.data?.transactionId) {
         await deleteTransaction(action.data.transactionId);
@@ -406,10 +401,6 @@ const RingPage: React.FC = () => {
       <ProjectHeader
         projectName={project.name}
         projectDate={formatDate(project.date)}
-        onUndo={undo}
-        onRedo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
         onRefresh={refresh}
         projectId={id}
       />
@@ -568,30 +559,13 @@ const RingPage: React.FC = () => {
           onDelete={handleDelete}
         />
       )}
-      {/* Floating Add Entry Button */}
-      <FloatingActionButton
-        onClick={() => setEntryPanelOpen(true)}
-        position="bottom-right"
-        color="secondary"
-        label="Add Entry (Ctrl+/)"
-        icon={
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        }
-      />
-
-      {/* Entry Panel */}
-      <EntryPanel
-        isOpen={entryPanelOpen}
-        onClose={() => setEntryPanelOpen(false)}
-        projectId={id || ''}
-        entryType={'ring'}
-        onEntryAdded={() => {
-          silentRefresh();
-          setEntryPanelOpen(false);
-        }}
-      />
+      {/* Fresh Entry Panel */}
+      <div className="w-full px-4 py-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Add Entry</h3>
+          <FreshEntryPanel projectId={id || ''} entryType="ring" onSuccess={silentRefresh} />
+        </div>
+      </div>
 
     </div>
   );

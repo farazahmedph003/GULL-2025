@@ -17,7 +17,7 @@ import Welcome from './pages/Welcome';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import ProjectSelection from './pages/ProjectSelection';
-import Dashboard from './pages/Dashboard';
+// import Dashboard from './pages/Dashboard';
 import AkraPage from './pages/AkraPage';
 import RingPage from './pages/RingPage';
 import OpenPage from './pages/OpenPage';

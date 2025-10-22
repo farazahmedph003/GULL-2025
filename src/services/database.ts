@@ -1,5 +1,8 @@
-import { supabase, isSupabaseConfigured, isSupabaseConnected } from '../lib/supabase';
+import { supabase, supabaseAdmin, isSupabaseConfigured, isSupabaseConnected } from '../lib/supabase';
 import type { Project, Transaction, FilterPreset, ActionHistory, EntryType } from '../types';
+
+// Get service key from environment
+const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_KEY || '';
 
 // ============================================
 // DATABASE SERVICE
@@ -80,6 +83,105 @@ export class DatabaseService {
   }
 
   // ============================================
+  // ADMIN ACTION LOGGING
+  // ============================================
+
+  async logAdminAction(
+    adminUserId: string,
+    targetUserId: string,
+    actionType: string,
+    description: string,
+    metadata: any = {}
+  ): Promise<void> {
+    if (!isSupabaseConfigured()) {
+      console.warn('Supabase not configured, skipping admin action logging');
+      return;
+    }
+
+    if (!supabase) {
+      console.warn('Database connection not available, skipping admin action logging');
+      return;
+    }
+
+    try {
+      await this.withRetry(async () => {
+        const { error } = await supabase
+          .from('admin_actions')
+          .insert({
+            admin_user_id: adminUserId,
+            target_user_id: targetUserId,
+            action_type: actionType,
+            description,
+            metadata
+          });
+
+        if (error) {
+          console.error('Database error in logAdminAction:', error);
+          // Don't throw - just log the error and continue
+          console.warn('Admin action logging failed, but continuing with main operation');
+        }
+      });
+    } catch (error) {
+      console.error('Failed to log admin action:', error);
+      // Don't throw - logging failures shouldn't break the main operation
+    }
+  }
+
+  // ============================================
+  // USER PROFILES & ADMIN UTILITIES
+  // ============================================
+
+  async getProfileByUserId(userId: string): Promise<any> {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase is not properly configured. Please check your environment settings.');
+    }
+
+    if (!supabase) {
+      throw new Error('Database connection is not available. Please check your internet connection.');
+    }
+
+    return this.withRetry(async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (error) {
+        console.error('Database error in getProfileByUserId:', error);
+        throw error;
+      }
+
+      return data;
+    });
+  }
+
+  async getAllProfiles(): Promise<any[]> {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase is not properly configured. Please check your environment settings.');
+    }
+
+    if (!supabase) {
+      throw new Error('Database connection is not available. Please check your internet connection.');
+    }
+
+    return this.withRetry(async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Database error in getAllProfiles:', error);
+        throw error;
+      }
+
+      return data || [];
+    });
+  }
+
+
+  // ============================================
   // PROJECTS
   // ============================================
 
@@ -126,7 +228,11 @@ export class DatabaseService {
     }
 
     return this.withRetry(async () => {
-      const { data, error } = await supabase
+      // Use service role client if available (for admin operations)
+      const clientToUse = supabaseAdmin || supabase;
+      console.log('getProject - Using client:', supabaseAdmin ? 'service role' : 'regular');
+      
+      const { data, error } = await clientToUse
         .from('projects')
         .select('*')
         .eq('id', projectId)
@@ -162,25 +268,101 @@ export class DatabaseService {
     return this.withRetry(async () => {
       console.log('getUserProjects - Querying projects for user_id:', userId);
       
-      // First check if user is authenticated
+      // Check if this is an admin impersonation by looking at localStorage
+      const impersonationData = localStorage.getItem('gull-admin-impersonation');
+      const isImpersonating = !!impersonationData;
+      console.log('getUserProjects - Impersonation check:', { isImpersonating, impersonationData });
+      console.log('getUserProjects - supabaseAdmin available:', !!supabaseAdmin);
+      console.log('getUserProjects - Service key loaded:', !!supabaseServiceKey);
+      
+      // Also check all localStorage keys to see what's stored
+      const allStorageKeys = Object.keys(localStorage);
+      console.log('getUserProjects - All localStorage keys:', allStorageKeys);
+      
+      // Use service role client if available (always use it when available for admin operations)
+      let clientToUse = supabase;
+      if (supabaseAdmin) {
+        console.log('getUserProjects - Using service role client (bypasses RLS)');
+        console.log('getUserProjects - Service role client object:', supabaseAdmin);
+        clientToUse = supabaseAdmin;
+      } else {
+        console.log('getUserProjects - Service role client not available, using regular supabase client');
+        console.log('getUserProjects - supabaseAdmin is:', supabaseAdmin);
+      }
+      
+      // First check if user is authenticated (always use regular client for auth)
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       console.log('getUserProjects - Auth check:', { user: user?.id, authError });
       
+      // Check if current user is admin (use regular client for RPC)
+      if (user?.id) {
+        const { data: adminCheck, error: adminCheckError } = await supabase
+          .rpc('current_user_is_admin');
+        console.log('getUserProjects - Admin check:', { adminCheck, adminCheckError });
+        
+        // Also check the current user's profile
+        const { data: currentUserProfile, error: profileError } = await clientToUse
+          .from('profiles')
+          .select('user_id, role, email')
+          .eq('user_id', user.id)
+          .single();
+        console.log('getUserProjects - Current user profile:', { currentUserProfile, profileError });
+        
+        // Check if we can access profiles table as admin
+        const { data: allProfiles, error: allProfilesError } = await clientToUse
+          .from('profiles')
+          .select('user_id, email, role')
+          .limit(5);
+        console.log('getUserProjects - All profiles access test:', { allProfiles, allProfilesError });
+      }
+      
       // Check if user has a profile
-      const { data: profile, error: profileError } = await supabase
+      const { data: profile, error: profileError } = await clientToUse
         .from('profiles')
         .select('user_id, role')
         .eq('user_id', userId)
         .single();
       console.log('getUserProjects - Profile check:', { profile, profileError });
       
-      const { data, error } = await supabase
+      // First, let's check if there are ANY projects in the database
+      const { data: allProjects, error: allProjectsError } = await clientToUse
         .from('projects')
-        .select('*')
+        .select('id, user_id, name')
+        .limit(10);
+      console.log('getUserProjects - All projects in database:', { allProjects, allProjectsError });
+      
+      // Check if the specific user has any projects
+      const { data: userProjectsCheck, error: userProjectsCheckError } = await clientToUse
+        .from('projects')
+        .select('id, user_id, name')
+        .eq('user_id', userId);
+      console.log('getUserProjects - Projects for specific user:', { userProjectsCheck, userProjectsCheckError, userId });
+      
+      // Let's also check what user IDs exist in the projects table
+      const { data: allUserIds, error: allUserIdsError } = await clientToUse
+        .from('projects')
+        .select('user_id');
+      console.log('getUserProjects - All user IDs in projects table:', { allUserIds, allUserIdsError });
+      
+      // Check if our target user ID matches any of the project user IDs
+      const matchingUserIds = allUserIds?.filter((p: any) => p.user_id === userId) || [];
+      console.log('getUserProjects - Matching user IDs:', { matchingUserIds, targetUserId: userId });
+      
+      // Now try to query projects for the specific user (use only existing columns)
+      const { data, error } = await clientToUse
+        .from('projects')
+        .select('id, name, description, created_at, updated_at, user_id')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
-      console.log('getUserProjects - Query result:', { data, error, userId });
+      console.log('getUserProjects - Query result for user:', { data, error, userId });
+      
+      // Also try the exact same query that the admin panel uses
+      const { data: adminStyleQuery, error: adminStyleError } = await clientToUse
+        .from('projects')
+        .select('id, user_id, name, created_at')
+        .eq('user_id', userId);
+      console.log('getUserProjects - Admin-style query result:', { adminStyleQuery, adminStyleError, userId });
 
       if (error) {
         console.error('Database error in getUserProjects:', error);
@@ -301,7 +483,11 @@ export class DatabaseService {
     }
 
     return this.withRetry(async () => {
-      const { data, error } = await supabase
+      // Use service role client when admin is impersonating to bypass RLS
+      const isImpersonating = !!localStorage.getItem('gull-admin-impersonation');
+      const clientToUse = isImpersonating && supabaseAdmin ? supabaseAdmin : supabase;
+
+      const { data, error } = await clientToUse
         .from('transactions')
         .select('*')
         .eq('project_id', projectId)
@@ -326,12 +512,20 @@ export class DatabaseService {
     });
   }
 
-  async createTransaction(userId: string, transaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>): Promise<Transaction> {
+  async createTransaction(
+    userId: string, 
+    transaction: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>,
+    adminUserId?: string
+  ): Promise<Transaction> {
     if (!this.isOnline() || !supabase) {
       throw new Error('Database not available in offline mode');
     }
 
-    const { data, error } = await supabase
+    // Use service role client when admin is impersonating to bypass RLS
+    const isImpersonating = !!localStorage.getItem('gull-admin-impersonation');
+    const clientToUse = (isImpersonating && supabaseAdmin) ? supabaseAdmin : supabase;
+
+    const { data, error } = await clientToUse
       .from('transactions')
       .insert({
         user_id: userId,
@@ -347,6 +541,24 @@ export class DatabaseService {
 
     if (error) throw error;
 
+    // Log admin action if this was performed by an admin
+    if (adminUserId && adminUserId !== userId) {
+      await this.logAdminAction(
+        adminUserId,
+        userId,
+        'create_transaction',
+        `Admin created transaction: ${transaction.number} (${transaction.entryType}) - First: ${transaction.first}, Second: ${transaction.second}`,
+        {
+          transactionId: data.id,
+          projectId: transaction.projectId,
+          number: transaction.number,
+          entryType: transaction.entryType,
+          firstAmount: transaction.first,
+          secondAmount: transaction.second
+        }
+      );
+    }
+
     return {
       id: data.id,
       projectId: data.project_id,
@@ -360,10 +572,27 @@ export class DatabaseService {
     };
   }
 
-  async updateTransaction(transactionId: string, updates: Partial<Omit<Transaction, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>>): Promise<void> {
+  async updateTransaction(
+    transactionId: string, 
+    updates: Partial<Omit<Transaction, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>>,
+    adminUserId?: string
+  ): Promise<void> {
     if (!this.isOnline() || !supabase) {
       throw new Error('Database not available in offline mode');
     }
+
+    // Use service role client when admin is impersonating to bypass RLS
+    const isImpersonating = !!localStorage.getItem('gull-admin-impersonation');
+    const clientToUse = (isImpersonating && supabaseAdmin) ? supabaseAdmin : supabase;
+
+    // Get the transaction first to log the change
+    const { data: existingTransaction, error: fetchError } = await clientToUse
+      .from('transactions')
+      .select('*')
+      .eq('id', transactionId)
+      .single();
+
+    if (fetchError) throw fetchError;
 
     const updateData: Record<string, unknown> = {};
     if (updates.number !== undefined) updateData.number = updates.number;
@@ -372,25 +601,81 @@ export class DatabaseService {
     if (updates.second !== undefined) updateData.second_amount = updates.second;
     if (updates.notes !== undefined) updateData.notes = updates.notes || null;
 
-    const { error } = await supabase
+    const { error } = await clientToUse
       .from('transactions')
       .update(updateData)
       .eq('id', transactionId);
 
     if (error) throw error;
+
+    // Log admin action if this was performed by an admin
+    if (adminUserId && adminUserId !== existingTransaction.user_id) {
+      await this.logAdminAction(
+        adminUserId,
+        existingTransaction.user_id,
+        'update_transaction',
+        `Admin updated transaction: ${existingTransaction.number} (${existingTransaction.entry_type})`,
+        {
+          transactionId,
+          projectId: existingTransaction.project_id,
+          oldValues: {
+            number: existingTransaction.number,
+            entryType: existingTransaction.entry_type,
+            firstAmount: existingTransaction.first_amount,
+            secondAmount: existingTransaction.second_amount,
+            notes: existingTransaction.notes
+          },
+          newValues: updates
+        }
+      );
+    }
   }
 
-  async deleteTransaction(transactionId: string): Promise<void> {
+  async deleteTransaction(transactionId: string, adminUserId?: string): Promise<void> {
     if (!this.isOnline() || !supabase) {
       throw new Error('Database not available in offline mode');
     }
 
-    const { error } = await supabase
+    // Use service role client when admin is impersonating to bypass RLS
+    const isImpersonating = !!localStorage.getItem('gull-admin-impersonation');
+    const clientToUse = (isImpersonating && supabaseAdmin) ? supabaseAdmin : supabase;
+
+    // Get the transaction first to log the deletion
+    const { data: existingTransaction, error: fetchError } = await clientToUse
+      .from('transactions')
+      .select('*')
+      .eq('id', transactionId)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    const { error } = await clientToUse
       .from('transactions')
       .delete()
       .eq('id', transactionId);
 
     if (error) throw error;
+
+    // Log admin action if this was performed by an admin
+    if (adminUserId && adminUserId !== existingTransaction.user_id) {
+      await this.logAdminAction(
+        adminUserId,
+        existingTransaction.user_id,
+        'delete_transaction',
+        `Admin deleted transaction: ${existingTransaction.number} (${existingTransaction.entry_type}) - First: ${existingTransaction.first_amount}, Second: ${existingTransaction.second_amount}`,
+        {
+          transactionId,
+          projectId: existingTransaction.project_id,
+          deletedTransaction: {
+            number: existingTransaction.number,
+            entryType: existingTransaction.entry_type,
+            firstAmount: existingTransaction.first_amount,
+            secondAmount: existingTransaction.second_amount,
+            notes: existingTransaction.notes
+          }
+        }
+      );
+    }
   }
 
   async deleteTransactionsByProject(projectId: string): Promise<void> {

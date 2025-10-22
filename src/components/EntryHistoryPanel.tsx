@@ -6,12 +6,16 @@ interface EntryHistoryPanelProps {
   transactions: Transaction[];
   activeTab: 'all' | 'open' | 'akra' | 'ring' | 'packet';
   projectEntryTypes: string[];
+  onEdit?: (t: Transaction) => void;
+  onDelete?: (id: string) => void;
 }
 
 const EntryHistoryPanel: React.FC<EntryHistoryPanelProps> = ({
   transactions,
   activeTab,
   projectEntryTypes,
+  onEdit,
+  onDelete,
 }) => {
   // Filter transactions based on active tab
   const filteredTransactions = React.useMemo(() => {
@@ -20,8 +24,8 @@ const EntryHistoryPanel: React.FC<EntryHistoryPanelProps> = ({
     }
     
     if (activeTab === 'open') {
-      // For open, show transactions where both first and second are > 0
-      return transactions.filter(t => t.first > 0 && t.second > 0);
+      // Show only Open entry type
+      return transactions.filter(t => t.entryType === 'open');
     }
     
     if (activeTab === 'akra') {
@@ -80,7 +84,8 @@ const EntryHistoryPanel: React.FC<EntryHistoryPanelProps> = ({
     return [];
   };
 
-  const allNumbers = getAllPossibleNumbers();
+  const allNumbers = getAllPossibleNumbers(); // reserved for future navigation; avoid unused warnings by minor reference
+  void allNumbers;
 
   return (
     <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6">
@@ -119,14 +124,14 @@ const EntryHistoryPanel: React.FC<EntryHistoryPanelProps> = ({
                     </div>
                   </div>
                   
-                  <div className="flex items-center space-x-4 text-sm">
+                  <div className="flex items-center space-x-2 sm:space-x-4 text-sm">
                     {transaction.first > 0 && (
-                      <div className="text-cyan-300 font-semibold">
+                      <div className="text-emerald-400 font-semibold">
                         F {transaction.first.toLocaleString()}
                       </div>
                     )}
                     {transaction.second > 0 && (
-                      <div className="text-cyan-300 font-semibold">
+                      <div className="text-amber-400 font-semibold">
                         S {transaction.second.toLocaleString()}
                       </div>
                     )}
@@ -135,6 +140,28 @@ const EntryHistoryPanel: React.FC<EntryHistoryPanelProps> = ({
                         Deduction
                       </div>
                     )}
+
+                    {/* Row actions */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => onEdit?.(transaction)}
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300"
+                        title="Edit"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5h2m-1 0v14m-7 0h14" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => onDelete?.(transaction.id)}
+                        className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-300"
+                        title="Delete"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
                 

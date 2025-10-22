@@ -34,5 +34,11 @@ export interface AuthContextType {
   signOut: () => Promise<void>;
   updateProfile: (displayName: string) => Promise<void>;
   clearError: () => void;
+  // Impersonation functionality
+  isImpersonating: boolean;
+  impersonatedUser: User | null;
+  originalAdminUser: User | null;
+  setImpersonatedUser: (userId: string) => Promise<void>;
+  exitImpersonation: () => void;
 }
 

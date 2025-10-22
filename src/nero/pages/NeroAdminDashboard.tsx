@@ -4,6 +4,7 @@ import NeroLayout from '../components/NeroLayout';
 import type { SidebarItem } from '../components/NeroSidebar';
 import AdminDashboardHome from './admin/AdminDashboardHome';
 import AdminUserManagement from './admin/AdminUserManagement';
+import AdminImpersonatedProjects from './admin/AdminImpersonatedProjects';
 
 const NeroAdminDashboard: React.FC = () => {
   const sidebarItems: SidebarItem[] = [
@@ -65,6 +66,7 @@ const NeroAdminDashboard: React.FC = () => {
       <Routes>
         <Route index element={<AdminDashboardHome />} />
         <Route path="users" element={<AdminUserManagement />} />
+        <Route path="impersonate/:userId" element={<AdminImpersonatedProjects />} />
         <Route path="reports" element={<div className="nero-card"><h2 className="text-xl font-bold">Reports (Coming in Phase 3)</h2></div>} />
         <Route path="financial" element={<div className="nero-card"><h2 className="text-xl font-bold">Financial (Coming in Phase 3)</h2></div>} />
         <Route path="settings" element={<div className="nero-card"><h2 className="text-xl font-bold">Settings (Coming in Phase 3)</h2></div>} />

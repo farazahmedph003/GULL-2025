@@ -14,6 +14,8 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, statistics, onDelete
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleClick = () => {
+    console.log('🔍 ProjectCard clicked - navigating to project:', project.id);
+    console.log('🔍 Project data:', project);
     navigate(`/project/${project.id}`);
   };
 

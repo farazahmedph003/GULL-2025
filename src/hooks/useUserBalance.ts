@@ -8,6 +8,7 @@ export interface UserBalance {
   balance: number;
   loading: boolean;
   error: string | null;
+  spent?: number;
 }
 
 export const useUserBalance = () => {
@@ -25,6 +26,7 @@ export const useUserBalance = () => {
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [spent, setSpent] = useState<number>(0);
 
   // Fetch user balance
   const fetchBalance = useCallback(async () => {
@@ -51,6 +53,9 @@ export const useUserBalance = () => {
       }
       
       setBalance(newBalance);
+      // Load spent from local storage tracker
+      const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
+      setSpent(spentMap[effectiveUserId] || 0);
       // Don't dispatch event here to avoid infinite loop
       setLoading(false);
     } else {
@@ -65,6 +70,8 @@ export const useUserBalance = () => {
 
         const newBalance = data?.balance || 1000; // Default to 1000 for new users
         setBalance(newBalance);
+        const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
+        setSpent(spentMap[effectiveUserId] || 0);
         // Don't dispatch event here to avoid infinite loop
       } catch (err) {
         console.error('Error fetching balance:', err);
@@ -82,6 +89,8 @@ export const useUserBalance = () => {
         }
         
         setBalance(newBalance);
+        const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
+        setSpent(spentMap[effectiveUserId] || 0);
         // Don't dispatch event here to avoid infinite loop
       } finally {
         setLoading(false);
@@ -118,6 +127,11 @@ export const useUserBalance = () => {
         localStorage.setItem('gull_user_balances', JSON.stringify(localBalances));
         const newBalance = localBalances[effectiveUserId];
         setBalance(newBalance);
+        // track spent
+        const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
+        spentMap[effectiveUserId] = (spentMap[effectiveUserId] || 0) + amount;
+        localStorage.setItem('gull_user_spent', JSON.stringify(spentMap));
+        setSpent(spentMap[effectiveUserId]);
         window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
         
         // Play deduction sound
@@ -134,6 +148,11 @@ export const useUserBalance = () => {
           if (updateError) throw updateError;
 
           setBalance(newBalance);
+          // track spent locally
+          const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
+          spentMap[effectiveUserId] = (spentMap[effectiveUserId] || 0) + amount;
+          localStorage.setItem('gull_user_spent', JSON.stringify(spentMap));
+          setSpent(spentMap[effectiveUserId]);
           window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
           
           // Play deduction sound
@@ -236,6 +255,7 @@ export const useUserBalance = () => {
     balance,
     loading,
     error,
+    spent,
     hasSufficientBalance,
     deductBalance,
     addBalance,

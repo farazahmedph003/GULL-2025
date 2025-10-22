@@ -7,9 +7,13 @@ interface FilterTabProps {
   entryType: EntryType;
   projectId: string;
   onSaveResults: (deductions: Array<{ number: string; firstAmount: number; secondAmount: number }>) => Promise<void>;
+  // Optional enhancements
+  availableEntryTypes?: EntryType[];
+  onEntryTypeChange?: (entryType: EntryType) => void;
+  onSaveResultsForType?: (entryType: EntryType, deductions: Array<{ number: string; firstAmount: number; secondAmount: number }>) => Promise<void>;
 }
 
-const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResults }) => {
+const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResults, availableEntryTypes, onEntryTypeChange, onSaveResultsForType }) => {
   const { showError, showWarning } = useNotifications();
   const [firstOperator, setFirstOperator] = useState<FilterOperator>('>=');
   const [firstValue, setFirstValue] = useState('');
@@ -121,7 +125,11 @@ const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResul
         return;
       }
 
-      await onSaveResults(deductions);
+      if (onSaveResultsForType) {
+        await onSaveResultsForType(entryType, deductions);
+      } else {
+        await onSaveResults(deductions);
+      }
       
       // Reset after successful save
       setResults([]);
@@ -163,9 +171,7 @@ const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResul
     }
 
     const isFirst = column === 'first';
-    const header = entryType === 'akra'
-      ? `Ak\t${isFirst ? 'First' : 'Second'}`
-      : `Ring\t${isFirst ? 'First' : 'Second'}`;
+    const header = `${entryType.toUpperCase()}\t${isFirst ? 'First' : 'Second'}`;
 
     const rows = filtered.map(r => {
       const amount = isFirst ? r.firstAmount : r.secondAmount;
@@ -176,7 +182,7 @@ const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResul
     const data = [header, ...rows].join('\n');
 
     navigator.clipboard.writeText(data).then(() => {
-      alert(`\u2713 Copied ${filtered.length} ${isFirst ? 'First' : 'Second'} entries to clipboard!`);
+      alert(`✓ Copied ${filtered.length} ${isFirst ? 'First' : 'Second'} entries to clipboard!`);
     }).catch(() => {
       alert('Failed to copy to clipboard');
     });
@@ -184,8 +190,51 @@ const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResul
 
   // Removed downloadResults - using handleSaveResults instead
 
+  // Compute totals for visible results
+  const firstSum = results.reduce((sum, r) => sum + (r.meetsFirstCriteria ? r.firstAmount : 0), 0);
+  const secondSum = results.reduce((sum, r) => sum + (r.meetsSecondCriteria ? r.secondAmount : 0), 0);
+  const totalSum = firstSum + secondSum;
+
   return (
     <div className="space-y-6">
+      {/* Target Entry Type Selector (optional) */}
+      {availableEntryTypes && availableEntryTypes.length > 0 && (
+        <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
+          <label className="block text-sm font-medium text-gray-300 mb-2">Apply filter to</label>
+          <div className="flex flex-wrap gap-2">
+            {(['open','akra','ring','packet'] as EntryType[])
+              .filter(t => availableEntryTypes.includes(t))
+              .map(t => (
+                <button
+                  key={t}
+                  onClick={() => onEntryTypeChange?.(t)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${t === entryType ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                >
+                  {t.toUpperCase()}
+                </button>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Optional totals when a type is selected and results are shown */}
+      {showResults && (results.some(r => r.firstAmount > 0) || results.some(r => r.secondAmount > 0)) && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+            <h4 className="text-sm font-semibold text-gray-300">FIRST PKR TOTAL</h4>
+            <p className="text-xl font-bold text-emerald-300">PKR {firstSum.toLocaleString()}</p>
+          </div>
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+            <h4 className="text-sm font-semibold text-gray-300">SECOND PKR TOTAL</h4>
+            <p className="text-xl font-bold text-amber-300">PKR {secondSum.toLocaleString()}</p>
+          </div>
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+            <h4 className="text-sm font-semibold text-gray-300">TOTAL PKR</h4>
+            <p className="text-xl font-bold text-cyan-300">PKR {totalSum.toLocaleString()}</p>
+          </div>
+        </div>
+      )}
+
       {/* Filter Criteria - Side by Side */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* FIRST Filter */}
@@ -386,7 +435,7 @@ const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResul
               </div>
             </div>
 
-            <div className="bg-gray-900 rounded-lg p-2 min-h-[300px]">
+            <div className="bg-gray-900 rounded-lg p-2 min-h[300px]">
               {results.filter(r => r.meetsSecondCriteria && r.secondAmount > 0).length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No matching numbers found.</p>
               ) : (

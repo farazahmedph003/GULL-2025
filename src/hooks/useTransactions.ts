@@ -9,7 +9,7 @@ export const useTransactions = (projectId: string) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
+  const { user, isImpersonating, originalAdminUser } = useAuth();
   const { deductBalance, addBalance } = useUserBalance();
 
   // Load transactions from database or localStorage as fallback
@@ -21,8 +21,32 @@ export const useTransactions = (projectId: string) => {
       if (isSupabaseConfigured() && projectId) {
         // Try to load from database first
         const dbTransactions = await db.getTransactions(projectId);
-        setTransactions(dbTransactions);
         console.log('Transactions loaded from database:', dbTransactions.length);
+
+        // Read any cached/local transactions and merge to avoid losing offline-added entries
+        const storageKey = `gull-transactions-${projectId}`;
+        const cachedData = localStorage.getItem(storageKey);
+        const cached: Transaction[] = cachedData ? JSON.parse(cachedData) : [];
+
+        if (dbTransactions.length === 0 && cached.length > 0) {
+          // Prefer cached when DB is empty (e.g., network/RLS issues)
+          setTransactions(cached);
+          console.log('Using local cache for transactions because DB returned 0 but cache has', cached.length);
+        } else if (dbTransactions.length > 0 && cached.length > 0) {
+          // Merge DB + cached by id (keep DB version if conflict)
+          const map = new Map<string, Transaction>();
+          cached.forEach(t => map.set(t.id, t));
+          dbTransactions.forEach(t => map.set(t.id, t));
+          const merged = Array.from(map.values());
+          setTransactions(merged);
+          // Update cache with merged for consistency
+          localStorage.setItem(storageKey, JSON.stringify(merged));
+          console.log('Merged DB and cache transactions:', { db: dbTransactions.length, cache: cached.length, merged: merged.length });
+        } else {
+          setTransactions(dbTransactions);
+          // Also keep cache in sync
+          localStorage.setItem(storageKey, JSON.stringify(dbTransactions));
+        }
       } else {
         // Fallback to localStorage
         const storageKey = `gull-transactions-${projectId}`;
@@ -156,7 +180,7 @@ export const useTransactions = (projectId: string) => {
       // Try to delete from Supabase first
       if (isSupabaseConfigured() && !isOfflineMode()) {
         try {
-          await db.deleteTransaction(transactionId);
+          await db.deleteTransaction(transactionId, isImpersonating ? originalAdminUser?.id : undefined);
           console.log('Transaction deleted from Supabase:', transactionId);
         } catch (dbError) {
           console.warn('Failed to delete from Supabase:', dbError);
@@ -207,7 +231,7 @@ export const useTransactions = (projectId: string) => {
         try {
           // Delete each transaction from Supabase
           for (const transactionId of transactionIds) {
-            await db.deleteTransaction(transactionId);
+            await db.deleteTransaction(transactionId, isImpersonating ? originalAdminUser?.id : undefined);
           }
           console.log('Transactions deleted from Supabase:', transactionIds);
         } catch (dbError) {
@@ -259,11 +283,7 @@ export const useTransactions = (projectId: string) => {
       // Try to save to Supabase first (only if user is authenticated)
       if (isSupabaseConfigured() && !isOfflineMode() && user?.id) {
         try {
-          newTransaction = await db.createTransaction(user.id, {
-            ...transaction,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          });
+          newTransaction = await db.createTransaction(user.id, transaction, isImpersonating ? originalAdminUser?.id : undefined);
           console.log('Transaction saved to Supabase:', newTransaction.id);
         } catch (dbError) {
           console.warn('Failed to save to Supabase, falling back to localStorage:', dbError);
@@ -339,7 +359,7 @@ export const useTransactions = (projectId: string) => {
         try {
           // Prepare updates for Supabase (exclude id, projectId, createdAt, updatedAt)
           const { id, projectId: _, createdAt, updatedAt, ...supabaseUpdates } = updates;
-          await db.updateTransaction(transactionId, supabaseUpdates);
+          await db.updateTransaction(transactionId, supabaseUpdates, isImpersonating ? originalAdminUser?.id : undefined);
           console.log('Transaction updated in Supabase:', transactionId);
         } catch (dbError) {
           console.warn('Failed to update in Supabase:', dbError);

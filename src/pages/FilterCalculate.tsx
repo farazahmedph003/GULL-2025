@@ -64,13 +64,7 @@ const FilterCalculate: React.FC = () => {
     bulkDeleteTransactions
   } = useTransactions(id || '');
 
-  const { 
-    undo, 
-    redo, 
-    canUndo, 
-    canRedo,
-    addAction 
-  } = useHistory(id || '', {
+  const { addAction } = useHistory(id || '', {
     onRevert: async (action) => {
       if (action.type === 'add' && action.data?.transactionId) {
         await deleteTransaction(action.data.transactionId);
@@ -165,9 +159,7 @@ const FilterCalculate: React.FC = () => {
   const handleSaveResults = async () => {
     if (!id || calculatedResults.length === 0) return;
 
-    if (!confirm(`Save ${calculatedResults.length} deduction entries to database?`)) {
-      return;
-    }
+    // TODO: Replace with in-app confirmation modal
 
     try {
       // Store current transactions count to find new ones after adding
@@ -281,10 +273,6 @@ const FilterCalculate: React.FC = () => {
       <ProjectHeader 
         projectName={project.name} 
         projectDate={project.date}
-        onUndo={undo}
-        onRedo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
       />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

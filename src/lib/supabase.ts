@@ -6,6 +6,20 @@ const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_KEY || '';
 // Force online mode - only enable offline mode if explicitly set to true
 const offlineMode = import.meta.env.VITE_ENABLE_OFFLINE_MODE === 'true';
 
+console.log('🔧 Supabase configuration:', {
+  url: supabaseUrl,
+  hasAnonKey: !!supabaseAnonKey,
+  hasServiceKey: !!supabaseServiceKey,
+  serviceKeyLength: supabaseServiceKey.length,
+  serviceKeyPreview: supabaseServiceKey ? supabaseServiceKey.substring(0, 20) + '...' : 'NOT SET',
+  offlineMode,
+  allEnvVars: {
+    VITE_SUPABASE_URL: !!import.meta.env.VITE_SUPABASE_URL,
+    VITE_SUPABASE_ANON_KEY: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
+    VITE_SUPABASE_SERVICE_KEY: !!import.meta.env.VITE_SUPABASE_SERVICE_KEY,
+  }
+});
+
 // Create Supabase client with better error handling and connection testing
 let supabase: any = null;
 let supabaseAdmin: any = null;

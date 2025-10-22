@@ -249,10 +249,6 @@ const HistoryPage: React.FC = () => {
   };
   
   const { 
-    undo, 
-    redo, 
-    canUndo, 
-    canRedo,
     history: visibleHistory,
     addAction
   } = useHistory(projectId || '', {
@@ -693,10 +689,6 @@ const HistoryPage: React.FC = () => {
       <ProjectHeader
         projectName={project.name}
         projectDate={formatDate(project.date)}
-        onUndo={undo}
-        onRedo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
         onRefresh={refresh}
         projectId={projectId}
       />

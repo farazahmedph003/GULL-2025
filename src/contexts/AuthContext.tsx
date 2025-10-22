@@ -4,20 +4,53 @@ import { supabase, isOfflineMode } from '../lib/supabase';
 import { generateId } from '../utils/helpers';
 import { saveRecentLogin } from '../utils/recentLogins';
 import { saveCredential } from '../utils/savedCredentials';
+import { db } from '../services/database';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'gull-auth-user';
+const IMPERSONATION_KEY = 'gull-admin-impersonation';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isImpersonating, setIsImpersonating] = useState(false);
+  const [impersonatedUser, setImpersonatedUserState] = useState<User | null>(null);
+  const [originalAdminUser, setOriginalAdminUser] = useState<User | null>(null);
 
   // Initialize auth state
   useEffect(() => {
     const initAuth = async () => {
       try {
+        // Check for impersonation state first
+        const impersonationData = localStorage.getItem(IMPERSONATION_KEY);
+        if (impersonationData) {
+          const { impersonatedUserId, originalAdmin } = JSON.parse(impersonationData);
+          try {
+            const impersonatedUserData = await db.getProfileByUserId(impersonatedUserId);
+            if (impersonatedUserData) {
+              const impersonatedUser: User = {
+                id: impersonatedUserData.user_id,
+                email: impersonatedUserData.email,
+                displayName: impersonatedUserData.display_name,
+                isAnonymous: false,
+                createdAt: impersonatedUserData.created_at || new Date().toISOString(),
+                lastLoginAt: new Date().toISOString(),
+              };
+              setImpersonatedUserState(impersonatedUser);
+              setOriginalAdminUser(originalAdmin);
+              setIsImpersonating(true);
+              setUser(impersonatedUser);
+              setLoading(false);
+              return;
+            }
+          } catch (error) {
+            console.warn('Failed to restore impersonation state:', error);
+            localStorage.removeItem(IMPERSONATION_KEY);
+          }
+        }
+
         if (isOfflineMode()) {
           // Load user from localStorage in offline mode
           const storedUser = localStorage.getItem(STORAGE_KEY);
@@ -308,6 +341,82 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearError = () => setError(null);
 
+  // Impersonation functions
+  const setImpersonatedUser = async (userId: string) => {
+    console.log('🔍 setImpersonatedUser called with userId:', userId);
+    try {
+      const profile = await db.getProfileByUserId(userId);
+      console.log('📊 Profile found:', profile);
+      if (!profile) {
+        throw new Error('User not found');
+      }
+
+      const impersonatedUser: User = {
+        id: profile.user_id,
+        email: profile.email,
+        displayName: profile.display_name,
+        isAnonymous: false,
+        createdAt: profile.created_at || new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
+      };
+
+      console.log('👤 Impersonated user object:', impersonatedUser);
+
+      setOriginalAdminUser(user);
+      setImpersonatedUserState(impersonatedUser);
+      setIsImpersonating(true);
+      setUser(impersonatedUser);
+
+      // Store impersonation state
+      localStorage.setItem(IMPERSONATION_KEY, JSON.stringify({
+        impersonatedUserId: userId,
+        originalAdmin: user
+      }));
+
+      console.log('✅ Impersonation state set successfully');
+
+      // Log admin action
+      if (user) {
+        await db.logAdminAction(
+          user.id,
+          userId,
+          'impersonate',
+          `Admin started impersonating user: ${impersonatedUser.displayName || impersonatedUser.email}`,
+          {
+            impersonatedUserEmail: impersonatedUser.email,
+            impersonatedUserDisplayName: impersonatedUser.displayName
+          }
+        );
+        console.log('📝 Admin action logged');
+      }
+    } catch (error) {
+      console.error('❌ Failed to impersonate user:', error);
+      throw error;
+    }
+  };
+
+  const exitImpersonation = async () => {
+    if (originalAdminUser && impersonatedUser) {
+      // Log admin action
+      await db.logAdminAction(
+        originalAdminUser.id,
+        impersonatedUser.id,
+        'exit_impersonation',
+        `Admin stopped impersonating user: ${impersonatedUser.displayName || impersonatedUser.email}`,
+        {
+          impersonatedUserEmail: impersonatedUser.email,
+          impersonatedUserDisplayName: impersonatedUser.displayName
+        }
+      );
+
+      setUser(originalAdminUser);
+      setImpersonatedUserState(null);
+      setOriginalAdminUser(null);
+      setIsImpersonating(false);
+      localStorage.removeItem(IMPERSONATION_KEY);
+    }
+  };
+
   const value: AuthContextType = {
     user,
     loading,
@@ -318,6 +427,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signOut,
     updateProfile,
     clearError,
+    isImpersonating,
+    impersonatedUser,
+    originalAdminUser,
+    setImpersonatedUser,
+    exitImpersonation,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

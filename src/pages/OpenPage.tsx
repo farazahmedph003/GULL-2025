@@ -6,8 +6,7 @@ import FilterTab from '../components/FilterTab';
 import TransactionModal from '../components/TransactionModal';
 import LoadingSpinner from '../components/LoadingSpinner';
 import StatisticsGrid from '../components/StatisticsGrid';
-import StandardEntry from '../components/StandardEntry';
-import IntelligentEntry from '../components/IntelligentEntry';
+import FreshEntryPanel from '../components/FreshEntryPanel';
 import { useTransactions } from '../hooks/useTransactions';
 import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
@@ -22,7 +21,7 @@ const OpenPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'entries' | 'filter'>('entries');
-  const [entryTab, setEntryTab] = useState<'standard' | 'intelligent'>('standard');
+  // const [entryTab, setEntryTab] = useState<'standard' | 'intelligent'>('standard');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectionMode] = useState(false);
   const [selectedNumbers, setSelectedNumbers] = useState<Set<string>>(new Set());
@@ -94,13 +93,7 @@ const OpenPage: React.FC = () => {
     refreshBalance();
   };
   
-  const { 
-    canUndo, 
-    canRedo, 
-    undo, 
-    redo, 
-    addAction 
-  } = useHistory(id || '', {
+  const { addAction } = useHistory(id || '', {
     onRevert: async (action) => {
       if (action.type === 'add' && action.data?.transactionId) {
         await deleteTransaction(action.data.transactionId);
@@ -360,10 +353,6 @@ const OpenPage: React.FC = () => {
       <ProjectHeader
         projectName={project.name}
         projectDate={formatDate(project.date)}
-        onUndo={undo}
-        onRedo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
         onRefresh={refresh}
         projectId={id}
       />
@@ -479,14 +468,7 @@ const OpenPage: React.FC = () => {
       {/* Tab Content - Full Width */}
       {activeTab === 'entries' ? (
         <div className="w-full">
-          {/* Premium Statistics */}
-          <div className="px-4 sm:px-6 lg:px-8 mb-6">
-            <PremiumStats 
-              summaries={summaries}
-              selectedNumbers={selectedNumbers}
-              showSelected={selectionMode && selectedNumbers.size > 0}
-            />
-          </div>
+          {/* Premium Statistics removed */}
 
           {/* Number Grid - Full Width with proper padding */}
           <div className="px-4 sm:px-6 lg:px-8">
@@ -512,58 +494,11 @@ const OpenPage: React.FC = () => {
         </div>
       )}
 
-      {/* Entry Panel - Fixed Position Below Number Grids */}
+      {/* Fresh Entry Panel */}
       <div className="w-full px-4 py-6">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                Add Entry
-              </h3>
-              <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-                <button
-                  onClick={() => setEntryTab('standard')}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
-                    entryTab === 'standard'
-                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
-                  }`}
-                >
-                  Standard
-                </button>
-                <button
-                  onClick={() => setEntryTab('intelligent')}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
-                    entryTab === 'intelligent'
-                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
-                  }`}
-                >
-                  Intelligent
-                </button>
-              </div>
-            </div>
-            
-
-            <div>
-              {entryTab === 'standard' ? (
-                <StandardEntry
-                  projectId={id || ''}
-                  onSuccess={() => {
-                    silentRefresh();
-                  }}
-                />
-              ) : (
-                <IntelligentEntry
-                  projectId={id || ''}
-                  entryType="open"
-                  onSuccess={() => {
-                    silentRefresh();
-                  }}
-                />
-              )}
-            </div>
-          </div>
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Add Entry</h3>
+          <FreshEntryPanel projectId={id || ''} entryType="open" onSuccess={silentRefresh} />
         </div>
       </div>
 

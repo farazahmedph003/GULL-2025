@@ -49,10 +49,6 @@ const AdvancedFilter: React.FC = () => {
   const { refresh: refreshBalance } = useUserBalance();
   
   const { 
-    undo, 
-    redo, 
-    canUndo, 
-    canRedo,
     addAction 
   } = useHistory(id || '', {
     onRevert: async (action) => {
@@ -245,11 +241,7 @@ const AdvancedFilter: React.FC = () => {
       return;
     }
 
-    const confirmDeduct = window.confirm(
-      `Are you sure you want to deduct ${firstFilteredResults.length} First entries?`
-    );
-
-    if (!confirmDeduct) return;
+    // Confirmation handled by in-app UI (removed native confirm)
 
     try {
       // Store current transactions count to find new ones after adding
@@ -311,11 +303,7 @@ const AdvancedFilter: React.FC = () => {
       return;
     }
 
-    const confirmDeduct = window.confirm(
-      `Are you sure you want to deduct ${secondFilteredResults.length} Second entries?`
-    );
-
-    if (!confirmDeduct) return;
+    // Confirmation handled by in-app UI (removed native confirm)
 
     try {
       // Store current transactions count to find new ones after adding
@@ -394,10 +382,6 @@ const AdvancedFilter: React.FC = () => {
         projectDate={project.date} 
         projectId={id}
         onRefresh={refresh}
-        onUndo={undo}
-        onRedo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
       />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

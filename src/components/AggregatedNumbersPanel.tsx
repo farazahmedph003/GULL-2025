@@ -6,12 +6,18 @@ interface AggregatedNumbersPanelProps {
   transactions: Transaction[];
   activeTab: 'all' | 'open' | 'akra' | 'ring' | 'packet';
   projectEntryTypes: string[];
+  onExportJSON?: () => void;
+  onExportCSV?: () => void;
+  onImport?: () => void;
 }
 
 const AggregatedNumbersPanel: React.FC<AggregatedNumbersPanelProps> = ({
   transactions,
   activeTab,
   projectEntryTypes,
+  onExportJSON,
+  onExportCSV,
+  onImport,
 }) => {
   const [isVisible, setIsVisible] = useState(true);
   const [selectedNumber, setSelectedNumber] = useState<string | null>(null);
@@ -23,8 +29,8 @@ const AggregatedNumbersPanel: React.FC<AggregatedNumbersPanelProps> = ({
     }
     
     if (activeTab === 'open') {
-      // For open, show transactions where both first and second are > 0
-      return transactions.filter(t => t.first > 0 && t.second > 0);
+      // Show only Open entry type
+      return transactions.filter(t => t.entryType === 'open');
     }
     
     if (activeTab === 'akra') {
@@ -80,11 +86,34 @@ const AggregatedNumbersPanel: React.FC<AggregatedNumbersPanelProps> = ({
 
   // Group transactions by number and calculate totals
   const aggregatedNumbers = useMemo(() => {
-    const summaries = groupTransactionsByNumber(filteredTransactions, activeTab === 'akra' ? 'akra' : activeTab === 'ring' ? 'ring' : 'akra');
-    
-    // Create entries for all possible numbers, with 0 totals if no transactions exist
+    // For specific tabs, group by their entry type
+    if (activeTab === 'open' || activeTab === 'akra' || activeTab === 'ring' || activeTab === 'packet') {
+      const summaries = groupTransactionsByNumber(filteredTransactions, activeTab);
+      return allNumbers.map(number => {
+        const summary = summaries.get(number);
+        return {
+          number,
+          firstTotal: summary?.firstTotal || 0,
+          secondTotal: summary?.secondTotal || 0,
+          entryCount: summary?.entryCount || 0,
+        };
+      });
+    }
+
+    // For 'all', aggregate across all entry types
+    const map = new Map<string, { firstTotal: number; secondTotal: number; entryCount: number }>();
+    filteredTransactions.forEach(t => {
+      const key = t.number;
+      const prev = map.get(key) || { firstTotal: 0, secondTotal: 0, entryCount: 0 };
+      map.set(key, {
+        firstTotal: prev.firstTotal + t.first,
+        secondTotal: prev.secondTotal + t.second,
+        entryCount: prev.entryCount + 1,
+      });
+    });
+
     return allNumbers.map(number => {
-      const summary = summaries.get(number);
+      const summary = map.get(number);
       return {
         number,
         firstTotal: summary?.firstTotal || 0,
@@ -149,6 +178,39 @@ const AggregatedNumbersPanel: React.FC<AggregatedNumbersPanelProps> = ({
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-lg font-semibold text-gray-300">Aggregated Numbers</h3>
           <div className="flex items-center gap-2">
+            {onImport && (
+              <button
+                onClick={onImport}
+                className="p-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 rounded-lg"
+                title="Import"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+              </button>
+            )}
+            {onExportJSON && (
+              <button
+                onClick={onExportJSON}
+                className="p-1.5 bg-green-500/20 hover:bg-green-500/30 text-green-200 rounded-lg"
+                title="Export JSON"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              </button>
+            )}
+            {onExportCSV && (
+              <button
+                onClick={onExportCSV}
+                className="p-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 rounded-lg"
+                title="Export CSV"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </button>
+            )}
             {aggregatedNumbers.length > 0 && (
               <button
                 onClick={copyResults}

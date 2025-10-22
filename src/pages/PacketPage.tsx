@@ -95,13 +95,7 @@ const PacketPage: React.FC = () => {
     refreshBalance();
   };
   
-  const { 
-    canUndo, 
-    canRedo, 
-    undo, 
-    redo, 
-    addAction 
-  } = useHistory(id || '', {
+  const { addAction } = useHistory(id || '', {
     onRevert: async (action) => {
       if (action.type === 'add' && action.data?.transactionId) {
         await deleteTransaction(action.data.transactionId);
@@ -361,10 +355,6 @@ const PacketPage: React.FC = () => {
       <ProjectHeader
         projectName={project.name}
         projectDate={formatDate(project.date)}
-        onUndo={undo}
-        onRedo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
         onRefresh={refresh}
         projectId={id}
       />

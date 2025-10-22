@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import BalanceDisplay from './BalanceDisplay';
 import ProfileDropdown from './ProfileDropdown';
-import SidebarMenu from './SidebarMenu';
+// Sidebar removed
 
 interface Tab {
   id: string;
@@ -25,13 +25,13 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
   projectName,
   projectDate,
   onRefresh,
-  projectId,
+  // projectId,
   showTabs = false,
   tabs = [],
   activeTab,
   onTabChange,
 }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Sidebar removed
   const navigate = useNavigate();
 
   return (
@@ -53,17 +53,7 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
                 </svg>
               </button>
               
-              {!showTabs && (
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="p-2 sm:p-3 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 min-h-[48px] min-w-[48px] flex items-center justify-center"
-                  aria-label="Open menu"
-                >
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                </button>
-              )}
+              {/* Sidebar button removed */}
               <div className={`${!showTabs ? 'border-l border-gray-600 pl-3 sm:pl-6' : ''} min-w-0 flex-1`}>
                 <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-white truncate">
                   {projectName}
@@ -128,8 +118,7 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
         )}
       </div>
 
-      {/* Sidebar Menu */}
-      <SidebarMenu isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} projectId={projectId} />
+      {/* Sidebar removed */}
     </>
   );
 };

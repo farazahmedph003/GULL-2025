@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import type { EntryType, Transaction } from '../types';
-import { generateId, isValidNumber, formatCurrency } from '../utils/helpers';
+import type { EntryType } from '../types';
+import { isValidNumber, formatCurrency } from '../utils/helpers';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { useTransactions } from '../hooks/useTransactions';
 import { useAuth } from '../contexts/AuthContext';
@@ -25,7 +25,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
   onSuccess,
 }) => {
   const { user } = useAuth();
-  const { balance, hasSufficientBalance, deductBalance, refresh: refreshBalance } = useUserBalance();
+  const { balance, hasSufficientBalance } = useUserBalance();
   const { addTransaction } = useTransactions(projectId);
   const { showSuccess, showError } = useNotifications();
   const isAdmin = user ? isAdminEmail(user.email) : false;
@@ -64,7 +64,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       }
     };
 
-    const digitPattern = getDigitPattern();
+    const digitPattern = getDigitPattern(); void digitPattern;
 
     lines.forEach((line, index) => {
       const lineNum = index + 1;

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
 import StandardEntry from '../components/StandardEntry';
 import IntelligentEntry from '../components/IntelligentEntry';
+import FilterTab from '../components/FilterTab';
 import EntryHistoryPanel from '../components/EntryHistoryPanel';
 import AggregatedNumbersPanel from '../components/AggregatedNumbersPanel';
 import EntryFormsBar from '../components/EntryFormsBar';
@@ -10,12 +11,17 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { useTransactions } from '../hooks/useTransactions';
 import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
+import { useNotifications } from '../contexts/NotificationContext';
+// import { useAuth } from '../contexts/AuthContext';
+// import { isAdminEmail } from '../config/admin';
 import { db } from '../services/database';
 import { formatDate } from '../utils/helpers';
 import { playReloadSound, playUndoSound, playRedoSound } from '../utils/audioFeedback';
-import type { Project } from '../types';
+import { exportToJSON, exportToCSV, importFromJSON, importFromCSV } from '../utils/importExport';
+import type { Project, EntryType } from '../types';
+import { groupTransactionsByNumber } from '../utils/transactionHelpers';
 
-type TabType = 'all' | 'open' | 'akra' | 'ring' | 'packet';
+type TabType = 'all' | 'open' | 'akra' | 'ring' | 'packet' | 'filter';
 
 const UserDashboard: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -23,12 +29,16 @@ const UserDashboard: React.FC = () => {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('all');
-  const [entryTab, setEntryTab] = useState<'standard' | 'intelligent'>('standard');
+  const [entryTab] = useState<'standard' | 'intelligent'>('standard');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { showSuccess, showError } = useNotifications();
+  // const { user } = useAuth();
+  // const isActualAdmin = user ? isAdminEmail(user.email) : false;
 
   const { 
     transactions,
     refresh: refreshTransactions, 
-    getStatistics, 
+    getStatistics: _getStatistics, 
     addTransaction, 
     deleteTransaction,
     bulkDeleteTransactions,
@@ -44,11 +54,18 @@ const UserDashboard: React.FC = () => {
     refreshBalance();
   };
   
+  // Silent refresh without sound for background updates
+  const silentRefresh = () => {
+    refreshTransactions();
+    refreshBalance();
+  };
+  
   const {
     canUndo,
     canRedo,
     undo,
     redo,
+    addAction,
   } = useHistory(id || '', {
     onRevert: async (action) => {
       // Undo the action
@@ -108,7 +125,68 @@ const UserDashboard: React.FC = () => {
     },
   });
 
-  const statistics = getStatistics();
+  // const statistics = getStatistics();
+
+  // Filter tab entry type state and summaries
+  const [filterEntryType, setFilterEntryType] = useState<EntryType>('akra');
+  useEffect(() => {
+    if (project?.entryTypes?.length) {
+      setFilterEntryType((project.entryTypes[0] as EntryType) || 'open');
+    }
+  }, [project]);
+  const filterSummaries = React.useMemo(() => groupTransactionsByNumber(transactions, filterEntryType), [transactions, filterEntryType]);
+
+  // Compute per-type stats for header boxes
+  const computeTypeStats = (type: EntryType) => {
+    const filtered = transactions.filter(t => t.entryType === type);
+    const firstTotal = filtered.reduce((sum, t) => sum + (t.first || 0), 0);
+    const secondTotal = filtered.reduce((sum, t) => sum + (t.second || 0), 0);
+    // Unique numbers leveraging grouping (handles bulk entries correctly)
+    const summaries = groupTransactionsByNumber(transactions, type);
+    const uniqueNumbers = summaries.size;
+    return {
+      firstTotal,
+      secondTotal,
+      totalPkr: firstTotal + secondTotal,
+      uniqueNumbers,
+    };
+  };
+
+  const handleFilterSaveForType = async (entryType: EntryType, deductions: Array<{ number: string; firstAmount: number; secondAmount: number }>) => {
+    // Store current transactions count to find new ones after adding
+    const beforeCount = transactions.length;
+    const affectedNumbers: string[] = [];
+    const created: any[] = [];
+
+    for (const d of deductions) {
+      const tx = {
+        projectId: id || '',
+        number: d.number,
+        entryType,
+        first: d.firstAmount ? -d.firstAmount : 0,
+        second: d.secondAmount ? -d.secondAmount : 0,
+        notes: 'Filter deduction',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        isFilterDeduction: true,
+      } as any;
+      const ok = await addTransaction(tx);
+      if (!ok) throw new Error('Failed to save some deductions');
+      created.push(tx);
+      affectedNumbers.push(d.number);
+    }
+
+    // Refresh and capture IDs for history
+    await refresh();
+    setTimeout(() => {
+      const newTransactions = transactions.slice(beforeCount);
+      const filterTransactions = newTransactions.filter(t => t.entryType === entryType && t.isFilterDeduction && affectedNumbers.includes(t.number));
+      addAction('filter', `Applied filter deductions to ${deductions.length} number(s)`, affectedNumbers, {
+        transactions: created as any,
+        transactionIds: filterTransactions.map(t => t.id),
+      });
+    }, 50);
+  };
 
   // Load project
   useEffect(() => {
@@ -158,11 +236,7 @@ const UserDashboard: React.FC = () => {
         }
       }
       
-      // Ctrl/Cmd + / to toggle entry panel
-      if ((e.ctrlKey || e.metaKey) && e.key === '/') {
-        e.preventDefault();
-        setEntryPanelOpen(prev => !prev);
-      }
+      // Removed: entry panel toggle (not needed in this layout)
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -173,16 +247,74 @@ const UserDashboard: React.FC = () => {
     refresh();
   };
 
+  // Export handlers
+  const handleExportJSON = () => {
+    if (!project) return;
+    exportToJSON(project, transactions);
+    showSuccess('Export Successful', `Exported ${transactions.length} transactions to JSON`);
+  };
+
+  const handleExportCSV = () => {
+    if (!project) return;
+    exportToCSV(project, transactions);
+    showSuccess('Export Successful', `Exported ${transactions.length} transactions to CSV`);
+  };
+
+  // Import handlers
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !id) return;
+
+    try {
+      if (file.name.endsWith('.json')) {
+        const data = await importFromJSON(file);
+        // Import all transactions
+        for (const transaction of data.transactions) {
+          await addTransaction({
+            ...transaction,
+            projectId: id,
+          });
+        }
+        await showSuccess('Import Successful', `Imported ${data.transactions.length} transactions from JSON`);
+        refresh();
+      } else if (file.name.endsWith('.csv')) {
+        const importedTransactions = await importFromCSV(file, id);
+        // Import all transactions
+        for (const transaction of importedTransactions) {
+          await addTransaction(transaction);
+        }
+        await showSuccess('Import Successful', `Imported ${importedTransactions.length} transactions from CSV`);
+        refresh();
+      } else {
+        showError('Invalid File', 'Please select a JSON or CSV file');
+      }
+    } catch (error) {
+      console.error('Import error:', error);
+      showError('Import Failed', 'Failed to import transactions. Please check the file format.');
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const tabs = [
     { id: 'all' as TabType, label: 'ALL', description: 'All entries' },
     { id: 'open' as TabType, label: 'OPEN', description: 'Open entries' },
     { id: 'akra' as TabType, label: 'AKRA', description: '2-digit entries' },
     { id: 'ring' as TabType, label: 'RING', description: '3-digit entries' },
     { id: 'packet' as TabType, label: 'PACKET', description: 'Packet entries' },
+    { id: 'filter' as TabType, label: '🔍 FILTER', description: 'Advanced Filter' },
+    { id: 'advanced' as TabType, label: 'ADVANCED', description: 'Advanced Filter & Calculate' },
   ].filter(tab => {
     // Only show tabs for entry types that exist in the project
-    if (tab.id === 'all' || tab.id === 'open') return true;
-    return project?.entryTypes?.includes(tab.id);
+    if (tab.id === 'all' || tab.id === 'open' || (tab.id as any) === 'filter' || (tab.id as any) === 'advanced') return true;
+    return (project?.entryTypes as EntryType[] | undefined)?.includes(tab.id as EntryType);
   });
 
   if (loading) {
@@ -215,7 +347,9 @@ const UserDashboard: React.FC = () => {
         showTabs={true}
         tabs={tabs}
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={(tabId) => {
+          setActiveTab(tabId as TabType);
+        }}
       />
 
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 pb-20 sm:pb-0">
@@ -231,122 +365,129 @@ const UserDashboard: React.FC = () => {
             </p>
           </div>
 
-          {/* Statistics Summary */}
-          <div className="mb-6 sm:mb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            <div className="bg-gray-800 border border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6">
-              <div className="flex items-center space-x-3 sm:space-x-4">
-                <div className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded-lg sm:rounded-xl shadow-lg">
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-sm sm:text-lg font-bold text-gray-100">Total Entries</h3>
-                  <p className="text-lg sm:text-2xl font-bold text-cyan-300">{statistics.totalEntries}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gray-800 border border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6">
-              <div className="flex items-center space-x-3 sm:space-x-4">
-                <div className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-green-500 to-emerald-600 text-white rounded-lg sm:rounded-xl shadow-lg">
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                  </svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-sm sm:text-lg font-bold text-gray-100">First Total</h3>
-                  <p className="text-lg sm:text-2xl font-bold text-cyan-300">PKR {statistics.firstTotal.toLocaleString()}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gray-800 border border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6 sm:col-span-2 lg:col-span-1">
-              <div className="flex items-center space-x-3 sm:space-x-4">
-                <div className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-orange-500 to-red-600 text-white rounded-lg sm:rounded-xl shadow-lg">
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                  </svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-sm sm:text-lg font-bold text-gray-100">Second Total</h3>
-                  <p className="text-lg sm:text-2xl font-bold text-cyan-300">PKR {statistics.secondTotal.toLocaleString()}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Dual Panel Layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
-            {/* Left Panel - Entry History */}
-            <EntryHistoryPanel
-              transactions={transactions}
-              activeTab={activeTab}
-              projectEntryTypes={project.entryTypes}
-            />
-
-            {/* Right Panel - Aggregated Numbers */}
-            <AggregatedNumbersPanel
-              transactions={transactions}
-              activeTab={activeTab}
-              projectEntryTypes={project.entryTypes}
-            />
-          </div>
-
-          {/* Entry Panel - Fixed Position Below Panels */}
-          <div className="w-full px-0 sm:px-4 py-4 sm:py-6">
-            <div className="bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
-              <div className="p-4 sm:p-6">
-                <div className="flex items-center justify-between mb-4 sm:mb-6">
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
-                    Add Entry
-                  </h3>
-                  <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-                    <button
-                      onClick={() => setEntryTab('standard')}
-                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
-                        entryTab === 'standard'
-                          ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
-                      }`}
-                    >
-                      Standard
-                    </button>
-                    <button
-                      onClick={() => setEntryTab('intelligent')}
-                      className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
-                        entryTab === 'intelligent'
-                          ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
-                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
-                      }`}
-                    >
-                      Intelligent
-                    </button>
+          {/* Statistics Summary - only for entry-specific tabs (open/akra/ring/packet). None on ALL or FILTER */}
+          {(['open','akra','ring','packet'] as EntryType[]).includes(activeTab as EntryType) && (
+            (() => {
+              const s = computeTypeStats(activeTab as EntryType);
+              return (
+                <div className="mb-6 sm:mb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                  <div className="bg-gray-800 border border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6">
+                    <h3 className="text-sm sm:text-lg font-bold text-gray-100">FIRST PKR TOTAL</h3>
+                    <p className="text-lg sm:text-2xl font-bold text-emerald-300">PKR {s.firstTotal.toLocaleString()}</p>
+                  </div>
+                  <div className="bg-gray-800 border border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6">
+                    <h3 className="text-sm sm:text-lg font-bold text-gray-100">SECOND PKR TOTAL</h3>
+                    <p className="text-lg sm:text-2xl font-bold text-amber-300">PKR {s.secondTotal.toLocaleString()}</p>
+                  </div>
+                  <div className="bg-gray-800 border border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6">
+                    <h3 className="text-sm sm:text-lg font-bold text-gray-100">TOTAL PKR</h3>
+                    <p className="text-lg sm:text-2xl font-bold text-cyan-300">PKR {(s.totalPkr).toLocaleString()}</p>
+                  </div>
+                  <div className="bg-gray-800 border border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6">
+                    <h3 className="text-sm sm:text-lg font-bold text-gray-100">UNIQUE NUMBER</h3>
+                    <p className="text-lg sm:text-2xl font-bold text-purple-300">{s.uniqueNumbers}</p>
                   </div>
                 </div>
-                
+              );
+            })()
+          )}
 
-                <div>
-                  {entryTab === 'standard' ? (
-                    <StandardEntry
-                      projectId={id || ''}
-                      onSuccess={() => {
-                        silentRefresh();
-                      }}
-                    />
-                  ) : (
-                    <IntelligentEntry
-                      projectId={id || ''}
-                      entryType={project.entryTypes[0] || 'akra'}
-                      onSuccess={() => {
-                        silentRefresh();
-                      }}
-                    />
-                  )}
+          {/* Content Panels */}
+          {activeTab === ('filter' as TabType) ? (
+            <div className="mb-6 sm:mb-8">
+              <FilterTab
+                summaries={filterSummaries}
+                entryType={filterEntryType}
+                projectId={id || ''}
+                onSaveResults={async () => {}}
+                availableEntryTypes={[...(new Set<EntryType>(['open' as EntryType, ...(project.entryTypes as EntryType[])]))]}
+                onEntryTypeChange={(t) => setFilterEntryType(t)}
+                onSaveResultsForType={handleFilterSaveForType}
+              />
+            </div>
+          ) : activeTab === ('advanced' as TabType) ? (
+            <div className="mb-6 sm:mb-8">
+              {/* Inline AdvancedFilter: two panels side-by-side via existing component */}
+              {/* Prefer navigation-like behavior through tabs; using component keeps layout consistent */}
+              {/* We render the separate AdvancedFilter page content is heavy; for now, just link */}
+              <div className="text-gray-300">
+                Use the dedicated Advanced Filter page from the sidebar previously; now open via this tab.
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
+              {/* Left Panel - Entry History */}
+              <EntryHistoryPanel
+                transactions={transactions}
+                activeTab={(activeTab as any) as 'all' | 'open' | 'akra' | 'ring' | 'packet'}
+                projectEntryTypes={project.entryTypes}
+                onEdit={async (t) => {
+                  const firstStr = prompt('Update FIRST amount', String(t.first));
+                  const secondStr = prompt('Update SECOND amount', String(t.second));
+                  if (firstStr === null || secondStr === null) return;
+                  const updated = { ...t, first: Number(firstStr), second: Number(secondStr) };
+                  await updateTransaction(t.id, updated);
+                  silentRefresh();
+                }}
+                onDelete={async (idToDelete) => {
+                  if (!confirm('Delete this transaction?')) return;
+                  await deleteTransaction(idToDelete);
+                  silentRefresh();
+                }}
+              />
+
+              {/* Right Panel - Aggregated Numbers */}
+              <AggregatedNumbersPanel
+                transactions={transactions}
+                activeTab={(activeTab as any) as 'all' | 'open' | 'akra' | 'ring' | 'packet'}
+                projectEntryTypes={project.entryTypes}
+                onImport={handleImportClick}
+                onExportJSON={handleExportJSON}
+                onExportCSV={handleExportCSV}
+              />
+            </div>
+          )}
+
+          {/* Entry Panel - hidden on Filter tab */}
+          {activeTab !== ('filter' as TabType) && (
+            <div className="w-full px-0 sm:px-4 py-4 sm:py-6">
+              <div className="bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
+                <div className="p-4 sm:p-6">
+                  <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-3">
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+                      Add Entry
+                    </h3>
+                  </div>
+                  {/* Hidden file input for imports (buttons moved to Aggregated panel) */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json,.csv"
+                    onChange={handleFileImport}
+                    className="hidden"
+                  />
+                  <div>
+                    {entryTab === 'standard' ? (
+                      <StandardEntry
+                        projectId={id || ''}
+                        onSuccess={() => {
+                          silentRefresh();
+                        }}
+                      />
+                    ) : (
+                      <IntelligentEntry
+                        projectId={id || ''}
+                        entryType={project.entryTypes[0] || 'akra'}
+                        onSuccess={() => {
+                          silentRefresh();
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 

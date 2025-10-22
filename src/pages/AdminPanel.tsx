@@ -9,11 +9,13 @@ import TopupRequestManager from '../components/TopupRequestManager';
 import AdminFinancial from './admin/AdminFinancial';
 import AdminSettings from './admin/AdminSettings';
 import AnimatedNumber from '../components/AnimatedNumber';
+import ImpersonationBanner from '../components/ImpersonationBanner';
 import type { UserAccount } from '../types/admin';
+// import { db } from '../services/database';
 
 const AdminPanel: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, setImpersonatedUser } = useAuth();
   const { isAdmin, loading: authLoading } = useAdmin();
   const { users, reports, stats, loading, topUpBalance, deleteUser, refresh } = useAdminData();
   const { getPendingCount } = useTopupRequests();
@@ -25,6 +27,7 @@ const AdminPanel: React.FC = () => {
   const [showTopupRequests, setShowTopupRequests] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'users' | 'financial' | 'settings'>('users');
+  const [impersonating, setImpersonating] = useState(false);
 
   if (authLoading || loading) {
     return (
@@ -60,8 +63,7 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  const handleDeleteUser = (userId: string, email: string) => {
-    if (!confirm(`Are you sure you want to delete user: ${email}?`)) return;
+  const handleDeleteUser = (userId: string, _email: string) => {
     
     if (deleteUser(userId)) {
       alert('User deleted successfully!');
@@ -83,10 +85,16 @@ const AdminPanel: React.FC = () => {
     setShowUserDetailsModal(true);
   };
 
-  const handleImpersonate = (userId: string, userName: string) => {
-    if (confirm(`⚠️ Impersonate ${userName}?\n\nYou will be able to view and manage their projects as if you were them.`)) {
-      // Navigate to their projects page
+  const handleImpersonate = async (userId: string, _userName: string) => {
+    try {
+      setImpersonating(true);
+      await setImpersonatedUser(userId);
       navigate(`/admin/user/${userId}`);
+    } catch (error) {
+      console.error('Failed to impersonate user:', error);
+      alert('Failed to impersonate user. Please try again.');
+    } finally {
+      setImpersonating(false);
     }
   };
 
@@ -97,6 +105,7 @@ const AdminPanel: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+      <ImpersonationBanner />
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -405,12 +414,17 @@ const AdminPanel: React.FC = () => {
                           </button>
                           <button
                             onClick={() => handleImpersonate(user.userId, user.displayName)}
-                            className="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300"
-                            title="View User Projects"
+                            disabled={impersonating}
+                            className="text-purple-600 dark:text-purple-400 hover:text-purple-900 dark:hover:text-purple-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Impersonate User"
                           >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                            </svg>
+                            {impersonating ? (
+                              <div className="w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                              </svg>
+                            )}
                           </button>
                           <button
                             onClick={() => handleDeleteUser(user.userId, user.email)}
@@ -623,9 +637,17 @@ const AdminPanel: React.FC = () => {
                       setShowUserDetailsModal(false);
                       handleImpersonate(selectedUserData.userId, selectedUserData.displayName);
                     }}
-                    className="btn-primary"
+                    disabled={impersonating}
+                    className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    👁️ View Projects
+                    {impersonating ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Impersonating...
+                      </div>
+                    ) : (
+                      '👁️ Impersonate User'
+                    )}
                   </button>
                   <button
                     onClick={() => setShowUserDetailsModal(false)}

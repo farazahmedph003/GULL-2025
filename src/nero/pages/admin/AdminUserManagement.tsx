@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { mockUsers, getUserProjects } from '../../utils/mockData';
 import { useNeroAuth } from '../../contexts/NeroAuthContext';
 import type { NeroUser } from '../../types';
 
 const AdminUserManagement: React.FC = () => {
   const { impersonateUser } = useNeroAuth();
+  const navigate = useNavigate();
   const [users] = useState<NeroUser[]>(mockUsers);
   const [searchTerm, setSearchTerm] = useState('');
   const [showTopUpModal, setShowTopUpModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<NeroUser | null>(null);
   const [topUpAmount, setTopUpAmount] = useState('');
   const [showUserDetails, setShowUserDetails] = useState(false);
+  const [impersonating, setImpersonating] = useState(false);
 
   const filteredUsers = users.filter((user) =>
     user.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -37,9 +40,19 @@ const AdminUserManagement: React.FC = () => {
     setShowUserDetails(true);
   };
 
-  const handleImpersonate = (user: NeroUser) => {
-    if (confirm(`Impersonate ${user.displayName}? You'll be able to view their dashboard.`)) {
-      impersonateUser(user.id);
+  const handleImpersonate = async (user: NeroUser) => {
+    if (confirm(`Impersonate ${user.displayName}? You'll be able to view their projects and make changes.`)) {
+      try {
+        setImpersonating(true);
+        await impersonateUser(user.id);
+        // Navigate to the impersonated projects view
+        navigate(`/nero/admin/impersonate/${user.id}`);
+      } catch (error) {
+        console.error('Failed to impersonate user:', error);
+        alert('Failed to impersonate user. Please try again.');
+      } finally {
+        setImpersonating(false);
+      }
     }
   };
 
@@ -197,12 +210,17 @@ const AdminUserManagement: React.FC = () => {
                           <>
                             <button
                               onClick={() => handleImpersonate(user)}
-                              className="p-2 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+                              disabled={impersonating}
+                              className="p-2 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                               title="Impersonate User"
                             >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                              </svg>
+                              {impersonating ? (
+                                <div className="w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                              ) : (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                                </svg>
+                              )}
                             </button>
                             <button
                               onClick={() => handleDeactivate(user)}
