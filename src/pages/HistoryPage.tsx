@@ -212,9 +212,15 @@ const HistoryPage: React.FC = () => {
 
       try {
         const projectData = await db.getProject(projectId);
-        setProject(projectData);
+        if (projectData) {
+          setProject(projectData);
+        } else {
+          console.error('Project not found:', projectId);
+          setProject(null);
+        }
       } catch (error) {
         console.error('Error loading project:', error);
+        setProject(null);
       } finally {
         setProjectLoading(false);
       }
@@ -650,10 +656,34 @@ const HistoryPage: React.FC = () => {
     }
   };
 
-  if (!project || !projectId || projectLoading) {
+  if (projectLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
-        <p className="text-gray-600 dark:text-gray-400">Project not found</p>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading project...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!project || !projectId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+            Project Not Found
+          </h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            The project you're looking for doesn't exist or has been removed.
+          </p>
+          <button
+            onClick={() => window.history.back()}
+            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+          >
+            Go Back
+          </button>
+        </div>
       </div>
     );
   }

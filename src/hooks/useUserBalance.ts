@@ -38,8 +38,18 @@ export const useUserBalance = () => {
     if (isOfflineMode() || !supabase || !user) {
       // Offline mode: use local storage
       const localBalances = JSON.parse(localStorage.getItem('gull_user_balances') || '{}');
-      const newBalance = localBalances[effectiveUserId] ?? 1000; // Default to 1000 for offline
-      console.log('Offline balance fetched:', newBalance);
+      let newBalance = localBalances[effectiveUserId];
+      
+      // If user has no balance or balance is 0, initialize with default
+      if (newBalance === undefined || newBalance === null || newBalance === 0) {
+        newBalance = 1000; // Default to 1000 for offline
+        localBalances[effectiveUserId] = newBalance;
+        localStorage.setItem('gull_user_balances', JSON.stringify(localBalances));
+        console.log('Initialized balance for offline user:', newBalance);
+      } else {
+        console.log('Offline balance fetched:', newBalance);
+      }
+      
       setBalance(newBalance);
       // Don't dispatch event here to avoid infinite loop
       setLoading(false);
@@ -53,7 +63,7 @@ export const useUserBalance = () => {
 
         if (fetchError) throw fetchError;
 
-        const newBalance = data?.balance || 0;
+        const newBalance = data?.balance || 1000; // Default to 1000 for new users
         setBalance(newBalance);
         // Don't dispatch event here to avoid infinite loop
       } catch (err) {
@@ -61,7 +71,16 @@ export const useUserBalance = () => {
         setError('Failed to fetch balance');
         // Fallback to local storage
         const localBalances = JSON.parse(localStorage.getItem('gull_user_balances') || '{}');
-        const newBalance = localBalances[effectiveUserId] || 0;
+        let newBalance = localBalances[effectiveUserId];
+        
+        // If user has no balance or balance is 0, initialize with default
+        if (newBalance === undefined || newBalance === null || newBalance === 0) {
+          newBalance = 1000;
+          localBalances[effectiveUserId] = newBalance;
+          localStorage.setItem('gull_user_balances', JSON.stringify(localBalances));
+          console.log('Initialized balance for online user (fallback):', newBalance);
+        }
+        
         setBalance(newBalance);
         // Don't dispatch event here to avoid infinite loop
       } finally {

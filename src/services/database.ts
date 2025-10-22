@@ -108,7 +108,7 @@ export class DatabaseService {
         id: row.id,
         name: row.name,
         date: row.created_at,
-        entryTypes: (row.entry_types as EntryType[]) || ['akra', 'ring'],
+        entryTypes: (row.entry_types as EntryType[]) || ['akra', 'ring', 'open', 'packet'],
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         userId: row.user_id,

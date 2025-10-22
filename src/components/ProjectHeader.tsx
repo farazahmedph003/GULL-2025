@@ -1,119 +1,131 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import BalanceDisplay from './BalanceDisplay';
 import ProfileDropdown from './ProfileDropdown';
 import SidebarMenu from './SidebarMenu';
 
+interface Tab {
+  id: string;
+  label: string;
+  description: string;
+}
+
 interface ProjectHeaderProps {
   projectName: string;
   projectDate?: string;
-  onUndo?: () => void;
-  onRedo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
   onRefresh?: () => void;
   projectId?: string;
+  showTabs?: boolean;
+  tabs?: Tab[];
+  activeTab?: string;
+  onTabChange?: (tabId: string) => void;
 }
 
 const ProjectHeader: React.FC<ProjectHeaderProps> = ({
   projectName,
   projectDate,
-  onUndo,
-  onRedo,
-  canUndo = false,
-  canRedo = false,
   onRefresh,
   projectId,
+  showTabs = false,
+  tabs = [],
+  activeTab,
+  onTabChange,
 }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <>
-      <div className="bg-gray-800 shadow-sm border-b border-gray-700 sticky top-0 z-40">
-        <div className="w-full px-4 py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
+      <div className="bg-gray-800 shadow-sm border-b border-gray-700 mobile-header">
+        <div className="w-full px-3 sm:px-4 py-3 sm:py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
             {/* Left: Menu Button and Project Info */}
-            <div className="flex items-center space-x-4 sm:space-x-6">
+            <div className="flex items-center space-x-3 sm:space-x-6">
+              {/* Back Button */}
               <button
-                onClick={() => setSidebarOpen(true)}
-                className="p-3 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
-                aria-label="Open menu"
+                onClick={() => navigate('/')}
+                className="p-2 sm:p-3 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 min-h-[48px] min-w-[48px] flex items-center justify-center"
+                title="Back to Projects"
+                aria-label="Back to Projects"
               >
-                <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
               </button>
-              <div className="border-l border-gray-600 pl-4 sm:pl-6">
-                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white">
+              
+              {!showTabs && (
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  className="p-2 sm:p-3 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 min-h-[48px] min-w-[48px] flex items-center justify-center"
+                  aria-label="Open menu"
+                >
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+              )}
+              <div className={`${!showTabs ? 'border-l border-gray-600 pl-3 sm:pl-6' : ''} min-w-0 flex-1`}>
+                <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-white truncate">
                   {projectName}
                 </h1>
                 {projectDate && (
-                  <p className="text-sm sm:text-base text-gray-300 mt-1">
+                  <p className="text-xs sm:text-sm text-gray-300 mt-0.5 truncate">
                     {projectDate}
                   </p>
                 )}
               </div>
             </div>
 
-            {/* Right: Actions */}
-            <div className="flex items-center justify-between sm:justify-end space-x-3 sm:space-x-4">
-              {/* Balance Display for All Users */}
-              <BalanceDisplay />
+            {/* Right: Actions - Compact on Mobile */}
+            <div className="flex items-center justify-end space-x-2 sm:space-x-4">
+              {/* Balance Display - Hidden on very small screens */}
+              <div className="hidden sm:block">
+                <BalanceDisplay />
+              </div>
 
-              {/* Refresh Button */}
+              {/* Top-up Request Button */}
               {onRefresh && (
                 <button
                   onClick={onRefresh}
-                  className="p-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
-                  title="Refresh Data"
-                  aria-label="Refresh"
+                  className="p-2 sm:p-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 min-h-[48px] min-w-[48px] flex items-center justify-center"
+                  title="Request Top-up"
+                  aria-label="Request Top-up"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </button>
               )}
 
-              {/* Undo/Redo Buttons */}
-              {(onUndo || onRedo) && (
-                <div className="flex items-center space-x-2 bg-gray-700 rounded-lg p-2">
-                  <button
-                    onClick={onUndo}
-                    disabled={!canUndo}
-                    className={`p-2.5 rounded transition-colors ${
-                      canUndo
-                        ? 'hover:bg-gray-600 text-white'
-                        : 'text-gray-500 cursor-not-allowed'
-                    }`}
-                    title="Undo (Ctrl+Z)"
-                    aria-label="Undo"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                    </svg>
-                  </button>
-                  
-                  <button
-                    onClick={onRedo}
-                    disabled={!canRedo}
-                    className={`p-2.5 rounded transition-colors ${
-                      canRedo
-                        ? 'hover:bg-gray-600 text-white'
-                        : 'text-gray-500 cursor-not-allowed'
-                    }`}
-                    title="Redo (Ctrl+Y)"
-                    aria-label="Redo"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />
-                    </svg>
-                  </button>
-                </div>
-              )}
 
               <ProfileDropdown />
             </div>
           </div>
         </div>
+        
+        {/* Tabs Section */}
+        {showTabs && tabs.length > 0 && (
+          <div className="border-t border-gray-700 bg-gray-800">
+            <div className="w-full px-4 py-2">
+              <div className="flex space-x-1">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => onTabChange?.(tab.id)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      activeTab === tab.id
+                        ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
+                        : 'text-gray-300 hover:text-white hover:bg-gray-700'
+                    }`}
+                    title={tab.description}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Sidebar Menu */}

@@ -1,14 +1,14 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
-import EntryPanel from '../components/EntryPanel';
-import FloatingActionButton from '../components/FloatingActionButton';
 import NumberGrid from '../components/NumberGrid';
 import FilterTab from '../components/FilterTab';
 import TransactionModal from '../components/TransactionModal';
 import LoadingSpinner from '../components/LoadingSpinner';
 import PremiumStats from '../components/PremiumStats';
 import StatisticsGrid from '../components/StatisticsGrid';
+import StandardEntry from '../components/StandardEntry';
+import IntelligentEntry from '../components/IntelligentEntry';
 import { useTransactions } from '../hooks/useTransactions';
 import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
@@ -24,14 +24,15 @@ const AkraPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'entries' | 'filter'>('entries');
+  const [entryTab, setEntryTab] = useState<'standard' | 'intelligent'>('standard');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectionMode] = useState(false);
   const [selectedNumbers, setSelectedNumbers] = useState<Set<string>>(new Set());
   const [modalNumber, setModalNumber] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [entryPanelOpen, setEntryPanelOpen] = useState(false);
   const [project, setProject] = useState<any>(null);
   const [projectLoading, setProjectLoading] = useState(true);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   
   // Load project from database
   useEffect(() => {
@@ -58,7 +59,6 @@ const AkraPage: React.FC = () => {
   
   const { 
     transactions, 
-    loading, 
     refresh: refreshTransactions, 
     deleteTransaction,
     bulkDeleteTransactions,
@@ -66,11 +66,33 @@ const AkraPage: React.FC = () => {
     addTransaction,
   } = useTransactions(id || '');
   
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape key to go back to projects
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        navigate('/');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigate]);
+  
   const { refresh: refreshBalance } = useUserBalance();
   const { showSuccess, showError } = useNotifications();
   
-  // Comprehensive refresh function
-  const refresh = () => {
+  // Manual refresh function (with loading animation)
+  const refresh = async () => {
+    setManualRefreshing(true);
+    await refreshTransactions();
+    await refreshBalance();
+    setManualRefreshing(false);
+  };
+
+  // Silent refresh function (without loading animation) for automatic updates
+  const silentRefresh = () => {
     refreshTransactions();
     refreshBalance();
   };
@@ -316,8 +338,8 @@ const AkraPage: React.FC = () => {
 
   const modalSummary = modalNumber ? summaries.get(modalNumber) : null;
 
-  // Show loading state while loading or when project is still loading
-  if (loading || projectLoading) {
+  // Show loading state during initial project loading or manual refresh
+  if (projectLoading || manualRefreshing) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <ProjectHeader
@@ -325,7 +347,7 @@ const AkraPage: React.FC = () => {
           projectDate={project ? formatDate(project.date) : ''}
         />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <LoadingSpinner text="Loading Akra data..." />
+          <LoadingSpinner text={manualRefreshing ? "Refreshing Akra data..." : "Loading Akra data..."} />
         </div>
       </div>
     );
@@ -509,6 +531,61 @@ const AkraPage: React.FC = () => {
         </div>
       )}
 
+      {/* Entry Panel - Fixed Position Below Number Grids */}
+      <div className="w-full px-4 py-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Add Entry
+              </h3>
+              <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                <button
+                  onClick={() => setEntryTab('standard')}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
+                    entryTab === 'standard'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+                  }`}
+                >
+                  Standard
+                </button>
+                <button
+                  onClick={() => setEntryTab('intelligent')}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
+                    entryTab === 'intelligent'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+                  }`}
+                >
+                  Intelligent
+                </button>
+              </div>
+            </div>
+            
+
+            <div>
+              {entryTab === 'standard' ? (
+                <StandardEntry
+                  projectId={id || ''}
+                  onSuccess={() => {
+                    silentRefresh();
+                  }}
+                />
+              ) : (
+                <IntelligentEntry
+                  projectId={id || ''}
+                  entryType="akra"
+                  onSuccess={() => {
+                    silentRefresh();
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Transaction Modal */}
       {modalSummary && (
         <TransactionModal
@@ -519,30 +596,6 @@ const AkraPage: React.FC = () => {
           onDelete={handleDelete}
         />
       )}
-      {/* Floating Add Entry Button */}
-      <FloatingActionButton
-        onClick={() => setEntryPanelOpen(true)}
-        position="bottom-right"
-        color="secondary"
-        label="Add Entry (Ctrl+/)"
-        icon={
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        }
-      />
-
-      {/* Entry Panel */}
-      <EntryPanel
-        isOpen={entryPanelOpen}
-        onClose={() => setEntryPanelOpen(false)}
-        projectId={id || ''}
-        entryType={'akra'}
-        onEntryAdded={() => {
-          refresh();
-          setEntryPanelOpen(false);
-        }}
-      />
 
     </div>
   );

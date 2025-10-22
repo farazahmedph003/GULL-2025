@@ -25,12 +25,8 @@ export const ADMIN_PERMISSIONS = [
   'manage_balance',
 ] as const;
 
-export const ENTRY_COST = {
-  akra: 10, // 10 PKR per Akra entry
-  ring: 20, // 20 PKR per Ring entry
-};
 
-export const DEFAULT_BALANCE = 0; // New users start with 0 balance
+export const DEFAULT_BALANCE = 1000; // New users start with 1000 balance
 
 export const MIN_TOPUP_AMOUNT = 100; // Minimum 100 PKR
 export const MAX_TOPUP_AMOUNT = 100000; // Maximum 100,000 PKR
@@ -61,10 +57,6 @@ export const ADMIN_ROLES = {
 
 // System settings interface
 export interface SystemSettings {
-  entryCosts: {
-    akra: number;
-    ring: number;
-  };
   defaultBalance: number;
   minTopupAmount: number;
   maxTopupAmount: number;
@@ -75,7 +67,6 @@ export interface SystemSettings {
 
 // Default system settings
 export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
-  entryCosts: ENTRY_COST,
   defaultBalance: DEFAULT_BALANCE,
   minTopupAmount: MIN_TOPUP_AMOUNT,
   maxTopupAmount: MAX_TOPUP_AMOUNT,
@@ -97,8 +88,4 @@ export const getCurrentSystemSettings = (): SystemSettings => {
   return DEFAULT_SYSTEM_SETTINGS;
 };
 
-export const getEntryCost = (entryType: 'akra' | 'ring'): number => {
-  const settings = getCurrentSystemSettings();
-  return settings.entryCosts[entryType];
-};
 

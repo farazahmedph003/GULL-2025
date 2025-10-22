@@ -4,6 +4,7 @@ import Layout from '../components/Layout';
 import ProjectHeader from '../components/ProjectHeader';
 import StatisticsGrid from '../components/StatisticsGrid';
 import EntryPanel from '../components/EntryPanel';
+import EntryFormsBar from '../components/EntryFormsBar';
 import FloatingActionButton from '../components/FloatingActionButton';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ProgressBar from '../components/ProgressBar';
@@ -162,12 +163,18 @@ const Dashboard: React.FC = () => {
         setEntryPanelOpen(prev => !prev);
       }
       
+      // Escape key to go back to projects
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        navigate('/');
+      }
+      
       // Ctrl/Cmd + H to toggle history panel
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canUndo, canRedo, undo, redo]);
+  }, [canUndo, canRedo, undo, redo, navigate]);
 
   // Tabs moved to sidebar menu
 
@@ -205,28 +212,24 @@ const Dashboard: React.FC = () => {
       <ProjectHeader
         projectName={project.name}
         projectDate={formatDate(project.date)}
-        onUndo={undo}
-        onRedo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
         onRefresh={refresh}
         projectId={id}
       />
 
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="px-4 py-4">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-20 sm:pb-0">
+        <div className="px-3 sm:px-4 py-4">
           {/* Welcome Section */}
-          <div className="mb-8">
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+          <div className="mb-6 sm:mb-8">
+            <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
               Project Overview
             </h2>
-            <p className="text-gray-600 dark:text-gray-400">
+            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">
               Track your {project.entryTypes.join(' and ')} entries with real-time calculations
             </p>
           </div>
 
           {/* Statistics Grid */}
-          <div className="mb-8">
+          <div className="mb-6 sm:mb-8">
             <StatisticsGrid
               statistics={statistics}
               onCardClick={handleCardClick}
@@ -234,25 +237,25 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Progress Section */}
-          <div className="grid grid-cols-1 gap-6 mb-8">
+          <div className="grid grid-cols-1 gap-4 sm:gap-6 mb-6 sm:mb-8">
           {/* Akra Progress */}
           {project.entryTypes.includes('akra') && (
-            <div className="relative bg-white dark:bg-gradient-to-br dark:from-slate-800 dark:to-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
+            <div className="relative bg-white dark:bg-gradient-to-br dark:from-slate-800 dark:to-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg hover:shadow-xl transition-all duration-300">
               {/* Gradient overlay */}
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-50/20 via-blue-50/10 to-indigo-50/20 dark:from-purple-900/10 dark:via-blue-900/5 dark:to-indigo-900/10 rounded-2xl"></div>
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-50/20 via-blue-50/10 to-indigo-50/20 dark:from-purple-900/10 dark:via-blue-900/5 dark:to-indigo-900/10 rounded-xl sm:rounded-2xl"></div>
               
               <div className="relative z-10">
-                <div className="flex items-center space-x-4 mb-6">
-                  <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-purple-500 to-blue-600 text-white rounded-xl shadow-lg">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center space-x-3 sm:space-x-4 mb-4 sm:mb-6">
+                  <div className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-purple-500 to-blue-600 text-white rounded-lg sm:rounded-xl shadow-lg">
+                    <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                     </svg>
                   </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
                       Akra (2-digit) Progress
                     </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Track your 2-digit entries</p>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Track your 2-digit entries</p>
                   </div>
                 </div>
                 
@@ -263,7 +266,7 @@ const Dashboard: React.FC = () => {
                   color="secondary"
                   size="lg"
                 />
-                <div className="mt-4 flex justify-between items-center text-sm bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3 border border-purple-100 dark:border-purple-800/30">
+                <div className="mt-3 sm:mt-4 flex justify-between items-center text-xs sm:text-sm bg-purple-50 dark:bg-purple-900/20 rounded-lg p-2 sm:p-3 border border-purple-100 dark:border-purple-800/30">
                   <span className="font-medium text-purple-700 dark:text-purple-300">
                     {statistics.akraEntries} entries
                   </span>
@@ -277,22 +280,22 @@ const Dashboard: React.FC = () => {
 
           {/* Ring Progress */}
           {project.entryTypes.includes('ring') && (
-            <div className="relative bg-white dark:bg-gradient-to-br dark:from-slate-800 dark:to-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
+            <div className="relative bg-white dark:bg-gradient-to-br dark:from-slate-800 dark:to-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg hover:shadow-xl transition-all duration-300">
               {/* Gradient overlay */}
-              <div className="absolute inset-0 bg-gradient-to-br from-teal-50/20 via-cyan-50/10 to-blue-50/20 dark:from-teal-900/10 dark:via-cyan-900/5 dark:to-blue-900/10 rounded-2xl"></div>
+              <div className="absolute inset-0 bg-gradient-to-br from-teal-50/20 via-cyan-50/10 to-blue-50/20 dark:from-teal-900/10 dark:via-cyan-900/5 dark:to-blue-900/10 rounded-xl sm:rounded-2xl"></div>
               
               <div className="relative z-10">
-                <div className="flex items-center space-x-4 mb-6">
-                  <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-teal-500 to-cyan-600 text-white rounded-xl shadow-lg">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center space-x-3 sm:space-x-4 mb-4 sm:mb-6">
+                  <div className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-teal-500 to-cyan-600 text-white rounded-lg sm:rounded-xl shadow-lg">
+                    <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                     </svg>
                   </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
                       Ring (3-digit) Progress
                     </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Track your 3-digit entries</p>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Track your 3-digit entries</p>
                   </div>
                 </div>
                 
@@ -303,7 +306,7 @@ const Dashboard: React.FC = () => {
                   color="accent"
                   size="lg"
                 />
-                <div className="mt-4 flex justify-between items-center text-sm bg-teal-50 dark:bg-teal-900/20 rounded-lg p-3 border border-teal-100 dark:border-teal-800/30">
+                <div className="mt-3 sm:mt-4 flex justify-between items-center text-xs sm:text-sm bg-teal-50 dark:bg-teal-900/20 rounded-lg p-2 sm:p-3 border border-teal-100 dark:border-teal-800/30">
                   <span className="font-medium text-teal-700 dark:text-teal-300">
                     {statistics.ringEntries} entries
                   </span>
@@ -318,40 +321,40 @@ const Dashboard: React.FC = () => {
 
 
           {/* Quick Actions */}
-          <div className="relative bg-white dark:bg-gradient-to-br dark:from-slate-800 dark:to-slate-900 border border-gray-200 dark:border-slate-700 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300">
+          <div className="relative bg-white dark:bg-gradient-to-br dark:from-slate-800 dark:to-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg hover:shadow-xl transition-all duration-300">
             {/* Gradient overlay */}
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-50/20 via-purple-50/10 to-indigo-50/20 dark:from-blue-900/10 dark:via-purple-900/5 dark:to-indigo-900/10 rounded-2xl"></div>
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-50/20 via-purple-50/10 to-indigo-50/20 dark:from-blue-900/10 dark:via-purple-900/5 dark:to-indigo-900/10 rounded-xl sm:rounded-2xl"></div>
             
             <div className="relative z-10">
-              <div className="flex items-center space-x-4 mb-6">
-                <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded-xl shadow-lg">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="flex items-center space-x-3 sm:space-x-4 mb-4 sm:mb-6">
+                <div className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded-lg sm:rounded-xl shadow-lg">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">Quick Actions</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Manage your entries efficiently</p>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">Quick Actions</h3>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Manage your entries efficiently</p>
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
               {project.entryTypes?.includes('akra') && (
                 <button
                   onClick={() => {
                     setSelectedEntryType('akra');
                     setEntryPanelOpen(true);
                   }}
-                  className="group p-6 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 border border-purple-200 dark:border-purple-700 rounded-xl hover:shadow-lg hover:-translate-y-1 transition-all duration-300 text-left"
+                  className="group p-4 sm:p-6 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 border border-purple-200 dark:border-purple-700 rounded-lg sm:rounded-xl hover:shadow-lg hover:-translate-y-1 active:scale-95 transition-all duration-300 text-left min-h-[100px] sm:min-h-[120px]"
                 >
-                  <div className="flex flex-col items-center space-y-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
-                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex flex-col items-center space-y-2 sm:space-y-3">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-purple-500 to-blue-600 rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                       </svg>
                     </div>
                     <div className="text-center">
-                      <p className="font-semibold text-gray-900 dark:text-white">Add Akra</p>
+                      <p className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">Add Akra</p>
                       <p className="text-xs text-gray-600 dark:text-gray-400">2-digit entry</p>
                     </div>
                   </div>
@@ -364,16 +367,16 @@ const Dashboard: React.FC = () => {
                     setSelectedEntryType('ring');
                     setEntryPanelOpen(true);
                   }}
-                  className="group p-6 bg-gradient-to-br from-teal-50 to-cyan-50 dark:from-teal-900/20 dark:to-cyan-900/20 border border-teal-200 dark:border-teal-700 rounded-xl hover:shadow-lg hover:-translate-y-1 transition-all duration-300 text-left"
+                  className="group p-4 sm:p-6 bg-gradient-to-br from-teal-50 to-cyan-50 dark:from-teal-900/20 dark:to-cyan-900/20 border border-teal-200 dark:border-teal-700 rounded-lg sm:rounded-xl hover:shadow-lg hover:-translate-y-1 active:scale-95 transition-all duration-300 text-left min-h-[100px] sm:min-h-[120px]"
                 >
-                  <div className="flex flex-col items-center space-y-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
-                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex flex-col items-center space-y-2 sm:space-y-3">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                       </svg>
                     </div>
                     <div className="text-center">
-                      <p className="font-semibold text-gray-900 dark:text-white">Add Ring</p>
+                      <p className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">Add Ring</p>
                       <p className="text-xs text-gray-600 dark:text-gray-400">3-digit entry</p>
                     </div>
                   </div>
@@ -383,16 +386,16 @@ const Dashboard: React.FC = () => {
               {project.entryTypes?.includes('akra') && (
                 <button
                   onClick={() => navigate(`/project/${id}/akra`)}
-                  className="group p-6 bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 border border-emerald-200 dark:border-emerald-700 rounded-xl hover:shadow-lg hover:-translate-y-1 transition-all duration-300 text-left"
+                  className="group p-4 sm:p-6 bg-gradient-to-br from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 border border-emerald-200 dark:border-emerald-700 rounded-lg sm:rounded-xl hover:shadow-lg hover:-translate-y-1 active:scale-95 transition-all duration-300 text-left min-h-[100px] sm:min-h-[120px]"
                 >
-                  <div className="flex flex-col items-center space-y-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-green-600 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
-                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex flex-col items-center space-y-2 sm:space-y-3">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                       </svg>
                     </div>
                     <div className="text-center">
-                      <p className="font-semibold text-gray-900 dark:text-white">View Akra</p>
+                      <p className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">View Akra</p>
                       <p className="text-xs text-gray-600 dark:text-gray-400">See all numbers</p>
                     </div>
                   </div>
@@ -402,16 +405,16 @@ const Dashboard: React.FC = () => {
               {project.entryTypes?.includes('ring') && (
                 <button
                   onClick={() => navigate(`/project/${id}/ring`)}
-                  className="group p-6 bg-gradient-to-br from-orange-50 to-yellow-50 dark:from-orange-900/20 dark:to-yellow-900/20 border border-orange-200 dark:border-orange-700 rounded-xl hover:shadow-lg hover:-translate-y-1 transition-all duration-300 text-left"
+                  className="group p-4 sm:p-6 bg-gradient-to-br from-orange-50 to-yellow-50 dark:from-orange-900/20 dark:to-yellow-900/20 border border-orange-200 dark:border-orange-700 rounded-lg sm:rounded-xl hover:shadow-lg hover:-translate-y-1 active:scale-95 transition-all duration-300 text-left min-h-[100px] sm:min-h-[120px]"
                 >
-                  <div className="flex flex-col items-center space-y-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-yellow-600 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
-                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex flex-col items-center space-y-2 sm:space-y-3">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-orange-500 to-yellow-600 rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                       </svg>
                     </div>
                     <div className="text-center">
-                      <p className="font-semibold text-gray-900 dark:text-white">View Ring</p>
+                      <p className="text-sm sm:text-base font-semibold text-gray-900 dark:text-white">View Ring</p>
                       <p className="text-xs text-gray-600 dark:text-gray-400">See all numbers</p>
                     </div>
                   </div>
@@ -445,6 +448,15 @@ const Dashboard: React.FC = () => {
         entryType={selectedEntryType === 'akra' ? 'akra' : selectedEntryType === 'ring' ? 'ring' : 'akra'}
         onEntryAdded={handleEntryAdded}
       />
+
+      {/* Entry Forms Bar - Mobile Only */}
+      <div className="sm:hidden">
+        <EntryFormsBar
+          projectId={id || ''}
+          entryType={project?.entryTypes?.[0] || 'akra'}
+          onEntryAdded={handleEntryAdded}
+        />
+      </div>
 
     </>
   );

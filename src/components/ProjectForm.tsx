@@ -10,7 +10,7 @@ interface ProjectFormProps {
 const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, onCancel }) => {
   const [name, setName] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [entryTypes, setEntryTypes] = useState<EntryType[]>(['akra']);
+  const [entryTypes, setEntryTypes] = useState<EntryType[]>(['akra', 'ring', 'open', 'packet']);
   const [errors, setErrors] = useState<{ name?: string; entryTypes?: string }>({});
 
   const handleEntryTypeToggle = (type: EntryType) => {
@@ -63,7 +63,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ onSubmit, onCancel }) => {
     // Reset form
     setName('');
     setDate(new Date().toISOString().split('T')[0]);
-    setEntryTypes(['akra']);
+    setEntryTypes(['akra', 'ring', 'open', 'packet']);
     setErrors({});
   };
 

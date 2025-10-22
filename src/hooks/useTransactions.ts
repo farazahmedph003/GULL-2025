@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Transaction, ProjectStatistics } from '../types';
 import { useUserBalance } from './useUserBalance';
+import { useAuth } from '../contexts/AuthContext';
 import { db } from '../services/database';
 import { isSupabaseConfigured, isOfflineMode } from '../lib/supabase';
 
@@ -8,6 +9,7 @@ export const useTransactions = (projectId: string) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
   const { deductBalance, addBalance } = useUserBalance();
 
   // Load transactions from database or localStorage as fallback
@@ -151,10 +153,22 @@ export const useTransactions = (projectId: string) => {
         }
       }
 
-      const updated = transactions.filter(t => t.id !== transactionId);
+      // Try to delete from Supabase first
+      if (isSupabaseConfigured() && !isOfflineMode()) {
+        try {
+          await db.deleteTransaction(transactionId);
+          console.log('Transaction deleted from Supabase:', transactionId);
+        } catch (dbError) {
+          console.warn('Failed to delete from Supabase:', dbError);
+        }
+      }
+
+      // Always update localStorage
       const storageKey = `gull-transactions-${projectId}`;
-      localStorage.setItem(storageKey, JSON.stringify(updated));
-      setTransactions(updated);
+      localStorage.setItem(storageKey, JSON.stringify(transactions.filter(t => t.id !== transactionId)));
+      
+      // Update state using functional update
+      setTransactions(prevTransactions => prevTransactions.filter(t => t.id !== transactionId));
       return true;
     } catch (error) {
       console.error('Error deleting transaction:', error);
@@ -188,10 +202,25 @@ export const useTransactions = (projectId: string) => {
         }
       }
 
-      const updated = transactions.filter(t => !transactionIds.includes(t.id));
+      // Try to delete from Supabase first
+      if (isSupabaseConfigured() && !isOfflineMode()) {
+        try {
+          // Delete each transaction from Supabase
+          for (const transactionId of transactionIds) {
+            await db.deleteTransaction(transactionId);
+          }
+          console.log('Transactions deleted from Supabase:', transactionIds);
+        } catch (dbError) {
+          console.warn('Failed to delete from Supabase:', dbError);
+        }
+      }
+
+      // Always update localStorage
       const storageKey = `gull-transactions-${projectId}`;
-      localStorage.setItem(storageKey, JSON.stringify(updated));
-      setTransactions(updated);
+      localStorage.setItem(storageKey, JSON.stringify(transactions.filter(t => !transactionIds.includes(t.id))));
+      
+      // Update state using functional update
+      setTransactions(prevTransactions => prevTransactions.filter(t => !transactionIds.includes(t.id)));
       return true;
     } catch (error) {
       console.error('Error bulk deleting transactions:', error);
@@ -200,42 +229,78 @@ export const useTransactions = (projectId: string) => {
   }, [transactions, projectId, deductBalance, addBalance]);
 
   // Add transaction with balance integration
-  const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>) => {
+  const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction: boolean = false) => {
+    console.log('🔍 Debug - addTransaction called with:', transaction, 'skipBalanceDeduction:', skipBalanceDeduction);
     try {
-      const newTransaction: Transaction = {
-        ...transaction,
-        id: `txn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      };
-
       // Calculate total cost for balance deduction
-      const totalCost = (newTransaction.first || 0) + (newTransaction.second || 0);
+      const totalCost = (transaction.first || 0) + (transaction.second || 0);
+      console.log('🔍 Debug - Total cost:', totalCost);
       
-      // Deduct balance for positive amounts
-      if (totalCost > 0) {
+      // Deduct balance for positive amounts (only if not skipped)
+      if (!skipBalanceDeduction && totalCost > 0) {
+        console.log('🔍 Debug - Attempting to deduct balance:', totalCost);
         const success = await deductBalance(totalCost);
+        console.log('🔍 Debug - Balance deduction result:', success);
         if (!success) {
           throw new Error('Failed to deduct balance');
         }
       }
 
       // Add balance for negative amounts (refunds/deductions)
-      if (totalCost < 0) {
+      if (!skipBalanceDeduction && totalCost < 0) {
         const success = await addBalance(Math.abs(totalCost));
         if (!success) {
           throw new Error('Failed to add balance');
         }
       }
 
-      const updated = [...transactions, newTransaction];
-      const storageKey = `gull-transactions-${projectId}`;
-      localStorage.setItem(storageKey, JSON.stringify(updated));
-      setTransactions(updated);
+      let newTransaction: Transaction;
+
+      // Try to save to Supabase first (only if user is authenticated)
+      if (isSupabaseConfigured() && !isOfflineMode() && user?.id) {
+        try {
+          newTransaction = await db.createTransaction(user.id, {
+            ...transaction,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+          console.log('Transaction saved to Supabase:', newTransaction.id);
+        } catch (dbError) {
+          console.warn('Failed to save to Supabase, falling back to localStorage:', dbError);
+          // Fallback to localStorage
+          newTransaction = {
+            ...transaction,
+            id: `txn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+        }
+      } else {
+        // Offline mode - use localStorage
+        newTransaction = {
+          ...transaction,
+          id: `txn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+
+      // Update state using functional update to avoid stale closure issues
+      setTransactions(prevTransactions => {
+        const updatedTransactions = [...prevTransactions, newTransaction];
+        // Always save to localStorage as backup/cache
+        const storageKey = `gull-transactions-${projectId}`;
+        localStorage.setItem(storageKey, JSON.stringify(updatedTransactions));
+        return updatedTransactions;
+      });
+      
+      console.log('🔍 Debug - Transaction added successfully:', newTransaction.id);
       return true;
     } catch (error) {
-      console.error('Error adding transaction:', error);
+      console.error('🔍 Debug - Error adding transaction:', error);
       return false;
     }
-  }, [transactions, projectId, deductBalance, addBalance]);
+  }, [projectId, deductBalance, addBalance, user]);
 
   // Update transaction with balance handling
   const updateTransaction = useCallback(async (transactionId: string, updates: Partial<Transaction>) => {
@@ -269,16 +334,33 @@ export const useTransactions = (projectId: string) => {
         }
       }
 
-      // Update the transaction
+      // Try to update in Supabase first
+      if (isSupabaseConfigured() && !isOfflineMode()) {
+        try {
+          // Prepare updates for Supabase (exclude id, projectId, createdAt, updatedAt)
+          const { id, projectId: _, createdAt, updatedAt, ...supabaseUpdates } = updates;
+          await db.updateTransaction(transactionId, supabaseUpdates);
+          console.log('Transaction updated in Supabase:', transactionId);
+        } catch (dbError) {
+          console.warn('Failed to update in Supabase:', dbError);
+        }
+      }
+
+      // Update the transaction in local state
+      const storageKey = `gull-transactions-${projectId}`;
       const updated = transactions.map(t =>
         t.id === transactionId
           ? { ...t, ...updates, updatedAt: new Date().toISOString() }
           : t
       );
-      
-      const storageKey = `gull-transactions-${projectId}`;
       localStorage.setItem(storageKey, JSON.stringify(updated));
-      setTransactions(updated);
+      
+      // Update state using functional update
+      setTransactions(prevTransactions => prevTransactions.map(t =>
+        t.id === transactionId
+          ? { ...t, ...updates, updatedAt: new Date().toISOString() }
+          : t
+      ));
       return true;
     } catch (error) {
       console.error('Error updating transaction:', error);

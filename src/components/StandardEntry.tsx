@@ -1,30 +1,28 @@
 import React, { useState, useRef } from 'react';
-import type { EntryType, Transaction } from '../types';
-import { generateId, isValidNumber, formatCurrency } from '../utils/helpers';
+import type { Transaction } from '../types';
+import { formatCurrency } from '../utils/helpers';
 import { useUserBalance } from '../hooks/useUserBalance';
+import { useTransactions } from '../hooks/useTransactions';
 import { useNotifications } from '../contexts/NotificationContext';
 import { playSuccessSound } from '../utils/audioFeedback';
-import { getEntryCost } from '../config/admin';
 
 interface StandardEntryProps {
   projectId: string;
-  entryType: EntryType;
   onSuccess: () => void;
 }
 
 const StandardEntry: React.FC<StandardEntryProps> = ({
   projectId,
-  entryType,
   onSuccess: _onSuccess,
 }) => {
-  const { balance, hasSufficientBalance, deductBalance, refresh: refreshBalance } = useUserBalance();
+  const { balance, hasSufficientBalance, deductBalance } = useUserBalance();
+  const { addTransaction } = useTransactions(projectId);
   const { showSuccess, showError } = useNotifications();
-  const numbersInputRef = useRef<HTMLTextAreaElement>(null);
+  const numbersInputRef = useRef<HTMLInputElement>(null);
   
   const [numbers, setNumbers] = useState('');
   const [first, setFirst] = useState('');
   const [second, setSecond] = useState('');
-  const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<{ numbers?: string; first?: string; second?: string; balance?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -37,27 +35,9 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
     } else {
       // Split by ANY non-digit characters to support symbols like = * + - ( ) ! ^ etc.
       const numberList = numbers.split(/[^0-9]+/).filter(n => n.length > 0);
-      const invalidNumbers = numberList.filter(n => !isValidNumber(n, entryType));
       
-      if (invalidNumbers.length > 0) {
-        let expectedFormat: string;
-        switch (entryType) {
-          case 'open':
-            expectedFormat = '1-digit (0-9)';
-            break;
-          case 'akra':
-            expectedFormat = '2-digit (00-99)';
-            break;
-          case 'ring':
-            expectedFormat = '3-digit (000-999)';
-            break;
-          case 'packet':
-            expectedFormat = '4-digit (0000-9999)';
-            break;
-          default:
-            expectedFormat = 'valid format';
-        }
-        newErrors.numbers = `Invalid numbers: ${invalidNumbers.join(', ')}. Expected ${expectedFormat} format.`;
+      if (numberList.length === 0) {
+        newErrors.numbers = 'Please enter at least one valid number';
       }
     }
 
@@ -88,21 +68,58 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
     setIsSubmitting(true);
 
     try {
-      // Parse numbers: split on any non-digit characters (all keyboard symbols)
-      let numberList = numbers.split(/[^0-9]+/).filter(n => n.length > 0);
-      // Normalize: keep leading zeros for 2/3-digit entries as typed
-      numberList = numberList.map(n => n);
-      const firstAmount = first.trim() ? Number(first) : 0;
-      const secondAmount = second.trim() ? Number(second) : 0;
-      
-      // Calculate user betting amounts per entry
-      const bettingAmountPerEntry = firstAmount + secondAmount;
-      // Calculate entry cost per number
-      const entryCostPerNumber = (entryType === 'akra' || entryType === 'ring') ? getEntryCost(entryType) : 0;
-      // Total cost: betting amounts + entry costs for each number
-      const totalCost = (bettingAmountPerEntry + entryCostPerNumber) * numberList.length;
+      // Parse numbers and extract FIRST/SECOND keywords
+      let numbersText = numbers.trim();
+      let firstAmount = first.trim() ? Number(first) : 0;
+      let secondAmount = second.trim() ? Number(second) : 0;
 
-      // Check balance before proceeding
+      // Check for inline FIRST/SECOND keywords in the numbers input
+      const firstMatch = numbersText.match(/\bfirst\s+(\d+(?:\.\d+)?)\b/i);
+      const secondMatch = numbersText.match(/\bsecond\s+(\d+(?:\.\d+)?)\b/i);
+
+      if (firstMatch) {
+        firstAmount = Number(firstMatch[1]);
+        // Remove the "first X" part from the numbers text
+        numbersText = numbersText.replace(/\bfirst\s+\d+(?:\.\d+)?\b/i, '').trim();
+      }
+
+      if (secondMatch) {
+        secondAmount = Number(secondMatch[1]);
+        // Remove the "second X" part from the numbers text
+        numbersText = numbersText.replace(/\bsecond\s+\d+(?:\.\d+)?\b/i, '').trim();
+      }
+
+      // Parse numbers: split on any non-digit characters (all keyboard symbols)
+      let numberList = numbersText.split(/[^0-9]+/).filter(n => n.length > 0);
+      
+      console.log('🔍 Debug - Input numbers:', numbers);
+      console.log('🔍 Debug - Parsed numberList:', numberList);
+      
+      // Helper function to pad numbers to correct length based on entry type
+      const padNumber = (num: string, type: 'open' | 'akra' | 'ring' | 'packet'): string => {
+        const lengths = { open: 1, akra: 2, ring: 3, packet: 4 };
+        return num.padStart(lengths[type], '0');
+      };
+      
+      // Categorize numbers based on your requirements:
+      // 0-9 (single digits) → Open entries
+      // 0000-9999 (4 digits) → Packet entries
+      const categorizedNumbers = {
+        open: numberList.filter(n => n.length === 1),
+        akra: [], // Not used based on your requirements
+        ring: [], // Not used based on your requirements  
+        packet: numberList.filter(n => n.length === 4),
+      };
+      
+      console.log('🔍 Debug - Categorized numbers:', categorizedNumbers);
+
+      // Calculate total cost
+      const totalNumbers = categorizedNumbers.open.length + categorizedNumbers.akra.length + 
+                          categorizedNumbers.ring.length + categorizedNumbers.packet.length;
+      const bettingAmountPerEntry = firstAmount + secondAmount;
+      const totalCost = bettingAmountPerEntry * totalNumbers;
+
+      // Check balance before proceeding (skip for admin users)
       if (!hasSufficientBalance(totalCost)) {
         setErrors(prev => ({
           ...prev,
@@ -112,67 +129,129 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         return;
       }
 
-      // Get existing transactions
-      const storageKey = `gull-transactions-${projectId}`;
-      const existingTransactions = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      // Deduct total balance once upfront for better performance
+      if (totalCost > 0) {
+        const balanceSuccess = await deductBalance(totalCost);
+        if (!balanceSuccess) {
+          setErrors(prev => ({
+            ...prev,
+            balance: 'Failed to deduct balance. Please try again.',
+          }));
+          setIsSubmitting(false);
+          return;
+        }
+      }
 
-      // Create a SINGLE bulk transaction containing all numbers
-      const bulkTransaction: Transaction = {
-        id: generateId(),
-        projectId,
-        number: numberList.join(', '),
-        entryType,
-        first: firstAmount,
-        second: secondAmount,
-        notes: notes.trim() || undefined,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      // Create transactions for each entry type that has numbers
+      const transactionsToAdd: Omit<Transaction, 'id'>[] = [];
+      
+      if (categorizedNumbers.open.length > 0) {
+        const transaction = {
+          projectId,
+          number: categorizedNumbers.open.map(n => padNumber(n, 'open')).join(', '),
+          entryType: 'open' as const,
+          first: firstAmount,
+          second: secondAmount,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        transactionsToAdd.push(transaction);
+        console.log('🔍 Debug - Added OPEN transaction:', transaction);
+      }
+      
+      if (categorizedNumbers.akra.length > 0) {
+        const transaction = {
+          projectId,
+          number: categorizedNumbers.akra.map(n => padNumber(n, 'akra')).join(', '),
+          entryType: 'akra' as const,
+          first: firstAmount,
+          second: secondAmount,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        transactionsToAdd.push(transaction);
+        console.log('🔍 Debug - Added AKRA transaction:', transaction);
+      }
+      
+      if (categorizedNumbers.ring.length > 0) {
+        const transaction = {
+          projectId,
+          number: categorizedNumbers.ring.map(n => padNumber(n, 'ring')).join(', '),
+          entryType: 'ring' as const,
+          first: firstAmount,
+          second: secondAmount,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        transactionsToAdd.push(transaction);
+        console.log('🔍 Debug - Added RING transaction:', transaction);
+      }
+      
+      if (categorizedNumbers.packet.length > 0) {
+        const transaction = {
+          projectId,
+          number: categorizedNumbers.packet.map(n => padNumber(n, 'packet')).join(', '),
+          entryType: 'packet' as const,
+          first: firstAmount,
+          second: secondAmount,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        transactionsToAdd.push(transaction);
+        console.log('🔍 Debug - Added PACKET transaction:', transaction);
+      }
+      
+      console.log('🔍 Debug - Total transactions to add:', transactionsToAdd.length);
+      console.log('🔍 Debug - Transactions:', transactionsToAdd);
 
-      // Deduct balance
-      const success = await deductBalance(totalCost);
-      if (!success) {
+      // Add all transactions in parallel with balance deduction skipped (already done above)
+      const addPromises = transactionsToAdd.map(transaction => addTransaction(transaction, true));
+      const results = await Promise.all(addPromises);
+      const successCount = results.filter(Boolean).length;
+      
+      console.log('🔍 Debug - Add transaction results:', results);
+      console.log('🔍 Debug - Success count:', successCount);
+      
+      if (successCount === 0) {
+        console.error('🔍 Debug - All transactions failed!');
         setErrors(prev => ({
           ...prev,
-          balance: 'Failed to deduct balance. Please try again.',
+          balance: 'Failed to add transactions. Please try again.',
         }));
         setIsSubmitting(false);
         return;
       }
 
-      // Save to localStorage
-      localStorage.setItem(
-        storageKey,
-        JSON.stringify([...existingTransactions, bulkTransaction])
-      );
-
       // Reset form
       setNumbers('');
       setFirst('');
       setSecond('');
-      setNotes('');
       setErrors({});
-
-      // Refresh balance display
-      refreshBalance();
 
       // Play success sound
       playSuccessSound();
 
       // Success notification
+      const entryTypesAdded = Object.entries(categorizedNumbers)
+        .filter(([_, numbers]) => numbers.length > 0)
+        .map(([type, numbers]) => `${numbers.length} ${type}`)
+        .join(', ');
+      
       await showSuccess(
-        'Entry Added Successfully',
-        `Added ${numberList.length} ${entryType} ${numberList.length === 1 ? 'entry' : 'entries'} for ${formatCurrency(totalCost)}`,
-        { duration: 3000 }
+        'Entries Added Successfully',
+        `Added ${entryTypesAdded} for ${formatCurrency(totalCost)}`,
+        { duration: 2000 }
       );
 
-      // Focus back to number input for next entry
+      console.log('Entries added successfully!');
+
+      // Focus back to number input for next entry (don't close panel)
       setTimeout(() => {
         numbersInputRef.current?.focus();
       }, 100);
 
-      // Don't call onSuccess() to keep the form open for multiple entries
-      // onSuccess();
+      // Call onSuccess to trigger silent refresh (form stays open)
+      _onSuccess();
     } catch (error) {
       console.error('Error adding transaction:', error);
       await showError(
@@ -186,12 +265,12 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-4">
       {/* Balance Error */}
       {errors.balance && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
-          <div className="flex items-start space-x-3">
-            <svg className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 mb-4">
+          <div className="flex items-start space-x-2">
+            <svg className="w-4 h-4 text-red-600 dark:text-red-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div className="flex-1">
@@ -202,111 +281,85 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         </div>
       )}
 
-      {/* Entry Cost Information */}
-      {(entryType === 'akra' || entryType === 'ring') && (
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
-          <div className="flex items-center space-x-3">
-            <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <div className="flex-1">
-              <h4 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-1">Entry Cost</h4>
-              <p className="text-sm text-blue-600 dark:text-blue-400">
-                {entryType === 'akra' ? 'Akra' : 'Ring'} entries have a base cost of {formatCurrency(getEntryCost(entryType))} per number, 
-                plus your betting amounts (FIRST + SECOND).
-              </p>
-            </div>
+      {/* Mobile-First Vertical Form */}
+      <div className="space-y-4">
+        {/* Numbers Input */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Numbers <span className="text-red-500">*</span>
+          </label>
+          <input
+            ref={numbersInputRef}
+            value={numbers}
+            onChange={(e) => {
+              setNumbers(e.target.value);
+              if (errors.numbers) setErrors(prev => ({ ...prev, numbers: undefined }));
+            }}
+            placeholder="e.g., 0 1 2 3 OR 0000 0001 0002"
+            className={`w-full px-4 py-3 text-base border rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${errors.numbers ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
+            autoComplete="off"
+            inputMode="text"
+          />
+          {errors.numbers && (
+            <p className="mt-2 text-sm text-red-500">{errors.numbers}</p>
+          )}
+        </div>
+
+        {/* Amount Inputs Row */}
+        <div className="grid grid-cols-2 gap-3">
+          {/* FIRST Amount */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              FIRST Amount
+            </label>
+            <input
+              type="number"
+              value={first}
+              onChange={(e) => {
+                setFirst(e.target.value);
+                if (errors.first) setErrors(prev => ({ ...prev, first: undefined }));
+              }}
+              placeholder="0"
+              className={`w-full px-4 py-3 text-base border rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${errors.first ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
+              step="0.01"
+              inputMode="decimal"
+            />
+            {errors.first && (
+              <p className="mt-2 text-sm text-red-500">{errors.first}</p>
+            )}
+          </div>
+
+          {/* SECOND Amount */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              SECOND Amount
+            </label>
+            <input
+              type="number"
+              value={second}
+              onChange={(e) => {
+                setSecond(e.target.value);
+                if (errors.second) setErrors(prev => ({ ...prev, second: undefined }));
+              }}
+              placeholder="0"
+              className={`w-full px-4 py-3 text-base border rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${errors.second ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
+              step="0.01"
+              inputMode="decimal"
+            />
+            {errors.second && (
+              <p className="mt-2 text-sm text-red-500">{errors.second}</p>
+            )}
           </div>
         </div>
-      )}
 
-      {/* Numbers Input */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Numbers <span className="text-danger">*</span>
-        </label>
-        <textarea
-          ref={numbersInputRef}
-          value={numbers}
-          onChange={(e) => {
-            setNumbers(e.target.value);
-            if (errors.numbers) setErrors(prev => ({ ...prev, numbers: undefined }));
-          }}
-          placeholder={`Enter numbers (e.g., ${entryType === 'akra' ? '01, 23, 45' : '001, 234, 567'})\nSeparate with comma or space`}
-          className={`input-field h-32 resize-none font-mono ${errors.numbers ? 'border-danger' : ''}`}
-        />
-        {errors.numbers && (
-          <p className="mt-1 text-sm text-danger">{errors.numbers}</p>
-        )}
-        <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-          Separate multiple numbers with commas or spaces
-        </p>
-      </div>
-
-      {/* FIRST Amount */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          FIRST Amount
-        </label>
-        <input
-          type="number"
-          value={first}
-          onChange={(e) => {
-            setFirst(e.target.value);
-            if (errors.first) setErrors(prev => ({ ...prev, first: undefined }));
-          }}
-          placeholder="Enter FIRST amount"
-          className={`input-field ${errors.first ? 'border-danger' : ''}`}
-          step="0.01"
-        />
-        {errors.first && (
-          <p className="mt-1 text-sm text-danger">{errors.first}</p>
-        )}
-      </div>
-
-      {/* SECOND Amount */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          SECOND Amount
-        </label>
-        <input
-          type="number"
-          value={second}
-          onChange={(e) => {
-            setSecond(e.target.value);
-            if (errors.second) setErrors(prev => ({ ...prev, second: undefined }));
-          }}
-          placeholder="Enter SECOND amount"
-          className={`input-field ${errors.second ? 'border-danger' : ''}`}
-          step="0.01"
-        />
-        {errors.second && (
-          <p className="mt-1 text-sm text-danger">{errors.second}</p>
-        )}
-      </div>
-
-      {/* Notes */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Notes (Optional)
-        </label>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Add any notes or comments..."
-          className="input-field h-24 resize-none"
-        />
-      </div>
-
-      {/* Submit Button */}
-      <div className="flex justify-end space-x-3">
+        {/* Submit Button */}
         <button
           type="submit"
           disabled={isSubmitting}
-          className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          className="w-full px-6 py-4 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-base font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-3 min-h-[56px]"
         >
           {isSubmitting && (
-            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
           )}
           {isSubmitting ? 'Adding Entry...' : 'Add Entry'}
         </button>

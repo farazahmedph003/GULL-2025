@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AppearanceProvider } from './contexts/AppearanceContext';
+import { ScalingProvider } from './contexts/ScalingContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { PushNotificationProvider } from './contexts/PushNotificationContext';
@@ -24,6 +25,8 @@ import PacketPage from './pages/PacketPage';
 import AdvancedFilter from './pages/AdvancedFilter';
 import FilterCalculate from './pages/FilterCalculate';
 import HistoryPage from './pages/HistoryPage';
+import UserDashboard from './pages/UserDashboard';
+import AdminRoute from './components/AdminRoute';
 import AdminPanel from './pages/AdminPanel';
 import UserProjects from './pages/UserProjects';
 import NotFound from './pages/NotFound';
@@ -89,7 +92,9 @@ const AppWithNotifications: React.FC = () => {
             path="/settings"
             element={
               <ProtectedRoute>
-                <Settings />
+                <AdminRoute>
+                  <Settings />
+                </AdminRoute>
               </ProtectedRoute>
             }
           />
@@ -119,7 +124,7 @@ const AppWithNotifications: React.FC = () => {
                 path="/project/:id"
                 element={
                   <ProtectedRoute>
-                    <Dashboard />
+                    <UserDashboard />
                   </ProtectedRoute>
                 }
               />
@@ -127,7 +132,9 @@ const AppWithNotifications: React.FC = () => {
                 path="/project/:id/akra"
                 element={
                   <ProtectedRoute>
-                    <AkraPage />
+                    <AdminRoute>
+                      <AkraPage />
+                    </AdminRoute>
                   </ProtectedRoute>
                 }
               />
@@ -135,7 +142,9 @@ const AppWithNotifications: React.FC = () => {
                 path="/project/:id/ring"
                 element={
                   <ProtectedRoute>
-                    <RingPage />
+                    <AdminRoute>
+                      <RingPage />
+                    </AdminRoute>
                   </ProtectedRoute>
                 }
               />
@@ -143,7 +152,9 @@ const AppWithNotifications: React.FC = () => {
                 path="/project/:id/open"
                 element={
                   <ProtectedRoute>
-                    <OpenPage />
+                    <AdminRoute>
+                      <OpenPage />
+                    </AdminRoute>
                   </ProtectedRoute>
                 }
               />
@@ -151,7 +162,9 @@ const AppWithNotifications: React.FC = () => {
                 path="/project/:id/packet"
                 element={
                   <ProtectedRoute>
-                    <PacketPage />
+                    <AdminRoute>
+                      <PacketPage />
+                    </AdminRoute>
                   </ProtectedRoute>
                 }
               />
@@ -159,7 +172,9 @@ const AppWithNotifications: React.FC = () => {
                 path="/project/:id/advanced-filter"
                 element={
                   <ProtectedRoute>
-                    <AdvancedFilter />
+                    <AdminRoute>
+                      <AdvancedFilter />
+                    </AdminRoute>
                   </ProtectedRoute>
                 }
               />
@@ -167,7 +182,9 @@ const AppWithNotifications: React.FC = () => {
                 path="/project/:id/filter-calculate"
                 element={
                   <ProtectedRoute>
-                    <FilterCalculate />
+                    <AdminRoute>
+                      <FilterCalculate />
+                    </AdminRoute>
                   </ProtectedRoute>
                 }
               />
@@ -175,7 +192,9 @@ const AppWithNotifications: React.FC = () => {
                 path="/project/:id/history"
                 element={
                   <ProtectedRoute>
-                    <HistoryPage />
+                    <AdminRoute>
+                      <HistoryPage />
+                    </AdminRoute>
                   </ProtectedRoute>
                 }
               />
@@ -198,15 +217,17 @@ const App: React.FC = () => {
     <ErrorBoundary>
       <ThemeProvider>
         <AppearanceProvider>
-          <AuthProvider>
-            <NotificationProvider>
-              <PushNotificationProvider>
-                <BrowserRouter>
-                  <AppWithNotifications />
-                </BrowserRouter>
-              </PushNotificationProvider>
-            </NotificationProvider>
-          </AuthProvider>
+          <ScalingProvider>
+            <AuthProvider>
+              <NotificationProvider>
+                <PushNotificationProvider>
+                  <BrowserRouter>
+                    <AppWithNotifications />
+                  </BrowserRouter>
+                </PushNotificationProvider>
+              </NotificationProvider>
+            </AuthProvider>
+          </ScalingProvider>
         </AppearanceProvider>
       </ThemeProvider>
     </ErrorBoundary>

@@ -39,92 +39,90 @@ const EntryPanel: React.FC<EntryPanelProps> = ({
 
   return (
     <>
-      {/* Sliding Panel */}
+      {/* Mobile Bottom Sheet / Desktop Modal */}
       <div
-        className={`fixed top-0 right-0 h-full w-full sm:w-[480px] bg-white dark:bg-gray-800 shadow-2xl transform transition-transform duration-300 ease-out z-50 ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
+        className={`fixed inset-0 z-50 ${
+          isOpen ? 'block' : 'hidden'
         }`}
       >
-        {/* Panel Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-              Add Entry
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              {entryType === 'akra' 
-                ? '2-digit numbers (00-99)' 
-                : entryType === 'ring' 
-                  ? '3-digit numbers (000-999)'
-                  : entryType === 'open'
-                    ? '1-digit numbers (0-9)'
-                    : '4-digit numbers (0000-9999)'
-              }
-            </p>
+        {/* Backdrop */}
+        <div 
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={onClose}
+        />
+        
+        {/* Bottom Sheet Content */}
+        <div
+          className={`absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl shadow-2xl transform transition-all duration-300 ease-out max-h-[85vh] overflow-hidden ${
+            isOpen ? 'translate-y-0' : 'translate-y-full'
+          }`}
+        >
+          {/* Drag Handle */}
+          <div className="flex justify-center pt-3 pb-2">
+            <div className="w-12 h-1 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-            aria-label="Close panel"
-          >
-            <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+          
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center space-x-3 min-w-0 flex-1">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Add Entry
+              </h2>
+              <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                <button
+                  onClick={() => setActiveTab('standard')}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
+                    activeTab === 'standard'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+                  }`}
+                >
+                  Standard
+                </button>
+                <button
+                  onClick={() => setActiveTab('intelligent')}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
+                    activeTab === 'intelligent'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+                  }`}
+                >
+                  Intelligent
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
+              aria-label="Close panel"
+            >
+              <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 dark:border-gray-700 px-6">
-          <button
-            onClick={() => setActiveTab('standard')}
-            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'standard'
-                ? 'border-secondary text-secondary'
-                : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
-            }`}
-          >
-            Standard
-          </button>
-          <button
-            onClick={() => setActiveTab('intelligent')}
-            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'intelligent'
-                ? 'border-secondary text-secondary'
-                : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
-            }`}
-          >
-            Intelligent
-          </button>
-        </div>
-
-        {/* Tab Content */}
-        <div className="overflow-y-auto h-[calc(100vh-180px)] p-6">
-          {activeTab === 'standard' ? (
-            <StandardEntry
-              projectId={projectId}
-              entryType={entryType}
-              onSuccess={() => {
-                onEntryAdded?.();
-                onClose();
-              }}
-            />
-          ) : (
-            <IntelligentEntry
-              projectId={projectId}
-              entryType={entryType}
-              onSuccess={() => {
-                onEntryAdded?.();
-                onClose();
-              }}
-            />
-          )}
-        </div>
-
-        {/* Keyboard Shortcuts Info */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
-          <p className="text-xs text-gray-600 dark:text-gray-400 text-center">
-            Press <kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">Esc</kbd> to close
-          </p>
+          {/* Form Content */}
+          <div className="px-4 py-4 overflow-y-auto max-h-[calc(85vh-120px)]">
+            {activeTab === 'standard' ? (
+              <StandardEntry
+                projectId={projectId}
+                onSuccess={() => {
+                  onEntryAdded?.();
+                  // Don't close panel automatically - let user continue entering
+                }}
+              />
+            ) : (
+              <IntelligentEntry
+                projectId={projectId}
+                entryType={entryType}
+                onSuccess={() => {
+                  onEntryAdded?.();
+                  // Don't close panel automatically - let user continue entering
+                }}
+              />
+            )}
+          </div>
         </div>
       </div>
     </>

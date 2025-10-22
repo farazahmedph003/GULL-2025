@@ -32,6 +32,7 @@ const RingPage: React.FC = () => {
   const [entryPanelOpen, setEntryPanelOpen] = useState(false);
   const [project, setProject] = useState<any>(null);
   const [projectLoading, setProjectLoading] = useState(true);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   
   // Load project from database
   useEffect(() => {
@@ -58,7 +59,6 @@ const RingPage: React.FC = () => {
   
   const { 
     transactions, 
-    loading, 
     refresh: refreshTransactions, 
     deleteTransaction,
     bulkDeleteTransactions,
@@ -66,11 +66,33 @@ const RingPage: React.FC = () => {
     addTransaction,
   } = useTransactions(id || '');
   
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape key to go back to projects
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        navigate('/');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigate]);
+  
   const { refresh: refreshBalance } = useUserBalance();
   const { showSuccess, showError } = useNotifications();
   
-  // Comprehensive refresh function
-  const refresh = () => {
+  // Manual refresh function (with loading animation)
+  const refresh = async () => {
+    setManualRefreshing(true);
+    await refreshTransactions();
+    await refreshBalance();
+    setManualRefreshing(false);
+  };
+
+  // Silent refresh function (without loading animation) for automatic updates
+  const silentRefresh = () => {
     refreshTransactions();
     refreshBalance();
   };
@@ -343,8 +365,8 @@ const RingPage: React.FC = () => {
 
   const modalSummary = modalNumber ? summaries.get(modalNumber) : null;
 
-  // Show loading state while loading or when project is still loading
-  if (loading || projectLoading) {
+  // Show loading state during initial project loading or manual refresh
+  if (projectLoading || manualRefreshing) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <ProjectHeader
@@ -352,7 +374,7 @@ const RingPage: React.FC = () => {
           projectDate={project ? formatDate(project.date) : ''}
         />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <LoadingSpinner text="Loading Ring data..." />
+          <LoadingSpinner text={manualRefreshing ? "Refreshing Ring data..." : "Loading Ring data..."} />
         </div>
       </div>
     );
@@ -566,7 +588,7 @@ const RingPage: React.FC = () => {
         projectId={id || ''}
         entryType={'ring'}
         onEntryAdded={() => {
-          refresh();
+          silentRefresh();
           setEntryPanelOpen(false);
         }}
       />

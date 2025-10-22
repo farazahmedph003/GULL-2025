@@ -95,15 +95,6 @@ const AdminSettings: React.FC = () => {
     }));
   };
 
-  const updateEntryCost = (type: 'akra' | 'ring', cost: number) => {
-    setSystemSettings(prev => ({
-      ...prev,
-      entryCosts: {
-        ...prev.entryCosts,
-        [type]: cost
-      }
-    }));
-  };
 
   return (
     <div className="space-y-6">
@@ -150,39 +141,6 @@ const AdminSettings: React.FC = () => {
           </svg>
         }
       >
-        <SettingItem
-          label="Akra Entry Cost"
-          description="Cost per Akra (2-digit) entry in PKR"
-        >
-          <div className="flex items-center space-x-2">
-            <input
-              type="number"
-              value={systemSettings.entryCosts.akra}
-              onChange={(e) => updateEntryCost('akra', parseInt(e.target.value) || 0)}
-              className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-              min="0"
-              step="1"
-            />
-            <span className="text-sm text-gray-600 dark:text-gray-400">PKR</span>
-          </div>
-        </SettingItem>
-
-        <SettingItem
-          label="Ring Entry Cost"
-          description="Cost per Ring (3-digit) entry in PKR"
-        >
-          <div className="flex items-center space-x-2">
-            <input
-              type="number"
-              value={systemSettings.entryCosts.ring}
-              onChange={(e) => updateEntryCost('ring', parseInt(e.target.value) || 0)}
-              className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-              min="0"
-              step="1"
-            />
-            <span className="text-sm text-gray-600 dark:text-gray-400">PKR</span>
-          </div>
-        </SettingItem>
 
         <SettingItem
           label="Default User Balance"
