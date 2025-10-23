@@ -32,8 +32,6 @@ export const useUserBalance = () => {
   const fetchBalance = useCallback(async () => {
     console.log('fetchBalance called for userId:', effectiveUserId);
     
-    // Always allow fetching in offline mode using effectiveUserId
-
     setLoading(true);
     setError(null);
 
@@ -42,12 +40,12 @@ export const useUserBalance = () => {
       const localBalances = JSON.parse(localStorage.getItem('gull_user_balances') || '{}');
       let newBalance = localBalances[effectiveUserId];
       
-      // If user has no balance or balance is 0, initialize with default
-      if (newBalance === undefined || newBalance === null || newBalance === 0) {
-        newBalance = 1000; // Default to 1000 for offline
+      // If user has no balance, initialize with 0 (admin must top up)
+      if (newBalance === undefined || newBalance === null) {
+        newBalance = 0; // Default to 0 - admin must top up
         localBalances[effectiveUserId] = newBalance;
         localStorage.setItem('gull_user_balances', JSON.stringify(localBalances));
-        console.log('Initialized balance for offline user:', newBalance);
+        console.log('Initialized balance to 0 for offline user:', effectiveUserId);
       } else {
         console.log('Offline balance fetched:', newBalance);
       }
@@ -56,42 +54,53 @@ export const useUserBalance = () => {
       // Load spent from local storage tracker
       const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
       setSpent(spentMap[effectiveUserId] || 0);
-      // Don't dispatch event here to avoid infinite loop
       setLoading(false);
     } else {
+      // Online mode: ALWAYS fetch from database first
       try {
-        const { data, error: fetchError } = await supabase
-          .from('app_users')
-          .select('balance')
-          .eq('id', user.id)
-          .single();
+        console.log('🌐 Fetching balance from database for user:', user.id);
+        
+        // Use service role client to bypass RLS
+        const { data, error: fetchError } = await db.getUserBalance(user.id);
 
-        if (fetchError) throw fetchError;
+        if (fetchError) {
+          console.error('❌ Database fetch failed:', fetchError);
+          throw fetchError;
+        }
 
-        const newBalance = data?.balance || 1000; // Default to 1000 for new users
+        const newBalance = data?.balance || 0; // Default to 0 for new users - admin must top up
+        console.log('✅ Balance fetched from database:', newBalance);
+        
         setBalance(newBalance);
+        
+        // Update localStorage as cache (but don't rely on it)
+        const localBalances = JSON.parse(localStorage.getItem('gull_user_balances') || '{}');
+        localBalances[effectiveUserId] = newBalance;
+        localStorage.setItem('gull_user_balances', JSON.stringify(localBalances));
+        
+        // Load spent from local storage tracker (this is just for UI display)
         const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
         setSpent(spentMap[effectiveUserId] || 0);
-        // Don't dispatch event here to avoid infinite loop
+        
       } catch (err) {
-        console.error('Error fetching balance:', err);
-        setError('Failed to fetch balance');
-        // Fallback to local storage
+        console.error('❌ Error fetching balance from database:', err);
+        setError('Failed to fetch balance from database');
+        
+        // Only fallback to localStorage if database is completely unavailable
+        console.log('🔄 Falling back to localStorage...');
         const localBalances = JSON.parse(localStorage.getItem('gull_user_balances') || '{}');
         let newBalance = localBalances[effectiveUserId];
         
-        // If user has no balance or balance is 0, initialize with default
-        if (newBalance === undefined || newBalance === null || newBalance === 0) {
-          newBalance = 1000;
+        if (newBalance === undefined || newBalance === null) {
+          newBalance = 0; // Default fallback - admin must top up
           localBalances[effectiveUserId] = newBalance;
           localStorage.setItem('gull_user_balances', JSON.stringify(localBalances));
-          console.log('Initialized balance for online user (fallback):', newBalance);
+          console.log('Initialized fallback balance to 0:', effectiveUserId);
         }
         
         setBalance(newBalance);
         const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
         setSpent(spentMap[effectiveUserId] || 0);
-        // Don't dispatch event here to avoid infinite loop
       } finally {
         setLoading(false);
       }
@@ -99,6 +108,18 @@ export const useUserBalance = () => {
   }, [user, effectiveUserId]);
 
   useEffect(() => {
+    // Test service role access first
+    const testAccess = async () => {
+      if (!isOfflineMode() && supabase && user) {
+        console.log('🧪 Testing service role access...');
+        const result = await db.testServiceRoleAccess();
+        if (!result.success) {
+          console.error('❌ Service role access test failed:', result.error);
+        }
+      }
+    };
+    
+    testAccess();
     fetchBalance();
   }, [fetchBalance]);
 

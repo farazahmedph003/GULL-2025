@@ -31,11 +31,6 @@ export class DatabaseService {
     return supabaseAdmin || supabase;
   }
 
-  // Prefer service role for admin-wide reads if available
-  private getReadClient() {
-    return supabaseAdmin || supabase;
-  }
-
   // Retry mechanism for network requests
   private async withRetry<T>(
     operation: () => Promise<T>,
@@ -494,9 +489,15 @@ export class DatabaseService {
     }
 
     return this.withRetry(async () => {
-      // Use service role client when admin is impersonating to bypass RLS
-      const isImpersonating = !!localStorage.getItem('gull-admin-impersonation');
-      const clientToUse = isImpersonating && supabaseAdmin ? supabaseAdmin : supabase;
+      // Always use service role client for app_users since they don't have Supabase Auth sessions
+      // This bypasses RLS policies that require auth.uid() = user_id
+      const clientToUse = supabaseAdmin || supabase;
+
+      console.log('🔍 getTransactions debug:', {
+        projectId,
+        hasSupabaseAdmin: !!supabaseAdmin,
+        usingClient: supabaseAdmin ? 'supabaseAdmin (service role)' : 'supabase (fallback)'
+      });
 
       // Handle 'user-scope' by querying for NULL project_id
       let query = clientToUse
@@ -510,6 +511,13 @@ export class DatabaseService {
       }
 
       const { data, error } = await query.order('created_at', { ascending: true });
+
+      console.log('🔍 getTransactions result:', {
+        projectId,
+        dataLength: data?.length || 0,
+        error: error?.message || 'none',
+        firstTransaction: data?.[0] || 'none'
+      });
 
       if (error) {
         console.error('Database error in getTransactions:', error);
@@ -1033,7 +1041,14 @@ export class DatabaseService {
     const cached = await getUsersWithStatsFromCache();
     if (!isSupabaseConfigured() || !supabase) return cached;
 
-    const client = this.getReadClient();
+    // Always use service role client to bypass RLS for app_users
+    const client = supabaseAdmin || supabase;
+    
+    console.log('🔍 getAllUsersWithStats debug:', {
+      hasSupabaseAdmin: !!supabaseAdmin,
+      usingClient: supabaseAdmin ? 'supabaseAdmin (service role)' : 'supabase (fallback)'
+    });
+
     try {
       const usersWithStats = await this.withRetry(async () => {
         const { data: users, error } = await client
@@ -1054,7 +1069,16 @@ export class DatabaseService {
         (tx || []).forEach((r: any) => {
           counts[r.user_id] = (counts[r.user_id] || 0) + 1;
         });
-        return (users || []).map((u: any) => ({ ...u, entryCount: counts[u.id] || 0 }));
+        
+        const result = (users || []).map((u: any) => ({ ...u, entryCount: counts[u.id] || 0 }));
+        
+        console.log('🔍 getAllUsersWithStats result:', {
+          usersCount: users?.length || 0,
+          transactionsCount: tx?.length || 0,
+          userCounts: counts
+        });
+        
+        return result;
       });
       return usersWithStats;
     } catch {
@@ -1215,14 +1239,93 @@ export class DatabaseService {
   }
 
   /**
+   * Test service role client access
+   */
+  async testServiceRoleAccess(): Promise<{ success: boolean, error?: any }> {
+    if (!isSupabaseConfigured() || !supabaseAdmin) {
+      return { success: false, error: new Error('Admin client not available') };
+    }
+
+    try {
+      console.log('🧪 Testing service role access...');
+      
+      // Try to read from app_users table
+      const { data, error } = await supabaseAdmin
+        .from('app_users')
+        .select('id, username, balance')
+        .limit(1);
+
+      if (error) {
+        console.error('❌ Service role test failed:', error);
+        return { success: false, error };
+      }
+
+      console.log('✅ Service role test successful:', data);
+      return { success: true };
+    } catch (err) {
+      console.error('❌ Service role test exception:', err);
+      return { success: false, error: err };
+    }
+  }
+
+  /**
+   * Get user balance (uses service role to bypass RLS)
+   */
+  async getUserBalance(userId: string): Promise<{ data?: { balance: number }, error?: any }> {
+    if (!isSupabaseConfigured() || !supabaseAdmin) {
+      console.error('❌ Admin client not available for getUserBalance:', { 
+        isSupabaseConfigured: isSupabaseConfigured(), 
+        hasSupabaseAdmin: !!supabaseAdmin 
+      });
+      return { error: new Error('Admin client required to get balance') };
+    }
+
+    try {
+      console.log('🔧 Getting balance with service role client:', {
+        userId,
+        hasServiceKey: !!supabaseAdmin.supabaseKey,
+        serviceKeyPreview: supabaseAdmin.supabaseKey ? supabaseAdmin.supabaseKey.substring(0, 20) + '...' : 'NOT SET'
+      });
+
+      const { data, error } = await supabaseAdmin
+        .from('app_users')
+        .select('balance')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        console.error('❌ Failed to get balance from database:', error);
+        return { error };
+      }
+
+      console.log('✅ Balance retrieved from database for user:', userId, 'balance:', data.balance);
+      return { data };
+    } catch (err) {
+      console.error('❌ Exception getting balance:', err);
+      return { error: err };
+    }
+  }
+
+  /**
    * Update user balance (uses service role to bypass RLS)
    */
   async updateUserBalance(userId: string, newBalance: number): Promise<{ error?: any }> {
     if (!isSupabaseConfigured() || !supabaseAdmin) {
+      console.error('❌ Admin client not available:', { 
+        isSupabaseConfigured: isSupabaseConfigured(), 
+        hasSupabaseAdmin: !!supabaseAdmin 
+      });
       return { error: new Error('Admin client required to update balance') };
     }
 
     try {
+      console.log('🔧 Updating balance with service role client:', {
+        userId,
+        newBalance,
+        hasServiceKey: !!supabaseAdmin.supabaseKey,
+        serviceKeyPreview: supabaseAdmin.supabaseKey ? supabaseAdmin.supabaseKey.substring(0, 20) + '...' : 'NOT SET'
+      });
+
       const { error } = await supabaseAdmin
         .from('app_users')
         .update({ balance: newBalance })
@@ -1290,9 +1393,19 @@ export class DatabaseService {
       throw new Error('Database not available');
     }
 
+    // Always use service role client to bypass RLS for app_users
+    const client = supabaseAdmin || supabase;
+    
+    console.log('🔍 topUpUserBalance debug:', {
+      userId,
+      amount,
+      hasSupabaseAdmin: !!supabaseAdmin,
+      usingClient: supabaseAdmin ? 'supabaseAdmin (service role)' : 'supabase (fallback)'
+    });
+
     return this.withRetry(async () => {
       // Get current balance
-      const { data: user, error: fetchError } = await supabase
+      const { data: user, error: fetchError } = await client
         .from('app_users')
         .select('balance')
         .eq('id', userId)
@@ -1302,7 +1415,7 @@ export class DatabaseService {
 
       // Update balance
       const newBalance = (user.balance || 0) + amount;
-      const { error: updateError } = await supabase
+      const { error: updateError } = await client
         .from('app_users')
         .update({ balance: newBalance })
         .eq('id', userId);
@@ -1311,7 +1424,7 @@ export class DatabaseService {
 
       // Log the top-up in balance_history table (if it exists)
       try {
-        await supabase
+        await client
           .from('balance_history')
           .insert({
             user_id: userId,
@@ -1363,15 +1476,75 @@ export class DatabaseService {
     const cached = await getEntriesByTypeFromCache(entryType);
     if (!isSupabaseConfigured() || !supabase) return cached;
 
-    const client = this.getReadClient();
+    // Always use service role client to bypass RLS for app_users
+    const client = supabaseAdmin || supabase;
+    
+    console.log('🔍 getAllEntriesByType debug:', {
+      entryType,
+      hasSupabaseAdmin: !!supabaseAdmin,
+      usingClient: supabaseAdmin ? 'supabaseAdmin (service role)' : 'supabase (fallback)',
+      supabaseAdminKey: supabaseAdmin ? 'SET' : 'NOT SET',
+      supabaseAdminType: typeof supabaseAdmin
+    });
+
     try {
       const rows = await this.withRetry(async () => {
-        const { data, error } = await client
+        // First, get all transactions for this entry type
+        const { data: transactions, error: txError } = await client
           .from('transactions')
-          .select('id, user_id, project_id, number, entry_type, first_amount, second_amount, created_at, updated_at, app_users!inner(username, full_name)')
+          .select('id, user_id, project_id, number, entry_type, first_amount, second_amount, created_at, updated_at')
           .eq('entry_type', entryType)
           .order('created_at', { ascending: false });
-        if (error) throw error;
+        
+        console.log('🔍 getAllEntriesByType transactions result:', {
+          entryType,
+          dataLength: transactions?.length || 0,
+          error: txError?.message || 'none',
+          firstTransaction: transactions?.[0] || 'none'
+        });
+        
+        if (txError) throw txError;
+        
+        if (!transactions || transactions.length === 0) {
+          return [];
+        }
+        
+        // Get all unique user IDs from transactions
+        const userIds = [...new Set(transactions.map(t => t.user_id))];
+        
+        // Fetch user details for all users
+        const { data: users, error: usersError } = await client
+          .from('app_users')
+          .select('id, username, full_name')
+          .in('id', userIds);
+        
+        console.log('🔍 getAllEntriesByType users result:', {
+          userIds,
+          usersLength: users?.length || 0,
+          error: usersError?.message || 'none'
+        });
+        
+        if (usersError) throw usersError;
+        
+        // Create a map of user details
+        const userMap = new Map();
+        (users || []).forEach(user => {
+          userMap.set(user.id, { username: user.username, full_name: user.full_name });
+        });
+        
+        // Combine transactions with user details
+        const data = transactions.map(transaction => ({
+          ...transaction,
+          app_users: userMap.get(transaction.user_id) || { username: 'Unknown', full_name: 'Unknown User' }
+        }));
+        
+        console.log('🔍 getAllEntriesByType final result:', {
+          entryType,
+          finalDataLength: data.length,
+          sampleEntry: data[0] || 'none'
+        });
+        
+        return data;
         // Cache flattened transactions
         await cacheTransactions((data || []).map((d: any) => ({
           id: d.id,
@@ -1400,9 +1573,18 @@ export class DatabaseService {
       throw new Error('Database not available');
     }
 
+    // Always use service role client to bypass RLS for app_users
+    const client = supabaseAdmin || supabase;
+    
+    console.log('🔍 getUserHistory debug:', {
+      userId,
+      hasSupabaseAdmin: !!supabaseAdmin,
+      usingClient: supabaseAdmin ? 'supabaseAdmin (service role)' : 'supabase (fallback)'
+    });
+
     return this.withRetry(async () => {
       // Get entries
-      const { data: entries, error: entriesError } = await supabase
+      const { data: entries, error: entriesError } = await client
         .from('transactions')
         .select('*')
         .eq('user_id', userId)
@@ -1413,7 +1595,7 @@ export class DatabaseService {
       // Try to get balance history
       let topUps: any[] = [];
       try {
-        const { data: balanceHistory, error: balanceError } = await supabase
+        const { data: balanceHistory, error: balanceError } = await client
           .from('balance_history')
           .select('*')
           .eq('user_id', userId)

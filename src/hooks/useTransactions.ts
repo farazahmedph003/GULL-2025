@@ -21,48 +21,44 @@ export const useTransactions = (projectId: string) => {
     setError(null);
     
     try {
-      if (isSupabaseConfigured()) {
-        // Try to load from database first
-        // For user-scope mode, we still fetch from Supabase using the projectId 'user-scope'
-        let dbTransactions: Transaction[] = [] as any;
+      if (isSupabaseConfigured() && !isOfflineMode()) {
+        // Online mode: ALWAYS fetch from database first
+        console.log('🌐 Loading transactions from database for project:', projectId);
+        
+        let dbTransactions: Transaction[] = [];
         try {
           dbTransactions = await db.getTransactions(projectId);
-        } catch {}
-        console.log('Transactions loaded from database:', dbTransactions.length);
-
-        // Read any cached/local transactions and merge to avoid losing offline-added entries
-        const cachedData = localStorage.getItem(storageKey);
-        const cached: Transaction[] = cachedData ? JSON.parse(cachedData) : [];
-
-        if (dbTransactions.length === 0 && cached.length > 0) {
-          // Prefer cached when DB is empty (e.g., network/RLS issues)
-          setTransactions(cached);
-          console.log('Using local cache for transactions because DB returned 0 but cache has', cached.length);
-        } else if (dbTransactions.length > 0 && cached.length > 0) {
-          // Merge DB + cached by id (keep DB version if conflict)
-          const map = new Map<string, Transaction>();
-          cached.forEach(t => map.set(t.id, t));
-          dbTransactions.forEach(t => map.set(t.id, t));
-          const merged = Array.from(map.values());
-          setTransactions(merged);
-          // Update cache with merged for consistency
-          localStorage.setItem(storageKey, JSON.stringify(merged));
-          console.log('Merged DB and cache transactions:', { db: dbTransactions.length, cache: cached.length, merged: merged.length });
-        } else {
-          setTransactions(dbTransactions);
-          // Also keep cache in sync
-          localStorage.setItem(storageKey, JSON.stringify(dbTransactions));
+          console.log('✅ Transactions loaded from database:', dbTransactions.length);
+        } catch (dbError) {
+          console.error('❌ Database fetch failed:', dbError);
+          throw dbError;
         }
+
+        // Update localStorage as cache (but don't rely on it)
+        localStorage.setItem(storageKey, JSON.stringify(dbTransactions));
+        setTransactions(dbTransactions);
+        
+      } else if (isOfflineMode()) {
+        // Offline mode: use localStorage
+        console.log('📱 Loading transactions from localStorage (offline mode)');
+        const data = localStorage.getItem(storageKey);
+        const parsed = data ? JSON.parse(data) : [];
+        setTransactions(parsed);
+        console.log('Transactions loaded from localStorage:', parsed.length);
+        
       } else {
-        // Fallback to localStorage
+        // No Supabase configured: fallback to localStorage
+        console.log('⚠️ No Supabase configured, using localStorage');
         const data = localStorage.getItem(storageKey);
         const parsed = data ? JSON.parse(data) : [];
         setTransactions(parsed);
         console.log('Transactions loaded from localStorage:', parsed.length);
       }
     } catch (error) {
-      console.error('Error loading transactions:', error);
-      // Fallback to localStorage on database error
+      console.error('❌ Error loading transactions:', error);
+      
+      // Only fallback to localStorage if database is completely unavailable
+      console.log('🔄 Falling back to localStorage...');
       try {
         const data = localStorage.getItem(storageKey);
         const parsed = data ? JSON.parse(data) : [];
@@ -78,7 +74,7 @@ export const useTransactions = (projectId: string) => {
         }
         setError(errorMessage);
       } catch (localError) {
-        console.error('Error loading from localStorage:', localError);
+        console.error('❌ Error loading from localStorage:', localError);
         setTransactions([]);
         setError('Failed to load transactions from both database and local storage.');
       }

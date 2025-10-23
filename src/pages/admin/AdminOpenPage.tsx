@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../../services/database';
 import { useNotifications } from '../../contexts/NotificationContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import EditTransactionModal from '../../components/EditTransactionModal';
 
 interface Entry {
   id: string;
@@ -19,6 +20,7 @@ interface Entry {
 const AdminOpenPage: React.FC = () => {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [stats, setStats] = useState({
     totalEntries: 0,
     firstPkr: 0,
@@ -65,11 +67,58 @@ const AdminOpenPage: React.FC = () => {
     }
 
     try {
+      // Find the entry to get user_id and amounts for balance refund
+      const entry = entries.find(e => e.id === entryId);
+      if (!entry) {
+        showError('Error', 'Entry not found');
+        return;
+      }
+
+      // Refund the balance to the user
+      const refundAmount = entry.first_amount + entry.second_amount;
+      const { data: userData } = await db.getUserBalance(entry.user_id);
+      const newBalance = userData.balance + refundAmount;
+      await db.updateUserBalance(entry.user_id, newBalance);
+
+      // Delete the transaction
       await db.deleteTransaction(entryId);
-      await showSuccess('Success', 'Entry deleted successfully');
+      await showSuccess('Success', 'Entry deleted successfully and balance refunded');
       loadEntries();
     } catch (error) {
+      console.error('Delete error:', error);
       showError('Error', 'Failed to delete entry');
+    }
+  };
+
+  const handleEdit = async (updatedTransaction: any) => {
+    if (!editingEntry) return;
+
+    try {
+      // Calculate balance difference
+      const oldTotal = editingEntry.first_amount + editingEntry.second_amount;
+      const newTotal = updatedTransaction.first + updatedTransaction.second;
+      const difference = newTotal - oldTotal;
+
+      // Get current user balance
+      const { data: userData } = await db.getUserBalance(editingEntry.user_id);
+      const newBalance = userData.balance - difference;
+
+      // Update user balance
+      await db.updateUserBalance(editingEntry.user_id, newBalance);
+
+      // Update transaction
+      await db.updateTransaction(editingEntry.id, {
+        first_amount: updatedTransaction.first,
+        second_amount: updatedTransaction.second,
+        notes: updatedTransaction.notes,
+      });
+
+      await showSuccess('Success', 'Entry updated successfully');
+      setEditingEntry(null);
+      loadEntries();
+    } catch (error) {
+      console.error('Edit error:', error);
+      showError('Error', 'Failed to update entry');
     }
   };
 
@@ -204,7 +253,7 @@ const AdminOpenPage: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       <div className="flex items-center justify-center gap-2">
                         <button
-                          onClick={() => {/* TODO: Edit functionality */}}
+                          onClick={() => setEditingEntry(entry)}
                           className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
                           title="Edit"
                         >
@@ -238,6 +287,26 @@ const AdminOpenPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Edit Modal */}
+      {editingEntry && (
+        <EditTransactionModal
+          isOpen={!!editingEntry}
+          onClose={() => setEditingEntry(null)}
+          transaction={{
+            id: editingEntry.id,
+            number: editingEntry.number,
+            first: editingEntry.first_amount,
+            second: editingEntry.second_amount,
+            notes: '',
+            entryType: 'open' as any,
+            projectId: 'admin',
+            createdAt: editingEntry.created_at,
+            updatedAt: editingEntry.created_at,
+          }}
+          onSave={handleEdit}
+        />
+      )}
     </div>
   );
 };
