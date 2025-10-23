@@ -177,6 +177,35 @@ const AdminRingPage: React.FC = () => {
           </p>
         </div>
 
+        {/* View Mode Toggle */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg mb-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">View Mode</h2>
+            <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('aggregated')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                  viewMode === 'aggregated'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Aggregated
+              </button>
+              <button
+                onClick={() => setViewMode('history')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                  viewMode === 'history'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                History
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Statistics Cards */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg">

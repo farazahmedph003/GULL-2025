@@ -151,6 +151,7 @@ const UserManagement: React.FC = () => {
           first: e.first_amount,
           second: e.second_amount,
           createdAt: e.created_at,
+          updatedAt: e.updated_at || e.created_at,
           userId: e.user_id
         }));
 
