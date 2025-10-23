@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { getRecentLogins, removeRecentLogin, type RecentLogin } from '../utils/recentLogins';
 import { getCredential } from '../utils/savedCredentials';
 
@@ -9,6 +10,7 @@ const ProfileDropdown: React.FC = () => {
   const [recentLogins, setRecentLogins] = useState<RecentLogin[]>(getRecentLogins());
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { user, signOut, signIn } = useAuth();
+  const { theme, mode } = useTheme();
   const navigate = useNavigate();
 
   // Close dropdown when clicking outside
@@ -40,13 +42,17 @@ const ProfileDropdown: React.FC = () => {
     }
     
     // Check if we have saved credentials
-    const savedPassword = getCredential(login.email || '');
+    // Try retrieving by email or username alias (left side of email)
+    const emailKey = login.email || '';
+    const usernameKey = emailKey.includes('@') ? emailKey.split('@')[0] : emailKey;
+    const savedPassword = getCredential(emailKey) || getCredential(usernameKey);
     
     if (savedPassword && login.email) {
       try {
         // Auto-login with saved credentials
         await signOut();
-        await signIn({ email: login.email, password: savedPassword });
+        // Support username or email sign-in
+        await signIn({ username: usernameKey || login.email, email: login.email, password: savedPassword });
         
         // Navigate to home
         navigate('/');
@@ -92,7 +98,7 @@ const ProfileDropdown: React.FC = () => {
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center space-x-2 px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-all hover:shadow-md"
       >
-        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+        <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
           {(user.displayName || user.email || 'A').charAt(0).toUpperCase()}
         </div>
         <div className="hidden md:block text-left">
@@ -130,9 +136,9 @@ const ProfileDropdown: React.FC = () => {
             `}
           </style>
           {/* Current Account */}
-          <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 p-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="bg-gradient-to-r from-teal-50 to-cyan-50 dark:from-teal-900/20 dark:to-cyan-900/20 p-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg">
+              <div className="w-12 h-12 bg-gradient-to-br from-teal-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg">
                 {(user.displayName || user.email || 'A').charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
@@ -163,6 +169,8 @@ const ProfileDropdown: React.FC = () => {
             </svg>
             <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">My Profile</span>
           </button>
+
+          {/* Theme controls removed as requested */}
 
           {/* Other Accounts */}
           {otherAccounts.length > 0 && (

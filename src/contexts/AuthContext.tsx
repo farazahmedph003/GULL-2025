@@ -59,7 +59,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(JSON.parse(storedUser));
           }
         } else if (supabase) {
-          // Get current session from Supabase
+          // First, try to load from localStorage (for app_users custom auth)
+          const storedUser = localStorage.getItem(STORAGE_KEY);
+          if (storedUser) {
+            const parsedUser = JSON.parse(storedUser);
+            // Verify the user still exists in app_users table
+            try {
+              const { data: appUser, error: fetchError } = await supabase
+                .from('app_users')
+                .select('id, username, full_name, role, is_active, email')
+                .eq('id', parsedUser.id)
+                .single();
+
+              if (appUser && !fetchError && appUser.is_active) {
+                // User exists and is active, restore session
+                const authUser: User = {
+                  id: appUser.id,
+                  email: appUser.email || null,
+                  displayName: appUser.full_name,
+                  username: appUser.username,
+                  role: appUser.role,
+                  isAnonymous: false,
+                  createdAt: parsedUser.createdAt || new Date().toISOString(),
+                  lastLoginAt: new Date().toISOString(),
+                };
+                setUser(authUser);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
+                setLoading(false);
+                return; // Exit early, session restored
+              } else {
+                // User doesn't exist or is inactive, clear localStorage
+                localStorage.removeItem(STORAGE_KEY);
+              }
+            } catch (error) {
+              console.warn('Failed to verify app_users session:', error);
+              // Continue to check Supabase Auth session
+            }
+          }
+
+          // If no app_users session, check for Supabase Auth session
           const { data: { session } } = await supabase.auth.getSession();
           
           if (session?.user) {

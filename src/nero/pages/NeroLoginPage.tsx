@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useNeroAuth } from '../contexts/NeroAuthContext';
-import { useNeroTheme } from '../contexts/NeroThemeContext';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const NeroLoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -10,7 +10,7 @@ const NeroLoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   
   const { login, isAuthenticated, isAdmin } = useNeroAuth();
-  const { theme, toggleTheme } = useNeroTheme();
+  const { theme } = useTheme();
   const navigate = useNavigate();
 
   // Redirect if already authenticated
@@ -46,13 +46,7 @@ const NeroLoginPage: React.FC = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-4">
-      {/* Theme Toggle */}
-      <button
-        onClick={toggleTheme}
-        className="fixed top-4 right-4 p-3 rounded-full bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-all"
-      >
-        {theme === 'dark' ? '🌙' : '☀️'}
-      </button>
+      {/* Theme toggle removed */}
 
       <div className="w-full max-w-md">
         {/* Logo & Title */}

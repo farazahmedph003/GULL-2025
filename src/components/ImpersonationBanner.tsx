@@ -12,7 +12,7 @@ const ImpersonationBanner: React.FC = () => {
     <div className="fixed top-0 left-0 right-0 z-50">
       <div className="bg-gradient-to-r from-[#6D28D9] to-[#2563EB] text-white shadow-lg">
         <div className="px-4 py-3">
-          <div className="flex items-center justify-between max-w-7xl mx-auto">
+      <div className="flex items-center justify-between w-full px-4 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

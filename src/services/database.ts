@@ -1,4 +1,5 @@
 import { supabase, supabaseAdmin, isSupabaseConfigured, isSupabaseConnected } from '../lib/supabase';
+import { cacheUsers, getUsersWithStatsFromCache, cacheTransactions, getEntriesByTypeFromCache, enqueue } from './localDb';
 import type { Project, Transaction, FilterPreset, ActionHistory, EntryType } from '../types';
 
 // Get service key from environment
@@ -23,6 +24,16 @@ export class DatabaseService {
   // Check if online mode is available
   isOnline(): boolean {
     return isSupabaseConnected();
+  }
+
+  // Prefer service role for admin reads when available
+  private getReadClient() {
+    return supabaseAdmin || supabase;
+  }
+
+  // Prefer service role for admin-wide reads if available
+  private getReadClient() {
+    return supabaseAdmin || supabase;
   }
 
   // Retry mechanism for network requests
@@ -487,11 +498,18 @@ export class DatabaseService {
       const isImpersonating = !!localStorage.getItem('gull-admin-impersonation');
       const clientToUse = isImpersonating && supabaseAdmin ? supabaseAdmin : supabase;
 
-      const { data, error } = await clientToUse
+      // Handle 'user-scope' by querying for NULL project_id
+      let query = clientToUse
         .from('transactions')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: true });
+        .select('*');
+
+      if (projectId === 'user-scope') {
+        query = query.is('project_id', null);
+      } else {
+        query = query.eq('project_id', projectId);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: true });
 
       if (error) {
         console.error('Database error in getTransactions:', error);
@@ -500,7 +518,7 @@ export class DatabaseService {
 
       return data.map((row: any) => ({
         id: row.id,
-        projectId: row.project_id,
+        projectId: row.project_id || 'user-scope', // Map NULL back to 'user-scope'
         number: row.number,
         entryType: row.entry_type as EntryType,
         first: row.first_amount,
@@ -521,15 +539,28 @@ export class DatabaseService {
       throw new Error('Database not available in offline mode');
     }
 
-    // Use service role client when admin is impersonating to bypass RLS
-    const isImpersonating = !!localStorage.getItem('gull-admin-impersonation');
-    const clientToUse = (isImpersonating && supabaseAdmin) ? supabaseAdmin : supabase;
+    // Use service role client to bypass RLS for app_users who don't have Supabase Auth sessions
+    // app_users authenticate via custom password hash, not Supabase Auth, so auth.uid() is NULL
+    const clientToUse = supabaseAdmin || supabase; // Always prefer service role if available
+
+    // Handle 'user-scope' by setting project_id to NULL
+    const projectId = transaction.projectId === 'user-scope' ? null : transaction.projectId;
+
+    console.log('🔍 Creating transaction:', {
+      userId,
+      projectId,
+      entryType: transaction.entryType,
+      number: transaction.number,
+      first: transaction.first,
+      second: transaction.second,
+      usingServiceRole: clientToUse === supabaseAdmin
+    });
 
     const { data, error } = await clientToUse
       .from('transactions')
       .insert({
         user_id: userId,
-        project_id: transaction.projectId,
+        project_id: projectId,
         number: transaction.number,
         entry_type: transaction.entryType,
         first_amount: transaction.first,
@@ -539,7 +570,16 @@ export class DatabaseService {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Transaction insert failed:', error);
+      console.error('❌ Error code:', error.code);
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Error details:', error.details);
+      console.error('❌ Error hint:', error.hint);
+      throw error;
+    }
+
+    console.log('✅ Transaction created successfully:', data.id);
 
     // Log admin action if this was performed by an admin
     if (adminUserId && adminUserId !== userId) {
@@ -561,7 +601,7 @@ export class DatabaseService {
 
     return {
       id: data.id,
-      projectId: data.project_id,
+      projectId: data.project_id || 'user-scope', // Map NULL back to 'user-scope'
       number: data.number,
       entryType: data.entry_type,
       first: data.first_amount,
@@ -581,9 +621,8 @@ export class DatabaseService {
       throw new Error('Database not available in offline mode');
     }
 
-    // Use service role client when admin is impersonating to bypass RLS
-    const isImpersonating = !!localStorage.getItem('gull-admin-impersonation');
-    const clientToUse = (isImpersonating && supabaseAdmin) ? supabaseAdmin : supabase;
+    // Use service role client to bypass RLS for app_users
+    const clientToUse = supabaseAdmin || supabase;
 
     // Get the transaction first to log the change
     const { data: existingTransaction, error: fetchError } = await clientToUse
@@ -636,9 +675,8 @@ export class DatabaseService {
       throw new Error('Database not available in offline mode');
     }
 
-    // Use service role client when admin is impersonating to bypass RLS
-    const isImpersonating = !!localStorage.getItem('gull-admin-impersonation');
-    const clientToUse = (isImpersonating && supabaseAdmin) ? supabaseAdmin : supabase;
+    // Use service role client to bypass RLS for app_users
+    const clientToUse = supabaseAdmin || supabase;
 
     // Get the transaction first to log the deletion
     const { data: existingTransaction, error: fetchError } = await clientToUse
@@ -981,6 +1019,455 @@ export class DatabaseService {
     return () => {
       subscription.unsubscribe();
     };
+  }
+
+  // ============================================
+  // USER MANAGEMENT (Admin)
+  // ============================================
+
+  /**
+   * Get all users with their statistics
+   */
+  async getAllUsersWithStats(): Promise<any[]> {
+    // Cache-first
+    const cached = await getUsersWithStatsFromCache();
+    if (!isSupabaseConfigured() || !supabase) return cached;
+
+    const client = this.getReadClient();
+    try {
+      const usersWithStats = await this.withRetry(async () => {
+        const { data: users, error } = await client
+          .from('app_users')
+          .select('id, username, full_name, email, role, is_active, balance, created_at, updated_at')
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+
+        // Cache latest users
+        await cacheUsers(users as any);
+
+        // Aggregate counts in a single query
+        const { data: tx, error: txErr } = await client
+          .from('transactions')
+          .select('user_id');
+        if (txErr) throw txErr;
+        const counts: Record<string, number> = {};
+        (tx || []).forEach((r: any) => {
+          counts[r.user_id] = (counts[r.user_id] || 0) + 1;
+        });
+        return (users || []).map((u: any) => ({ ...u, entryCount: counts[u.id] || 0 }));
+      });
+      return usersWithStats;
+    } catch {
+      return cached;
+    }
+  }
+
+  /**
+   * Create a new user (admin only)
+   */
+  async createUser(userData: {
+    username: string;
+    password: string;
+    fullName: string;
+    email: string;
+    balance?: number;
+  }): Promise<any> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    return this.withRetry(async () => {
+      // Step 1: Create Supabase Auth user first (for proper authentication)
+      // Use admin client to create user directly
+      if (!supabaseAdmin) {
+        throw new Error('Admin client required to create users. Please configure VITE_SUPABASE_SERVICE_KEY.');
+      }
+
+      console.log('🔍 Creating Supabase Auth user for:', userData.email);
+
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: userData.email,
+        password: userData.password,
+        email_confirm: true, // Auto-confirm email
+        user_metadata: {
+          username: userData.username,
+          full_name: userData.fullName,
+        },
+      });
+
+      if (authError) {
+        console.error('❌ Failed to create Supabase Auth user:', authError);
+        throw new Error(`Failed to create auth user: ${authError.message}`);
+      }
+
+      if (!authData.user) {
+        throw new Error('Auth user creation succeeded but no user returned');
+      }
+
+      const authUserId = authData.user.id;
+      console.log('✅ Supabase Auth user created:', authUserId);
+
+      // Step 2: Hash password for app_users table (for backward compatibility)
+      const bcrypt = await import('bcryptjs');
+      const passwordHash = await bcrypt.hash(userData.password, 10);
+
+      // Step 3: Create app_users record with matching ID
+      const { data, error } = await supabaseAdmin
+        .from('app_users')
+        .insert({
+          id: authUserId, // Use the same ID as auth.users
+          username: userData.username,
+          password_hash: passwordHash,
+          full_name: userData.fullName,
+          email: userData.email,
+          role: 'user',
+          is_active: true,
+          balance: userData.balance || 0,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ Failed to create app_users record:', error);
+        
+        // Rollback: Delete the auth user we just created
+        try {
+          await supabaseAdmin.auth.admin.deleteUser(authUserId);
+          console.log('🔄 Rolled back auth user creation');
+        } catch (rollbackError) {
+          console.error('❌ Failed to rollback auth user:', rollbackError);
+        }
+
+        if (error.code === '23505') {
+          throw new Error('Username or email already exists');
+        }
+        throw error;
+      }
+
+      console.log('✅ User created successfully:', data.id);
+      return data;
+    });
+  }
+
+  /**
+   * Sync Supabase Auth user for existing app_users (admin only)
+   * Creates a Supabase Auth account for users that were created before the fix
+   */
+  async syncAuthUser(userId: string, email: string, newPassword: string): Promise<void> {
+    if (!isSupabaseConfigured() || !supabaseAdmin) {
+      throw new Error('Admin client required to sync auth users');
+    }
+
+    console.log('🔍 Syncing auth user for app_users ID:', userId);
+
+    // Check if auth user already exists
+    const { data: existingAuthUser } = await supabaseAdmin.auth.admin.listUsers();
+    const authUserExists = existingAuthUser?.users?.some(u => u.email === email);
+
+    if (authUserExists) {
+      throw new Error('Auth user already exists for this email');
+    }
+
+    // Get the app_user data
+    const { data: appUser, error: fetchError } = await supabaseAdmin
+      .from('app_users')
+      .select('username, full_name')
+      .eq('id', userId)
+      .single();
+
+    if (fetchError || !appUser) {
+      throw new Error('App user not found');
+    }
+
+    // Create Supabase Auth user with the app_user's ID
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password: newPassword,
+      email_confirm: true,
+      user_metadata: {
+        username: appUser.username,
+        full_name: appUser.full_name,
+      },
+    });
+
+    if (authError) {
+      console.error('❌ Failed to create auth user:', authError);
+      throw new Error(`Failed to create auth user: ${authError.message}`);
+    }
+
+    console.log('✅ Auth user created:', authData.user?.id);
+
+    // Update password hash in app_users
+    const bcrypt = await import('bcryptjs');
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    const { error: updateError } = await supabaseAdmin
+      .from('app_users')
+      .update({ password_hash: passwordHash })
+      .eq('id', userId);
+
+    if (updateError) {
+      console.error('❌ Failed to update password hash:', updateError);
+      // Don't throw - auth user is created, password update failure is not critical
+    }
+
+    console.log('✅ Auth user synced successfully');
+  }
+
+  /**
+   * Update user data (admin only)
+   */
+  async updateUser(userId: string, updates: {
+    fullName?: string;
+    username?: string;
+    email?: string;
+    password?: string;
+    isActive?: boolean;
+  }): Promise<void> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    return this.withRetry(async () => {
+      const updateData: any = {};
+
+      if (updates.fullName !== undefined) updateData.full_name = updates.fullName;
+      if (updates.username !== undefined) updateData.username = updates.username;
+      if (updates.email !== undefined) updateData.email = updates.email;
+      if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
+
+      if (updates.password !== undefined) {
+        const bcrypt = await import('bcryptjs');
+        updateData.password_hash = await bcrypt.hash(updates.password, 10);
+      }
+
+      const { error } = await supabase
+        .from('app_users')
+        .update(updateData)
+        .eq('id', userId);
+
+      if (error) {
+        if (error.code === '23505') {
+          throw new Error('Username or email already exists');
+        }
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Top up user balance (admin only)
+   */
+  async topUpUserBalance(userId: string, amount: number): Promise<void> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    return this.withRetry(async () => {
+      // Get current balance
+      const { data: user, error: fetchError } = await supabase
+        .from('app_users')
+        .select('balance')
+        .eq('id', userId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // Update balance
+      const newBalance = (user.balance || 0) + amount;
+      const { error: updateError } = await supabase
+        .from('app_users')
+        .update({ balance: newBalance })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
+
+      // Log the top-up in balance_history table (if it exists)
+      try {
+        await supabase
+          .from('balance_history')
+          .insert({
+            user_id: userId,
+            amount: amount,
+            type: 'top_up',
+            balance_after: newBalance,
+          });
+      } catch (err) {
+        console.warn('Could not log balance history:', err);
+      }
+    });
+  }
+
+  /**
+   * Get user's entries by type
+   */
+  async getUserEntries(userId: string, entryType?: string): Promise<any[]> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    // Use service role client for admin reads to bypass RLS
+    const client = this.getReadClient();
+
+    return this.withRetry(async () => {
+      let query = client
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (entryType) {
+        query = query.eq('entry_type', entryType);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      return data;
+    });
+  }
+
+  /**
+   * Get all entries by type (all users)
+   */
+  async getAllEntriesByType(entryType: string): Promise<any[]> {
+    // Cache-first
+    const cached = await getEntriesByTypeFromCache(entryType);
+    if (!isSupabaseConfigured() || !supabase) return cached;
+
+    const client = this.getReadClient();
+    try {
+      const rows = await this.withRetry(async () => {
+        const { data, error } = await client
+          .from('transactions')
+          .select('id, user_id, project_id, number, entry_type, first_amount, second_amount, created_at, updated_at, app_users!inner(username, full_name)')
+          .eq('entry_type', entryType)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        // Cache flattened transactions
+        await cacheTransactions((data || []).map((d: any) => ({
+          id: d.id,
+          user_id: d.user_id,
+          project_id: d.project_id,
+          number: d.number,
+          entry_type: d.entry_type,
+          first_amount: d.first_amount,
+          second_amount: d.second_amount,
+          created_at: d.created_at,
+          updated_at: d.updated_at
+        })));
+        return data || [];
+      });
+      return rows;
+    } catch {
+      return cached;
+    }
+  }
+
+  /**
+   * Get user history (entries + top-ups)
+   */
+  async getUserHistory(userId: string): Promise<any[]> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    return this.withRetry(async () => {
+      // Get entries
+      const { data: entries, error: entriesError } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (entriesError) throw entriesError;
+
+      // Try to get balance history
+      let topUps: any[] = [];
+      try {
+        const { data: balanceHistory, error: balanceError } = await supabase
+          .from('balance_history')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('type', 'top_up')
+          .order('created_at', { ascending: false });
+
+        if (!balanceError && balanceHistory) {
+          topUps = balanceHistory.map((item: any) => ({
+            ...item,
+            isTopUp: true,
+          }));
+        }
+      } catch (err) {
+        console.warn('Balance history table not available:', err);
+      }
+
+      // Combine and sort by date
+      const combined = [
+        ...entries.map((e: any) => ({ ...e, isEntry: true })),
+        ...topUps,
+      ];
+
+      combined.sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      return combined;
+    });
+  }
+
+  /**
+   * Get/Set system-wide settings
+   */
+  async getSystemSettings(): Promise<{ entriesEnabled: boolean }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      // Fallback to localStorage
+      const stored = localStorage.getItem('gull-system-settings');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+      return { entriesEnabled: true };
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('*')
+        .eq('key', 'entries_enabled')
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.warn('Could not fetch system settings:', error);
+        return { entriesEnabled: true };
+      }
+
+      const entriesEnabled = data?.value === 'true' || data?.value === true;
+      return { entriesEnabled };
+    } catch (err) {
+      console.warn('System settings table not available:', err);
+      return { entriesEnabled: true };
+    }
+  }
+
+  async setSystemSettings(settings: { entriesEnabled: boolean }): Promise<void> {
+    // Always update localStorage
+    localStorage.setItem('gull-system-settings', JSON.stringify(settings));
+
+    if (!isSupabaseConfigured() || !supabase) {
+      return;
+    }
+
+    try {
+      await supabase
+        .from('system_settings')
+        .upsert({
+          key: 'entries_enabled',
+          value: String(settings.entriesEnabled),
+        });
+    } catch (err) {
+      console.warn('Could not save system settings to database:', err);
+    }
   }
 }
 

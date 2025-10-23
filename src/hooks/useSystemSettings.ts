@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { supabase, isOfflineMode } from '../lib/supabase';
+import { db } from '../services/database';
 
 export interface SystemSettingsState {
   entriesEnabled: boolean;
@@ -16,25 +16,8 @@ export const useSystemSettings = () => {
     setLoading(true);
     setError(null);
     try {
-      if (!isOfflineMode() && supabase) {
-        const { data, error: qError } = await supabase
-          .from('system_settings')
-          .select('entries_enabled')
-          .eq('id', 'global')
-          .single();
-
-        if (qError) throw qError;
-        setEntriesEnabledState(data?.entries_enabled ?? true);
-      } else {
-        // Offline fallback: local cache
-        const cached = localStorage.getItem('gull_system_settings');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          setEntriesEnabledState(parsed.entriesEnabled ?? true);
-        } else {
-          setEntriesEnabledState(true);
-        }
-      }
+      const settings = await db.getSystemSettings();
+      setEntriesEnabledState(settings.entriesEnabled);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load settings');
       setEntriesEnabledState(true);
@@ -42,6 +25,17 @@ export const useSystemSettings = () => {
       setLoading(false);
     }
   }, []);
+
+  const toggleEntriesEnabled = useCallback(async () => {
+    try {
+      const newValue = !entriesEnabled;
+      await db.setSystemSettings({ entriesEnabled: newValue });
+      setEntriesEnabledState(newValue);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update settings');
+      throw e;
+    }
+  }, [entriesEnabled]);
 
   useEffect(() => {
     fetchSettings();
@@ -52,8 +46,11 @@ export const useSystemSettings = () => {
     loading,
     error,
     refresh: fetchSettings,
-    // Admin setter will be added in Admin dashboard later
-  } as SystemSettingsState & { refresh: () => Promise<void> };
+    toggleEntriesEnabled,
+  } as SystemSettingsState & { 
+    refresh: () => Promise<void>;
+    toggleEntriesEnabled: () => Promise<void>;
+  };
 };
 
 

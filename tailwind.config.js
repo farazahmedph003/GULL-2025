@@ -16,16 +16,16 @@ export default {
       colors: {
         // Dashboard Design System v3.0 - Complete Implementation
         
-        // Brand Colors (Indigo/Purple)
+        // Brand Colors (Teal/Orange)
         primary: {
-          DEFAULT: '#6366F1',
-          light: '#818CF8',
-          dark: '#4F46E5',
+          DEFAULT: '#14B8A6',
+          light: '#2DD4BF',
+          dark: '#0D9488',
         },
         secondary: {
-          DEFAULT: '#8B5CF6',
-          light: '#A78BFA',
-          dark: '#7C3AED',
+          DEFAULT: '#F97316',
+          light: '#FB923C',
+          dark: '#EA580C',
         },
         
         // Light Mode Backgrounds (Pure White)

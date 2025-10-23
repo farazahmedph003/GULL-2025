@@ -4,7 +4,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAdmin, useAdminData } from '../hooks/useAdmin';
 import { useTopupRequests } from '../hooks/useTopupRequests';
 import LoadingSpinner from '../components/LoadingSpinner';
-import ThemeToggle from '../components/ThemeToggle';
 import TopupRequestManager from '../components/TopupRequestManager';
 import AdminFinancial from './admin/AdminFinancial';
 import AdminSettings from './admin/AdminSettings';

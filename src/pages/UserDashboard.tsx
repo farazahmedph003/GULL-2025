@@ -7,13 +7,10 @@ import AggregatedNumbersPanel from '../components/AggregatedNumbersPanel';
 import EntryFormsBar from '../components/EntryFormsBar';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useTransactions } from '../hooks/useTransactions';
-import { useHistory } from '../hooks/useHistory';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { useNotifications } from '../contexts/NotificationContext';
-// import { useAuth } from '../contexts/AuthContext';
-// import { isAdminEmail } from '../config/admin';
 import { formatDate } from '../utils/helpers';
-import { playReloadSound, playUndoSound, playRedoSound } from '../utils/audioFeedback';
+import { playReloadSound } from '../utils/audioFeedback';
 import { exportToJSON, exportToCSV, importFromJSON, importFromCSV } from '../utils/importExport';
 import type { Project, EntryType } from '../types';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
@@ -56,70 +53,6 @@ const UserDashboard: React.FC = () => {
     refreshTransactions();
     refreshBalance();
   };
-  
-  const {
-    canUndo,
-    canRedo,
-    undo,
-    redo,
-  } = useHistory('user-scope', {
-    onRevert: async (action) => {
-      // Undo the action
-      if (action.type === 'add' && action.data?.transactionId) {
-        // Revert add by deleting
-        await deleteTransaction(action.data.transactionId);
-        refresh();
-      } else if (action.type === 'delete' && action.data?.transaction) {
-        // Revert delete by re-adding
-        await addTransaction(action.data.transaction);
-        refresh();
-      } else if (action.type === 'edit' && action.data?.originalTransaction) {
-        // Revert edit by restoring original
-        await updateTransaction(action.data.transactionId, action.data.originalTransaction);
-        refresh();
-      } else if (action.type === 'batch' && action.data?.transactionIds) {
-        // Revert batch delete by re-adding
-        if (action.data.transactions) {
-          for (const t of action.data.transactions) {
-            await addTransaction(t);
-          }
-          refresh();
-        }
-      } else if (action.type === 'filter' && action.data?.transactionIds) {
-        // Revert filter deductions by deleting the created deduction transactions
-        for (const transactionId of action.data.transactionIds) {
-          await deleteTransaction(transactionId);
-        }
-        refresh();
-      }
-    },
-    onApply: async (action) => {
-      // Redo the action
-      if (action.type === 'add' && action.data?.transaction) {
-        // Redo add
-        await addTransaction(action.data.transaction);
-        refresh();
-      } else if (action.type === 'delete' && action.data?.transactionId) {
-        // Redo delete
-        await deleteTransaction(action.data.transactionId);
-        refresh();
-      } else if (action.type === 'edit' && action.data?.updatedTransaction) {
-        // Redo edit
-        await updateTransaction(action.data.transactionId, action.data.updatedTransaction);
-        refresh();
-      } else if (action.type === 'batch' && action.data?.transactionIds) {
-        // Redo batch delete
-        await bulkDeleteTransactions(action.data.transactionIds);
-        refresh();
-      } else if (action.type === 'filter' && action.data?.transactions) {
-        // Redo filter deductions by re-adding the deduction transactions
-        for (const transaction of action.data.transactions) {
-          await addTransaction(transaction);
-        }
-        refresh();
-      }
-    },
-  });
 
   // const statistics = getStatistics();
 
@@ -150,33 +83,7 @@ const UserDashboard: React.FC = () => {
     setLoading(false);
   }, []);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + Z for undo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        if (canUndo) {
-          playUndoSound();
-          undo();
-        }
-      }
-      
-      // Ctrl/Cmd + Y or Ctrl/Cmd + Shift + Z for redo
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
-        e.preventDefault();
-        if (canRedo) {
-          playRedoSound();
-          redo();
-        }
-      }
-      
-      // Removed: entry panel toggle (not needed in this layout)
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canUndo, canRedo, undo, redo]);
+  // Keyboard shortcuts removed for regular users
 
   const handleEntryAdded = () => {
     refresh();
@@ -280,7 +187,7 @@ const UserDashboard: React.FC = () => {
       />
 
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 pb-20 sm:pb-0">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-4 sm:py-8">
+        <div className="w-full px-3 sm:px-4 lg:px-8 py-4 sm:py-8">
           
           {/* Page Header */}
           <div className="mb-6 sm:mb-8">

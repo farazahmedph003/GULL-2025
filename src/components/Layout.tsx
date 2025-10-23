@@ -19,7 +19,7 @@ const Layout: React.FC<LayoutProps> = ({ children, header, footer }) => {
         </header>
       )}
       
-      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 mx-auto max-w-screen-md sm:max-w-none">
+      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         {children}
       </main>
       

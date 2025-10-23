@@ -25,13 +25,15 @@ const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onSwitch }) => {
     }
 
     // Check if we have saved credentials
-    const savedPassword = getCredential(login.email || '');
+    const emailKey = login.email || '';
+    const usernameKey = emailKey.includes('@') ? emailKey.split('@')[0] : emailKey;
+    const savedPassword = getCredential(emailKey) || getCredential(usernameKey);
     
     if (savedPassword && login.email) {
       try {
         // Auto-login with saved credentials
         await signOut();
-        await signIn({ email: login.email, password: savedPassword });
+        await signIn({ username: usernameKey || login.email, email: login.email, password: savedPassword });
         
         // Navigate to home
         navigate('/');

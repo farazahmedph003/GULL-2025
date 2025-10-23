@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AppearanceProvider } from './contexts/AppearanceContext';
 import { ScalingProvider } from './contexts/ScalingContext';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { PushNotificationProvider } from './contexts/PushNotificationContext';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -16,13 +16,17 @@ import { initializeCustomPopups } from './utils/customPopups';
 import Welcome from './pages/Welcome';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
-// import ProjectSelection from './pages/ProjectSelection';
-// import Dashboard from './pages/Dashboard';
-// Projectless: pages removed from routing
 import UserDashboard from './pages/UserDashboard';
 import AdminRoute from './components/AdminRoute';
-import AdminPanel from './pages/AdminPanel';
-import UserProjects from './pages/UserProjects';
+import AdminLayout from './components/AdminLayout';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import UserManagement from './pages/admin/UserManagement';
+import AdminOpenPage from './pages/admin/AdminOpenPage';
+import AdminAkraPage from './pages/admin/AdminAkraPage';
+import AdminRingPage from './pages/admin/AdminRingPage';
+import AdminPacketPage from './pages/admin/AdminPacketPage';
+import AdminFilterPage from './pages/admin/AdminFilterPage';
+import AdminAdvancedFilterPage from './pages/admin/AdminAdvancedFilterPage';
 import NotFound from './pages/NotFound';
 
 // Component that renders notifications and initializes custom popups
@@ -54,6 +58,9 @@ const AppWithNotifications: React.FC = () => {
     });
   }, [showSuccess, showError, showWarning, showInfo, confirm]);
   
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   return (
       <>
         <NotificationBanner />
@@ -61,12 +68,12 @@ const AppWithNotifications: React.FC = () => {
               {/* Public routes */}
               <Route path="/welcome" element={<Welcome />} />
               
-              {/* Protected routes - Root route */}
+              {/* Protected routes - Root route (role-based) */}
               <Route
                 path="/"
                 element={
                   <ProtectedRoute>
-                    <UserDashboard />
+                    {isAdmin ? <Navigate to="/admin" replace /> : <UserDashboard />}
                   </ProtectedRoute>
                 }
               />
@@ -81,7 +88,7 @@ const AppWithNotifications: React.FC = () => {
             }
           />
 
-          {/* Settings route */}
+          {/* Settings route (Admin only) */}
           <Route
             path="/settings"
             element={
@@ -93,27 +100,26 @@ const AppWithNotifications: React.FC = () => {
             }
           />
 
-          {/* Admin Panel route (temporary) */}
+          {/* Admin Routes */}
           <Route
             path="/admin"
             element={
               <ProtectedRoute>
-                <AdminPanel />
+                <AdminRoute>
+                  <AdminLayout />
+                </AdminRoute>
               </ProtectedRoute>
             }
-          />
-
-          {/* Admin -> User projects */}
-          <Route
-            path="/admin/user/:uid"
-            element={
-              <ProtectedRoute>
-                <UserProjects />
-              </ProtectedRoute>
-            }
-          />
-              
-              {/* Project routes removed in projectless mode */}
+          >
+            <Route index element={<AdminDashboard />} />
+            <Route path="users" element={<UserManagement />} />
+            <Route path="open" element={<AdminOpenPage />} />
+            <Route path="akra" element={<AdminAkraPage />} />
+            <Route path="ring" element={<AdminRingPage />} />
+            <Route path="packet" element={<AdminPacketPage />} />
+            <Route path="filter" element={<AdminFilterPage />} />
+            <Route path="advanced-filter" element={<AdminAdvancedFilterPage />} />
+          </Route>
               
               {/* 404 route */}
               <Route path="/404" element={<NotFound />} />

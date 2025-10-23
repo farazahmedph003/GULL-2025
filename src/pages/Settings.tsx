@@ -4,7 +4,6 @@ import { usePushNotifications } from '../contexts/PushNotificationContext';
 import { useAppearance } from '../contexts/AppearanceContext';
 import { isOfflineMode } from '../lib/supabase';
 import BackButton from '../components/BackButton';
-import ThemeToggle from '../components/ThemeToggle';
 import SoundSettings from '../components/SoundSettings';
 import SettingsSection from '../components/SettingsSection';
 import SettingItem from '../components/SettingItem';
@@ -23,7 +22,7 @@ import {
 } from '../utils/dataManagement';
 
 const Settings: React.FC = () => {
-  const { theme, toggleTheme } = useTheme();
+  const { theme } = useTheme();
   const { fontSize, setFontSize, animationsEnabled, setAnimationsEnabled } = useAppearance();
   const { state: notificationState, enableNotifications, disableNotifications, requestPermission } = usePushNotifications();
   const { isOpen: shortcutsOpen, open: openShortcuts, close: closeShortcuts } = useKeyboardShortcuts();
@@ -175,7 +174,7 @@ const Settings: React.FC = () => {
                 Settings
               </h1>
             </div>
-            <ThemeToggle />
+            {/* Theme toggle removed */}
           </div>
         </div>
       </div>
@@ -196,20 +195,7 @@ const Settings: React.FC = () => {
                 </svg>
               }
             >
-              <SettingItem
-                label="Theme"
-                description="Switch between light and dark mode"
-              >
-                <button
-                  onClick={toggleTheme}
-                  className="flex items-center space-x-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                >
-                  <span className="text-sm font-medium">
-                    {theme === 'dark' ? '🌙' : '☀️'}
-                  </span>
-                  <span className="text-sm capitalize">{theme}</span>
-                </button>
-              </SettingItem>
+              {/* Theme controls removed as requested */}
 
               <SettingItem
                 label="Font Size"

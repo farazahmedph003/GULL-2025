@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import BalanceDisplay from './BalanceDisplay';
 import ProfileDropdown from './ProfileDropdown';
-// Sidebar removed
+import { useAuth } from '../contexts/AuthContext';
 
 interface Tab {
   id: string;
@@ -36,8 +36,9 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
   showBackButton = true,
   variant = 'user',
 }) => {
-  // Sidebar removed
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   return (
     <>
@@ -75,13 +76,23 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
 
             {/* Right: Actions - Compact on Mobile */}
             <div className="flex items-center justify-end space-x-2 sm:space-x-4">
-              {/* Balance Display - Hidden on very small screens */}
-              <div className="hidden sm:block">
-                <BalanceDisplay />
-              </div>
+              {/* Balance Display - Shown for users, less prominent for admin */}
+              {!isAdmin && (
+                <div className="block">
+                  <BalanceDisplay />
+                </div>
+              )}
+              
+              {isAdmin && variant === 'admin' && (
+                <div className="flex items-center space-x-2">
+                  <span className="hidden sm:inline-block px-3 py-1 bg-purple-600 text-white text-xs font-bold rounded-lg">
+                    ADMIN
+                  </span>
+                </div>
+              )}
 
-              {/* Refresh/Top-up button hidden for user variant; allow for admin if needed */}
-              {variant === 'admin' && onRefresh && (
+              {/* Refresh button only for admin */}
+              {isAdmin && variant === 'admin' && onRefresh && (
                 <button
                   onClick={onRefresh}
                   className="p-2 sm:p-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 min-h-[48px] min-w-[48px] flex items-center justify-center"
@@ -93,7 +104,6 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
                   </svg>
                 </button>
               )}
-
 
               <ProfileDropdown />
             </div>

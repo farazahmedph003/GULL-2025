@@ -21,9 +21,9 @@ export const useTransactions = (projectId: string) => {
     setError(null);
     
     try {
-      if (isSupabaseConfigured() && !isUserScope) {
+      if (isSupabaseConfigured()) {
         // Try to load from database first
-        // For projectless mode, database service still requires projectId; fallback to local cache keyed by user
+        // For user-scope mode, we still fetch from Supabase using the projectId 'user-scope'
         let dbTransactions: Transaction[] = [] as any;
         try {
           dbTransactions = await db.getTransactions(projectId);
@@ -182,7 +182,7 @@ export const useTransactions = (projectId: string) => {
       }
 
       // Try to delete from Supabase first
-      if (isSupabaseConfigured() && !isOfflineMode() && !isUserScope) {
+      if (isSupabaseConfigured() && !isOfflineMode()) {
         try {
           await db.deleteTransaction(transactionId, isImpersonating ? originalAdminUser?.id : undefined);
           console.log('Transaction deleted from Supabase:', transactionId);
@@ -230,7 +230,7 @@ export const useTransactions = (projectId: string) => {
       }
 
       // Try to delete from Supabase first
-      if (isSupabaseConfigured() && !isOfflineMode() && !isUserScope) {
+      if (isSupabaseConfigured() && !isOfflineMode()) {
         try {
           // Delete each transaction from Supabase
           for (const transactionId of transactionIds) {
@@ -283,12 +283,16 @@ export const useTransactions = (projectId: string) => {
       let newTransaction: Transaction;
 
       // Try to save to Supabase first (only if user is authenticated)
-      if (isSupabaseConfigured() && !isOfflineMode() && user?.id && !isUserScope) {
+      // Note: We save even for 'user-scope' mode - projectId is just used as an identifier
+      if (isSupabaseConfigured() && !isOfflineMode() && user?.id) {
         try {
+          console.log('🔍 Debug - Attempting to save transaction to Supabase for user:', user.id);
+          console.log('🔍 Debug - Transaction data:', transaction);
           newTransaction = await db.createTransaction(user.id, transaction, isImpersonating ? originalAdminUser?.id : undefined);
-          console.log('Transaction saved to Supabase:', newTransaction.id);
+          console.log('✅ Transaction saved to Supabase:', newTransaction.id);
         } catch (dbError) {
-          console.warn('Failed to save to Supabase, falling back to localStorage:', dbError);
+          console.error('❌ Failed to save to Supabase, falling back to localStorage:', dbError);
+          console.error('❌ Error details:', JSON.stringify(dbError, null, 2));
           // Fallback to localStorage
           newTransaction = {
             ...transaction,
@@ -356,7 +360,7 @@ export const useTransactions = (projectId: string) => {
       }
 
       // Try to update in Supabase first
-      if (isSupabaseConfigured() && !isOfflineMode() && !isUserScope) {
+      if (isSupabaseConfigured() && !isOfflineMode()) {
         try {
           // Prepare updates for Supabase (exclude id, projectId, createdAt, updatedAt)
           const { id, projectId: _, createdAt, updatedAt, ...supabaseUpdates } = updates;

@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { isAdminEmail } from '../config/admin';
 import Layout from '../components/Layout';
-import ThemeToggle from '../components/ThemeToggle';
 import ProjectCard from '../components/ProjectCard';
 import ProjectForm from '../components/ProjectForm';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -141,7 +140,6 @@ const ProjectSelection: React.FC = () => {
         )}
 
         {user && <ProfileDropdown />}
-        <ThemeToggle />
       </div>
     </div>
   );

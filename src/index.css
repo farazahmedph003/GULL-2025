@@ -4,17 +4,23 @@
 /* NERO Account Management System Styles */
 @import './nero/styles/nero.css';
 
+/* Smooth theme transition helper (applied temporarily on <html>) */
+.theme-transition,
+.theme-transition * {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, fill 0.2s ease, stroke 0.2s ease;
+}
+
 @theme {
   /* Dashboard Design System - Comprehensive Dual Mode */
   
   /* Brand Colors */
-  --color-primary: #6366F1;
-  --color-primary-light: #818CF8;
-  --color-primary-dark: #4F46E5;
+  --color-primary: #14B8A6;
+  --color-primary-light: #2DD4BF;
+  --color-primary-dark: #0D9488;
   
-  --color-secondary: #8B5CF6;
-  --color-secondary-light: #A78BFA;
-  --color-secondary-dark: #7C3AED;
+  --color-secondary: #F97316;
+  --color-secondary-light: #FB923C;
+  --color-secondary-dark: #EA580C;
   
   --color-accent: #06B6D4;
   --color-accent-purple: #A855F7;
@@ -131,8 +137,8 @@ body.light::before {
   width: 100%;
   height: 100%;
   background-image: 
-    radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.015) 0%, transparent 50%),
-    radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.015) 0%, transparent 50%);
+    radial-gradient(circle at 10% 20%, rgba(20, 184, 166, 0.015) 0%, transparent 50%),
+    radial-gradient(circle at 90% 80%, rgba(249, 115, 22, 0.015) 0%, transparent 50%);
   pointer-events: none;
   z-index: 0;
 }
@@ -159,8 +165,8 @@ body.dark::before {
   width: 100%;
   height: 100%;
   background-image: 
-    radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 80% 50%, rgba(139, 92, 246, 0.06) 0%, transparent 50%);
+    radial-gradient(circle at 20% 50%, rgba(20, 184, 166, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 50%, rgba(249, 115, 22, 0.06) 0%, transparent 50%);
   pointer-events: none;
   z-index: 0;
 }
@@ -230,7 +236,7 @@ h1, h2, h3, h4, h5, h6 {
       
       /* Better focus indicators for touch */
       button:focus-visible, a:focus-visible, input:focus-visible {
-        outline: 2px solid #3b82f6;
+        outline: 2px solid #14B8A6;
         outline-offset: 2px;
       }
   
@@ -442,7 +448,7 @@ img, svg, video, canvas {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   
   /* Light Mode */
-  background: #6366F1;
+  background: #14B8A6;
   color: #FFFFFF;
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   
@@ -452,7 +458,7 @@ img, svg, video, canvas {
 }
 
 .btn-primary:hover {
-  background: #4F46E5;
+  background: #0D9488;
   transform: translateY(-1px);
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
@@ -469,13 +475,13 @@ img, svg, video, canvas {
 
 .dark .btn-primary {
   /* Dark Mode */
-  background: #818CF8;
+  background: #2DD4BF;
   color: #111827;
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
 }
 
 .dark .btn-primary:hover {
-  background: #6366F1;
+  background: #14B8A6;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
 }
 
@@ -491,7 +497,7 @@ img, svg, video, canvas {
   
   /* Light Mode */
   background: #FFFFFF;
-  color: #6366F1;
+  color: #14B8A6;
   border: 1px solid #E5E7EB;
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   
@@ -513,7 +519,7 @@ img, svg, video, canvas {
 .dark .btn-secondary {
   /* Dark Mode */
   background: #252837;
-  color: #818CF8;
+  color: #2DD4BF;
   border-color: #2D3040;
   box-shadow: none;
 }
@@ -948,7 +954,7 @@ img, svg, video, canvas {
 }
 
 .toggle-switch input:focus + .toggle-slider {
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.1);
 }
 
 /* Dark mode toggle */
@@ -1430,9 +1436,9 @@ img, svg, video, canvas {
 
 .input-field:focus {
   outline: none;
-  /* Dashboard Design System: Indigo Focus */
-  border-color: #6366F1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  /* Dashboard Design System: Teal Focus */
+  border-color: #14B8A6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.1);
 }
 
 .dark .input-field {
@@ -1451,8 +1457,8 @@ img, svg, video, canvas {
 }
 
 .dark .input-field:focus {
-  border-color: #818CF8;
-  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.1);
+  border-color: #2DD4BF;
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.1);
 }
 
 /* Textarea variant */
@@ -2128,13 +2134,13 @@ textarea.input-field {
 
 /* Focus Visible States */
 *:focus-visible {
-  outline: 3px solid #3DB88F;
+  outline: 3px solid #14B8A6;
   outline-offset: 2px;
   border-radius: 4px;
 }
 
 .dark *:focus-visible {
-  outline-color: #5CD4A5;
+  outline-color: #2DD4BF;
 }
 
 /* Skip to Content */
@@ -2604,7 +2610,7 @@ button:active, a:active {
 }
 
 .focus-ring:focus-visible {
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.1);
   transition: box-shadow 0.1s ease;
 }
 
@@ -2680,7 +2686,7 @@ button:active, a:active {
   height: 20px;
   width: 20px;
   border-radius: 50%;
-  background: #6366F1;
+  background: #14B8A6;
   cursor: pointer;
   border: 2px solid white;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
@@ -2688,7 +2694,7 @@ button:active, a:active {
 }
 
 .slider::-webkit-slider-thumb:hover {
-  background: #4F46E5;
+  background: #0D9488;
   transform: scale(1.1);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 }
@@ -2697,7 +2703,7 @@ button:active, a:active {
   height: 20px;
   width: 20px;
   border-radius: 50%;
-  background: #6366F1;
+  background: #14B8A6;
   cursor: pointer;
   border: 2px solid white;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
@@ -2705,7 +2711,7 @@ button:active, a:active {
 }
 
 .slider::-moz-range-thumb:hover {
-  background: #4F46E5;
+  background: #0D9488;
   transform: scale(1.1);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 }

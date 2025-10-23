@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useScaling } from '../contexts/ScalingContext';
 import BackButton from '../components/BackButton';
-import ThemeToggle from '../components/ThemeToggle';
 import ScalingSlider from '../components/ScalingSlider';
 import LoadingSpinner from '../components/LoadingSpinner';
 import AccountSwitcher from '../components/AccountSwitcher';
@@ -63,7 +62,7 @@ const Profile: React.FC = () => {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
       <div className="bg-white dark:bg-gray-800 shadow">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <BackButton />
@@ -71,13 +70,13 @@ const Profile: React.FC = () => {
                 User Profile
               </h1>
             </div>
-            <ThemeToggle />
+            {/* Theme toggle removed */}
           </div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Profile Card */}
           <div className="lg:col-span-2 space-y-6">
