@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../services/database';
 import { useNotifications } from '../../contexts/NotificationContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -24,6 +24,7 @@ const AdminPacketPage: React.FC = () => {
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [viewMode, setViewMode] = useState<'aggregated' | 'history'>('aggregated');
   const [stats, setStats] = useState({
     totalEntries: 0,
     firstPkr: 0,
@@ -134,6 +135,18 @@ const AdminPacketPage: React.FC = () => {
     const index = parseInt(userId.slice(-1), 16) % colors.length;
     return colors[index];
   };
+
+  // Group entries by number for aggregated view
+  const groupedEntries = useMemo(() => {
+    const groups = new Map<string, Entry[]>();
+    entries.forEach(entry => {
+      if (!groups.has(entry.number)) {
+        groups.set(entry.number, []);
+      }
+      groups.get(entry.number)!.push(entry);
+    });
+    return groups;
+  }, [entries]);
 
   if (loading) {
     return (
