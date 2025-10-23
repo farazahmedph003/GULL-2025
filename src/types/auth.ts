@@ -1,10 +1,12 @@
 export interface User {
   id: string;
-  email: string | null;
+  email: string | null; // deprecated in projectless custom auth
   displayName: string | null;
   isAnonymous: boolean;
   createdAt: string;
   lastLoginAt: string;
+  username?: string | null;
+  role?: 'user' | 'admin';
 }
 
 export interface AuthState {
@@ -14,13 +16,16 @@ export interface AuthState {
 }
 
 export interface SignUpCredentials {
+  fullName: string;
+  username: string;
   email: string;
   password: string;
-  displayName?: string;
+  confirmPassword: string;
 }
 
 export interface SignInCredentials {
-  email: string;
+  email?: string; // deprecated
+  username?: string;
   password: string;
 }
 

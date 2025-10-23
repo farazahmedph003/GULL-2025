@@ -83,35 +83,34 @@ export const useAdminData = () => {
           }
         }
         
-        // If current user doesn't have admin role but should be admin, try to update it
-        if (currentUser && currentUser.email && currentUserProfile && currentUserProfile.role !== 'admin') {
-          // Check if this is an admin email
-          const adminEmails = ['gmpfaraz@gmail.com']; // Add more admin emails as needed
-          if (adminEmails.includes(currentUser.email)) {
-            console.log('Updating user profile to admin role for:', currentUser.email);
-            try {
-              const { error: updateError } = await supabase
+        // If current user should be admin by email, ensure profile role reflects that
+        if (
+          currentUser && currentUser.email && currentUserProfile && currentUserProfile.role !== 'admin' &&
+          isAdminEmail(currentUser.email)
+        ) {
+          console.log('Updating user profile to admin role for:', currentUser.email);
+          try {
+            const { error: updateError } = await supabase
+              .from('profiles')
+              .update({ role: 'admin' })
+              .eq('user_id', currentUser.id);
+            
+            if (updateError) {
+              console.warn('Failed to update admin role:', updateError);
+            } else {
+              console.log('Admin role updated successfully');
+              // Update the local profile data to reflect the change
+              currentUserProfile.role = 'admin';
+              // Re-fetch profiles to ensure the change is reflected
+              const { data: updatedProfiles } = await supabase
                 .from('profiles')
-                .update({ role: 'admin' })
-                .eq('user_id', currentUser.id);
-              
-              if (updateError) {
-                console.warn('Failed to update admin role:', updateError);
-              } else {
-                console.log('Admin role updated successfully');
-                // Update the local profile data to reflect the change
-                currentUserProfile.role = 'admin';
-                // Re-fetch profiles to ensure the change is reflected
-                const { data: updatedProfiles } = await supabase
-                  .from('profiles')
-                  .select('user_id, email, display_name, role, balance, is_online, last_login_at, created_at, updated_at')
-                  .order('created_at', { ascending: false });
-                profiles = updatedProfiles;
-                currentUserProfile = profiles?.find((p: any) => p.user_id === currentUser?.id);
-              }
-            } catch (error) {
-              console.warn('Failed to update admin role:', error);
+                .select('user_id, email, display_name, role, balance, is_online, last_login_at, created_at, updated_at')
+                .order('created_at', { ascending: false });
+              profiles = updatedProfiles;
+              currentUserProfile = profiles?.find((p: any) => p.user_id === currentUser?.id);
             }
+          } catch (error) {
+            console.warn('Failed to update admin role:', error);
           }
         }
         
@@ -119,8 +118,7 @@ export const useAdminData = () => {
         console.log('🔍 Final admin role verification:', {
           currentUserEmail: currentUser?.email,
           currentUserProfile: currentUserProfile,
-          isAdminRole: currentUserProfile?.role === 'admin',
-          adminEmails: ['gmpfaraz@gmail.com']
+          isAdminRole: currentUserProfile?.role === 'admin'
         });
 
         // Fetch all projects to get counts per user

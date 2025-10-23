@@ -19,6 +19,9 @@ interface ProjectHeaderProps {
   tabs?: Tab[];
   activeTab?: string;
   onTabChange?: (tabId: string) => void;
+  // Controls
+  showBackButton?: boolean;
+  variant?: 'user' | 'admin';
 }
 
 const ProjectHeader: React.FC<ProjectHeaderProps> = ({
@@ -30,6 +33,8 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
   tabs = [],
   activeTab,
   onTabChange,
+  showBackButton = true,
+  variant = 'user',
 }) => {
   // Sidebar removed
   const navigate = useNavigate();
@@ -42,16 +47,18 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
             {/* Left: Menu Button and Project Info */}
             <div className="flex items-center space-x-3 sm:space-x-6">
               {/* Back Button */}
-              <button
-                onClick={() => navigate('/')}
-                className="p-2 sm:p-3 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 min-h-[48px] min-w-[48px] flex items-center justify-center"
-                title="Back to Projects"
-                aria-label="Back to Projects"
-              >
-                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
-              </button>
+              {showBackButton && (
+                <button
+                  onClick={() => navigate('/')}
+                  className="p-2 sm:p-3 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 min-h-[48px] min-w-[48px] flex items-center justify-center"
+                  title="Back"
+                  aria-label="Back"
+                >
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                  </svg>
+                </button>
+              )}
               
               {/* Sidebar button removed */}
               <div className={`${!showTabs ? 'border-l border-gray-600 pl-3 sm:pl-6' : ''} min-w-0 flex-1`}>
@@ -73,16 +80,16 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
                 <BalanceDisplay />
               </div>
 
-              {/* Top-up Request Button */}
-              {onRefresh && (
+              {/* Refresh/Top-up button hidden for user variant; allow for admin if needed */}
+              {variant === 'admin' && onRefresh && (
                 <button
                   onClick={onRefresh}
                   className="p-2 sm:p-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 min-h-[48px] min-w-[48px] flex items-center justify-center"
-                  title="Request Top-up"
-                  aria-label="Request Top-up"
+                  title="Refresh"
+                  aria-label="Refresh"
                 >
                   <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
                 </button>
               )}

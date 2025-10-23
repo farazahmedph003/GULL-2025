@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
 import ProjectHeader from '../components/ProjectHeader';
 import StandardEntry from '../components/StandardEntry';
 import IntelligentEntry from '../components/IntelligentEntry';
-import FilterTab from '../components/FilterTab';
 import EntryHistoryPanel from '../components/EntryHistoryPanel';
 import AggregatedNumbersPanel from '../components/AggregatedNumbersPanel';
 import EntryFormsBar from '../components/EntryFormsBar';
@@ -14,18 +12,16 @@ import { useUserBalance } from '../hooks/useUserBalance';
 import { useNotifications } from '../contexts/NotificationContext';
 // import { useAuth } from '../contexts/AuthContext';
 // import { isAdminEmail } from '../config/admin';
-import { db } from '../services/database';
 import { formatDate } from '../utils/helpers';
 import { playReloadSound, playUndoSound, playRedoSound } from '../utils/audioFeedback';
 import { exportToJSON, exportToCSV, importFromJSON, importFromCSV } from '../utils/importExport';
 import type { Project, EntryType } from '../types';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
+import { useSystemSettings } from '../hooks/useSystemSettings';
 
-type TabType = 'all' | 'open' | 'akra' | 'ring' | 'packet' | 'filter';
+type TabType = 'all' | 'open' | 'akra' | 'ring' | 'packet';
 
 const UserDashboard: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('all');
@@ -43,9 +39,10 @@ const UserDashboard: React.FC = () => {
     deleteTransaction,
     bulkDeleteTransactions,
     updateTransaction,
-  } = useTransactions(id || '');
+  } = useTransactions('user-scope');
   
   const { refresh: refreshBalance } = useUserBalance();
+  const { entriesEnabled } = useSystemSettings();
   
   // Comprehensive refresh function
   const refresh = () => {
@@ -65,8 +62,7 @@ const UserDashboard: React.FC = () => {
     canRedo,
     undo,
     redo,
-    addAction,
-  } = useHistory(id || '', {
+  } = useHistory('user-scope', {
     onRevert: async (action) => {
       // Undo the action
       if (action.type === 'add' && action.data?.transactionId) {
@@ -127,14 +123,8 @@ const UserDashboard: React.FC = () => {
 
   // const statistics = getStatistics();
 
-  // Filter tab entry type state and summaries
-  const [filterEntryType, setFilterEntryType] = useState<EntryType>('akra');
-  useEffect(() => {
-    if (project?.entryTypes?.length) {
-      setFilterEntryType((project.entryTypes[0] as EntryType) || 'open');
-    }
-  }, [project]);
-  const filterSummaries = React.useMemo(() => groupTransactionsByNumber(transactions, filterEntryType), [transactions, filterEntryType]);
+  // Filter tab entry type state removed; not used in this view
+  // Removed unused filter summaries to satisfy strict unused checks
 
   // Compute per-type stats for header boxes
   const computeTypeStats = (type: EntryType) => {
@@ -152,68 +142,13 @@ const UserDashboard: React.FC = () => {
     };
   };
 
-  const handleFilterSaveForType = async (entryType: EntryType, deductions: Array<{ number: string; firstAmount: number; secondAmount: number }>) => {
-    // Store current transactions count to find new ones after adding
-    const beforeCount = transactions.length;
-    const affectedNumbers: string[] = [];
-    const created: any[] = [];
+  // Removed unused handleFilterSaveForType to satisfy strict unused checks
 
-    for (const d of deductions) {
-      const tx = {
-        projectId: id || '',
-        number: d.number,
-        entryType,
-        first: d.firstAmount ? -d.firstAmount : 0,
-        second: d.secondAmount ? -d.secondAmount : 0,
-        notes: 'Filter deduction',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        isFilterDeduction: true,
-      } as any;
-      const ok = await addTransaction(tx);
-      if (!ok) throw new Error('Failed to save some deductions');
-      created.push(tx);
-      affectedNumbers.push(d.number);
-    }
-
-    // Refresh and capture IDs for history
-    await refresh();
-    setTimeout(() => {
-      const newTransactions = transactions.slice(beforeCount);
-      const filterTransactions = newTransactions.filter(t => t.entryType === entryType && t.isFilterDeduction && affectedNumbers.includes(t.number));
-      addAction('filter', `Applied filter deductions to ${deductions.length} number(s)`, affectedNumbers, {
-        transactions: created as any,
-        transactionIds: filterTransactions.map(t => t.id),
-      });
-    }, 50);
-  };
-
-  // Load project
+  // Projectless: set a virtual project for UI titles only
   useEffect(() => {
-    const loadProject = async () => {
-      if (!id) {
-        navigate('/');
-        return;
-      }
-
-      try {
-        const projectData = await db.getProject(id);
-        if (!projectData) {
-          navigate('/404');
-          return;
-        }
-
-        setProject(projectData);
-      } catch (error) {
-        console.error('Error loading project:', error);
-        navigate('/404');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadProject();
-  }, [id, navigate]);
+    setProject({ id: 'virtual', name: 'User Dashboard', date: new Date().toISOString(), entryTypes: ['open','akra','ring','packet'], createdAt: '', updatedAt: '' });
+    setLoading(false);
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -267,7 +202,7 @@ const UserDashboard: React.FC = () => {
 
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !id) return;
+    if (!file) return;
 
     try {
       if (file.name.endsWith('.json')) {
@@ -276,13 +211,13 @@ const UserDashboard: React.FC = () => {
         for (const transaction of data.transactions) {
           await addTransaction({
             ...transaction,
-            projectId: id,
+            projectId: 'user-scope',
           });
         }
         await showSuccess('Import Successful', `Imported ${data.transactions.length} transactions from JSON`);
         refresh();
       } else if (file.name.endsWith('.csv')) {
-        const importedTransactions = await importFromCSV(file, id);
+        const importedTransactions = await importFromCSV(file, 'user-scope');
         // Import all transactions
         for (const transaction of importedTransactions) {
           await addTransaction(transaction);
@@ -309,13 +244,7 @@ const UserDashboard: React.FC = () => {
     { id: 'akra' as TabType, label: 'AKRA', description: '2-digit entries' },
     { id: 'ring' as TabType, label: 'RING', description: '3-digit entries' },
     { id: 'packet' as TabType, label: 'PACKET', description: 'Packet entries' },
-    { id: 'filter' as TabType, label: '🔍 FILTER', description: 'Advanced Filter' },
-    { id: 'advanced' as TabType, label: 'ADVANCED', description: 'Advanced Filter & Calculate' },
-  ].filter(tab => {
-    // Only show tabs for entry types that exist in the project
-    if (tab.id === 'all' || tab.id === 'open' || (tab.id as any) === 'filter' || (tab.id as any) === 'advanced') return true;
-    return (project?.entryTypes as EntryType[] | undefined)?.includes(tab.id as EntryType);
-  });
+  ];
 
   if (loading) {
     return (
@@ -342,14 +271,12 @@ const UserDashboard: React.FC = () => {
       <ProjectHeader
         projectName={project.name}
         projectDate={formatDate(project.date)}
-        onRefresh={refresh}
-        projectId={id}
         showTabs={true}
         tabs={tabs}
         activeTab={activeTab}
-        onTabChange={(tabId) => {
-          setActiveTab(tabId as TabType);
-        }}
+        onTabChange={(tabId) => setActiveTab(tabId as TabType)}
+        showBackButton={false}
+        variant="user"
       />
 
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 pb-20 sm:pb-0">
@@ -360,9 +287,7 @@ const UserDashboard: React.FC = () => {
             <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white mb-2">
               📊 {project.name}
             </h1>
-            <p className="text-sm sm:text-base text-gray-400">
-              Track your {project.entryTypes.join(' and ')} entries with real-time calculations
-            </p>
+            <p className="text-sm sm:text-base text-gray-400">Track your entries with real-time calculations</p>
           </div>
 
           {/* Statistics Summary - only for entry-specific tabs (open/akra/ring/packet). None on ALL or FILTER */}
@@ -393,28 +318,7 @@ const UserDashboard: React.FC = () => {
           )}
 
           {/* Content Panels */}
-          {activeTab === ('filter' as TabType) ? (
-            <div className="mb-6 sm:mb-8">
-              <FilterTab
-                summaries={filterSummaries}
-                entryType={filterEntryType}
-                projectId={id || ''}
-                onSaveResults={async () => {}}
-                availableEntryTypes={[...(new Set<EntryType>(['open' as EntryType, ...(project.entryTypes as EntryType[])]))]}
-                onEntryTypeChange={(t) => setFilterEntryType(t)}
-                onSaveResultsForType={handleFilterSaveForType}
-              />
-            </div>
-          ) : activeTab === ('advanced' as TabType) ? (
-            <div className="mb-6 sm:mb-8">
-              {/* Inline AdvancedFilter: two panels side-by-side via existing component */}
-              {/* Prefer navigation-like behavior through tabs; using component keeps layout consistent */}
-              {/* We render the separate AdvancedFilter page content is heavy; for now, just link */}
-              <div className="text-gray-300">
-                Use the dedicated Advanced Filter page from the sidebar previously; now open via this tab.
-              </div>
-            </div>
-          ) : (
+          {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
               {/* Left Panel - Entry History */}
               <EntryHistoryPanel
@@ -446,10 +350,10 @@ const UserDashboard: React.FC = () => {
                 onExportCSV={handleExportCSV}
               />
             </div>
-          )}
+          }
 
           {/* Entry Panel - hidden on Filter tab */}
-          {activeTab !== ('filter' as TabType) && (
+          {
             <div className="w-full px-0 sm:px-4 py-4 sm:py-6">
               <div className="bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
                 <div className="p-4 sm:p-6">
@@ -467,16 +371,20 @@ const UserDashboard: React.FC = () => {
                     className="hidden"
                   />
                   <div>
-                    {entryTab === 'standard' ? (
+                    {!entriesEnabled ? (
+                      <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg text-yellow-800 dark:text-yellow-200">
+                        Entries are temporarily disabled by admin.
+                      </div>
+                    ) : entryTab === 'standard' ? (
                       <StandardEntry
-                        projectId={id || ''}
+                        projectId={'user-scope'}
                         onSuccess={() => {
                           silentRefresh();
                         }}
                       />
                     ) : (
                       <IntelligentEntry
-                        projectId={id || ''}
+                        projectId={'user-scope'}
                         entryType={project.entryTypes[0] || 'akra'}
                         onSuccess={() => {
                           silentRefresh();
@@ -487,14 +395,14 @@ const UserDashboard: React.FC = () => {
                 </div>
               </div>
             </div>
-          )}
+          }
         </div>
       </div>
 
       {/* Entry Forms Bar - Mobile Only */}
       <div className="sm:hidden">
         <EntryFormsBar
-          projectId={id || ''}
+          projectId={'user-scope'}
           entryType={project?.entryTypes?.[0] || 'akra'}
           onEntryAdded={handleEntryAdded}
         />

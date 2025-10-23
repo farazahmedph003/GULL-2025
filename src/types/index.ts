@@ -20,7 +20,7 @@ export interface Project {
 // Transaction entry
 export interface Transaction {
   id: string;
-  projectId: string;
+  projectId?: string; // deprecated in projectless mode
   number: string; // '0'-'9' for Open, '00'-'99' for Akra, '000'-'999' for Ring, '0000'-'9999' for Packet
   entryType: EntryType;
   first: number;

@@ -7,21 +7,20 @@ import { isOfflineMode } from '../lib/supabase';
 
 const Welcome: React.FC = () => {
   const location = useLocation();
-  const [mode, setMode] = useState<'welcome' | 'signin' | 'signup'>('welcome');
-  const [email, setEmail] = useState('');
+  const [mode, setMode] = useState<'welcome' | 'signin'>('signin');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
   const [formError, setFormError] = useState('');
   const navigate = useNavigate();
   
-  const { signIn, signUp, loading, error, clearError } = useAuth();
+  const { signIn, loading, error, clearError } = useAuth();
 
   // Check if switching to another account
   useEffect(() => {
     const state = location.state as { switchTo?: string } | null;
     if (state?.switchTo) {
       setMode('signin');
-      setEmail(state.switchTo);
+      setUsername(state.switchTo);
       // Clear the state
       navigate('/welcome', { replace: true, state: {} });
     }
@@ -32,43 +31,20 @@ const Welcome: React.FC = () => {
     setFormError('');
     clearError();
 
-    if (!email || !password) {
+    if (!username || !password) {
       setFormError('Please fill in all fields');
       return;
     }
 
     try {
-      await signIn({ email, password });
+      await signIn({ username, password });
       navigate('/');
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Sign in failed');
     }
   };
 
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError('');
-    clearError();
-
-    if (!email || !password) {
-      setFormError('Please fill in all fields');
-      return;
-    }
-
-    if (password.length < 6) {
-      setFormError('Password must be at least 6 characters');
-      return;
-    }
-
-    try {
-      await signUp({ email, password, displayName: displayName || undefined });
-      navigate('/');
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Sign up failed');
-    }
-  };
-
-  if (loading && mode === 'welcome') {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
         <LoadingSpinner size="lg" />
@@ -97,69 +73,24 @@ const Welcome: React.FC = () => {
           {/* Gradient overlay */}
           <div className="absolute inset-0 bg-gradient-to-br from-purple-50/20 via-blue-50/10 to-indigo-50/20 dark:from-purple-900/10 dark:via-blue-900/5 dark:to-indigo-900/10"></div>
           
-          {mode === 'welcome' && (
-            <div className="relative z-10 p-6 sm:p-8 space-y-4 sm:space-y-6">
-              <div className="text-center">
-                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-2 sm:mb-3">
-                  Welcome to GULL
-                </h2>
-                <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">
-                  Professional accounting management for Akra and Ring entries
-                </p>
-              </div>
-
-              <div className="space-y-3 sm:space-y-4">
-                <button
-                  onClick={() => setMode('signin')}
-                  className="w-full group relative px-6 py-4 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 active:scale-[0.98] transition-all duration-300 text-base sm:text-lg overflow-hidden min-h-[56px]"
-                >
-                  {/* Gradient overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-purple-600/20 to-purple-700/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  
-                  <div className="relative z-10 flex items-center justify-center space-x-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-                    </svg>
-                    <span>Sign In</span>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => setMode('signup')}
-                  className="w-full group relative px-6 py-4 bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 active:scale-[0.98] transition-all duration-300 text-base sm:text-lg overflow-hidden min-h-[56px]"
-                >
-                  {/* Gradient overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-teal-600/20 to-cyan-700/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  
-                  <div className="relative z-10 flex items-center justify-center space-x-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                    </svg>
-                    <span>Create Account</span>
-                  </div>
-                </button>
-              </div>
-
-              {/* Recent Logins Section */}
-              <AccountSwitcher />
-            </div>
-          )}
-
+          {/* Sign In Form */}
           {mode === 'signin' && (
             <div className="relative z-10 p-6 sm:p-8">
-              <button
-                onClick={() => {
-                  setMode('welcome');
-                  setFormError('');
-                  clearError();
-                }}
-                className="mb-4 sm:mb-6 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 flex items-center text-sm sm:text-base"
-              >
-                <svg className="w-4 h-4 sm:w-5 sm:h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-                Back
-              </button>
+              <div className="mb-4 sm:mb-6">
+                <button
+                  onClick={() => {
+                    setMode('welcome');
+                    setFormError('');
+                    clearError();
+                  }}
+                  className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 flex items-center text-sm sm:text-base"
+                >
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  Back
+                </button>
+              </div>
 
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4 sm:mb-6">
                 Sign In
@@ -168,16 +99,16 @@ const Welcome: React.FC = () => {
               <form onSubmit={handleSignIn} className="space-y-4 sm:space-y-5">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Email
+                    Username or Email
                   </label>
                   <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
                     className="w-full px-4 py-3 text-base border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                    placeholder="you@example.com"
+                    placeholder="your_username or your@email.com"
                     disabled={loading}
-                    autoComplete="email"
+                    autoComplete="username"
                     autoCapitalize="none"
                     autoCorrect="off"
                     spellCheck="false"
@@ -218,136 +149,11 @@ const Welcome: React.FC = () => {
                 </button>
               </form>
 
-              <p className="mt-4 sm:mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
-                Don't have an account?{' '}
-                <button
-                  onClick={() => {
-                    setMode('signup');
-                    setFormError('');
-                    clearError();
-                  }}
-                  className="text-secondary hover:underline font-medium"
-                >
-                  Sign up
-                </button>
-              </p>
-
               {/* Show recent accounts */}
               <AccountSwitcher />
             </div>
           )}
 
-          {mode === 'signup' && (
-            <div className="relative z-10 p-6 sm:p-8">
-              <button
-                onClick={() => {
-                  setMode('welcome');
-                  setFormError('');
-                  clearError();
-                }}
-                className="mb-4 sm:mb-6 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 flex items-center text-sm sm:text-base"
-              >
-                <svg className="w-4 h-4 sm:w-5 sm:h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-                Back
-              </button>
-
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4 sm:mb-6">
-                Create Account
-              </h2>
-
-              <form onSubmit={handleSignUp} className="space-y-4 sm:space-y-5">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Display Name (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    className="w-full px-4 py-3 text-base border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                    placeholder="Your name"
-                    disabled={loading}
-                    autoComplete="name"
-                    autoCapitalize="words"
-                    autoCorrect="on"
-                    spellCheck="true"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-4 py-3 text-base border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                    placeholder="you@example.com"
-                    disabled={loading}
-                    autoComplete="email"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck="false"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Password
-                  </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-4 py-3 text-base border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                    placeholder="••••••••"
-                    disabled={loading}
-                    autoComplete="new-password"
-                    required
-                    minLength={6}
-                  />
-                  <p className="mt-1 text-xs text-gray-500">Minimum 6 characters</p>
-                </div>
-
-                {(formError || error) && (
-                  <div className="p-3 sm:p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
-                    <p className="text-sm text-red-600 dark:text-red-400">
-                      {formError || error}
-                    </p>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  className="w-full px-6 py-4 bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none min-h-[56px]"
-                  disabled={loading}
-                >
-                  {loading ? <LoadingSpinner size="sm" /> : 'Create Account'}
-                </button>
-              </form>
-
-              <p className="mt-4 sm:mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
-                Already have an account?{' '}
-                <button
-                  onClick={() => {
-                    setMode('signin');
-                    setFormError('');
-                    clearError();
-                  }}
-                  className="text-secondary hover:underline font-medium"
-                >
-                  Sign in
-                </button>
-              </p>
-
-              {/* Show recent accounts */}
-              <AccountSwitcher />
-            </div>
-          )}
         </div>
 
         {/* Footer */}

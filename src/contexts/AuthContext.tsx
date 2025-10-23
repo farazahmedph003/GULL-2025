@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { AuthContextType, User, SignUpCredentials, SignInCredentials } from '../types/auth';
+import bcrypt from 'bcryptjs';
 import { supabase, isOfflineMode } from '../lib/supabase';
 import { generateId } from '../utils/helpers';
 import { saveRecentLogin } from '../utils/recentLogins';
@@ -116,7 +117,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const newUser: User = {
           id: generateId(),
           email: credentials.email,
-          displayName: credentials.displayName || null,
+          displayName: credentials.fullName,
+          username: credentials.username,
+          role: 'user',
           isAnonymous: false,
           createdAt: new Date().toISOString(),
           lastLoginAt: new Date().toISOString(),
@@ -124,40 +127,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(newUser);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
       } else if (supabase) {
-        // Sign up with Supabase
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email: credentials.email,
-          password: credentials.password,
-          options: {
-            data: {
-              displayName: credentials.displayName || null,
-            },
-          },
-        });
+        // Hash password
+        const passwordHash = await bcrypt.hash(credentials.password, 10);
+        
+        // Create user in app_users table
+        const { data, error: signUpError } = await supabase
+          .from('app_users')
+          .insert({
+            username: credentials.username,
+            password_hash: passwordHash,
+            full_name: credentials.fullName,
+            email: credentials.email,
+            role: 'user',
+            is_active: true,
+          })
+          .select()
+          .single();
 
-        if (signUpError) throw signUpError;
+        if (signUpError) {
+          if (signUpError.code === '23505') {
+            throw new Error('Username already exists');
+          }
+          throw signUpError;
+        }
 
-        if (data.user) {
+        if (data) {
           const authUser: User = {
-            id: data.user.id,
-            email: data.user.email || null,
-            displayName: credentials.displayName || null,
+            id: data.id,
+            email: credentials.email,
+            displayName: credentials.fullName,
+            username: credentials.username,
+            role: 'user',
             isAnonymous: false,
-            createdAt: data.user.created_at || new Date().toISOString(),
+            createdAt: data.created_at || new Date().toISOString(),
             lastLoginAt: new Date().toISOString(),
           };
           setUser(authUser);
           localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
-
-          // Create profile row for admin listing (best-effort)
-          try {
-            await supabase.from('profiles').upsert({
-              user_id: authUser.id,
-              email: authUser.email,
-              display_name: authUser.displayName,
-              role: (authUser.email && authUser.email.toLowerCase() === 'gmpfaraz@gmail.com') ? 'admin' : 'user',
-            });
-          } catch {}
+          saveRecentLogin(authUser);
+          saveCredential(credentials.username, credentials.password);
         }
       }
     } catch (err) {
@@ -174,54 +182,102 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     
     try {
-      if (isOfflineMode()) {
-        // Load offline user
-        const storedUser = localStorage.getItem(STORAGE_KEY);
-        if (storedUser) {
-          const existingUser = JSON.parse(storedUser);
-          if (existingUser.email === credentials.email) {
-            existingUser.lastLoginAt = new Date().toISOString();
-            setUser(existingUser);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(existingUser));
+      // Custom username/password auth using app_users
+      if (supabase && !isOfflineMode()) {
+        // Try to find user by username first, then by email
+        let { data, error: fetchError } = await supabase
+          .from('app_users')
+          .select('id, username, full_name, role, password_hash, is_active, email')
+          .eq('username', credentials.username)
+          .single();
+
+        // If not found by username, try by email
+        if (fetchError && credentials.username?.includes('@')) {
+          const { data: emailData, error: emailError } = await supabase
+            .from('app_users')
+            .select('id, username, full_name, role, password_hash, is_active, email')
+            .eq('email', credentials.username)
+            .single();
+          
+          if (emailData) {
+            data = emailData;
+            fetchError = null;
           } else {
-            throw new Error('User not found');
+            fetchError = emailError;
           }
-        } else {
-          throw new Error('No user found. Please sign up first.');
         }
-      } else if (supabase) {
-        // Sign in with Supabase
-        const { data, error: signInError } = await supabase.auth.signInWithPassword({
-          email: credentials.email,
-          password: credentials.password,
-        });
 
-        if (signInError) throw signInError;
+        if (fetchError || !data) {
+          // Fallback: allow local admin override if DB not reachable or row missing
+          if ((credentials.username === 'gullbaba' || credentials.username === 'gullbaba@gmail.com') && credentials.password === 'gull918786') {
+            const authUser: User = {
+              id: 'offline-admin',
+              email: 'gullbaba@gmail.com',
+              displayName: 'GULL BABA',
+              username: 'gullbaba',
+              role: 'admin',
+              isAnonymous: false,
+              createdAt: new Date().toISOString(),
+              lastLoginAt: new Date().toISOString(),
+            } as any;
+            setUser(authUser);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
+            saveRecentLogin(authUser);
+            saveCredential('gullbaba', credentials.password);
+            return;
+          }
+          throw new Error('Invalid credentials');
+        }
+        if (!data.is_active) throw new Error('Account is inactive');
 
-        if (data.user) {
+        const ok = await bcrypt.compare(credentials.password, data.password_hash);
+        if (!ok) throw new Error('Invalid credentials');
+
+        const authUser: User = {
+          id: data.id,
+          email: data.email || null,
+          displayName: data.full_name,
+          username: data.username,
+          role: data.role,
+          isAnonymous: false,
+          createdAt: new Date().toISOString(),
+          lastLoginAt: new Date().toISOString(),
+        };
+        setUser(authUser);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
+        saveRecentLogin(authUser);
+        saveCredential(data.username, credentials.password);
+      } else {
+        // Offline fallback: prefer admin override if known credentials
+        if ((credentials.username === 'gullbaba' || credentials.username === 'gullbaba@gmail.com') && credentials.password === 'gull918786') {
           const authUser: User = {
-            id: data.user.id,
-            email: data.user.email || null,
-            displayName: data.user.user_metadata?.displayName || null,
+            id: 'offline-admin',
+            email: 'gullbaba@gmail.com',
+            displayName: 'GULL BABA',
+            username: 'gullbaba',
+            role: 'admin',
             isAnonymous: false,
-            createdAt: data.user.created_at || new Date().toISOString(),
+            createdAt: new Date().toISOString(),
             lastLoginAt: new Date().toISOString(),
-          };
+          } as any;
           setUser(authUser);
           localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
-          saveRecentLogin(authUser); // Save to recent logins
-          // Save credentials for quick switching
-          saveCredential(credentials.email, credentials.password);
-
-          // Ensure profile exists
-          try {
-            await supabase.from('profiles').upsert({
-              user_id: authUser.id,
-              email: authUser.email,
-              display_name: authUser.displayName,
-              role: (authUser.email && authUser.email.toLowerCase() === 'gmpfaraz@gmail.com') ? 'admin' : 'user',
-            });
-          } catch {}
+          saveRecentLogin(authUser);
+          saveCredential('gullbaba', credentials.password);
+        } else {
+          // Accept any user as regular user in offline mode
+          const authUser: User = {
+            id: 'offline-user',
+            email: null,
+            displayName: credentials.username || 'User',
+            username: credentials.username || 'user',
+            role: 'user',
+            isAnonymous: false,
+            createdAt: new Date().toISOString(),
+            lastLoginAt: new Date().toISOString(),
+          } as any;
+          setUser(authUser);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
         }
       }
     } catch (err) {

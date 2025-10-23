@@ -16,15 +16,9 @@ import { initializeCustomPopups } from './utils/customPopups';
 import Welcome from './pages/Welcome';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
-import ProjectSelection from './pages/ProjectSelection';
+// import ProjectSelection from './pages/ProjectSelection';
 // import Dashboard from './pages/Dashboard';
-import AkraPage from './pages/AkraPage';
-import RingPage from './pages/RingPage';
-import OpenPage from './pages/OpenPage';
-import PacketPage from './pages/PacketPage';
-import AdvancedFilter from './pages/AdvancedFilter';
-import FilterCalculate from './pages/FilterCalculate';
-import HistoryPage from './pages/HistoryPage';
+// Projectless: pages removed from routing
 import UserDashboard from './pages/UserDashboard';
 import AdminRoute from './components/AdminRoute';
 import AdminPanel from './pages/AdminPanel';
@@ -72,7 +66,7 @@ const AppWithNotifications: React.FC = () => {
                 path="/"
                 element={
                   <ProtectedRoute>
-                    <ProjectSelection />
+                    <UserDashboard />
                   </ProtectedRoute>
                 }
               />
@@ -99,7 +93,7 @@ const AppWithNotifications: React.FC = () => {
             }
           />
 
-          {/* Admin Panel route */}
+          {/* Admin Panel route (temporary) */}
           <Route
             path="/admin"
             element={
@@ -119,85 +113,7 @@ const AppWithNotifications: React.FC = () => {
             }
           />
               
-              {/* Project routes */}
-              <Route
-                path="/project/:id"
-                element={
-                  <ProtectedRoute>
-                    <UserDashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/project/:id/akra"
-                element={
-                  <ProtectedRoute>
-                    <AdminRoute>
-                      <AkraPage />
-                    </AdminRoute>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/project/:id/ring"
-                element={
-                  <ProtectedRoute>
-                    <AdminRoute>
-                      <RingPage />
-                    </AdminRoute>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/project/:id/open"
-                element={
-                  <ProtectedRoute>
-                    <AdminRoute>
-                      <OpenPage />
-                    </AdminRoute>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/project/:id/packet"
-                element={
-                  <ProtectedRoute>
-                    <AdminRoute>
-                      <PacketPage />
-                    </AdminRoute>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/project/:id/advanced-filter"
-                element={
-                  <ProtectedRoute>
-                    <AdminRoute>
-                      <AdvancedFilter />
-                    </AdminRoute>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/project/:id/filter-calculate"
-                element={
-                  <ProtectedRoute>
-                    <AdminRoute>
-                      <FilterCalculate />
-                    </AdminRoute>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/project/:id/history"
-                element={
-                  <ProtectedRoute>
-                    <AdminRoute>
-                      <HistoryPage />
-                    </AdminRoute>
-                  </ProtectedRoute>
-                }
-              />
+              {/* Project routes removed in projectless mode */}
               
               {/* 404 route */}
               <Route path="/404" element={<NotFound />} />

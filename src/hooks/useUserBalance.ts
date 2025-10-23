@@ -61,9 +61,9 @@ export const useUserBalance = () => {
     } else {
       try {
         const { data, error: fetchError } = await supabase
-          .from('profiles')
+          .from('app_users')
           .select('balance')
-          .eq('user_id', user.id)
+          .eq('id', user.id)
           .single();
 
         if (fetchError) throw fetchError;
@@ -141,9 +141,9 @@ export const useUserBalance = () => {
         try {
           const newBalance = balance - amount;
           const { error: updateError } = await supabase
-            .from('profiles')
+            .from('app_users')
             .update({ balance: newBalance })
-            .eq('user_id', user.id);
+            .eq('id', user.id);
 
           if (updateError) throw updateError;
 
@@ -189,9 +189,9 @@ export const useUserBalance = () => {
         try {
           const newBalance = balance + amount;
           const { error: updateError } = await supabase
-            .from('profiles')
+            .from('app_users')
             .update({ balance: newBalance })
-            .eq('user_id', user.id);
+            .eq('id', user.id);
 
           if (updateError) throw updateError;
 

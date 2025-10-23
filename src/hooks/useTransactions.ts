@@ -5,12 +5,15 @@ import { useAuth } from '../contexts/AuthContext';
 import { db } from '../services/database';
 import { isSupabaseConfigured, isOfflineMode } from '../lib/supabase';
 
+// In projectless mode, pass 'user-scope' for current user
 export const useTransactions = (projectId: string) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user, isImpersonating, originalAdminUser } = useAuth();
   const { deductBalance, addBalance } = useUserBalance();
+  const isUserScope = projectId === 'user-scope';
+  const storageKey = isUserScope ? 'gull-transactions-user' : `gull-transactions-${projectId}`;
 
   // Load transactions from database or localStorage as fallback
   const loadTransactions = useCallback(async () => {
@@ -18,13 +21,16 @@ export const useTransactions = (projectId: string) => {
     setError(null);
     
     try {
-      if (isSupabaseConfigured() && projectId) {
+      if (isSupabaseConfigured() && !isUserScope) {
         // Try to load from database first
-        const dbTransactions = await db.getTransactions(projectId);
+        // For projectless mode, database service still requires projectId; fallback to local cache keyed by user
+        let dbTransactions: Transaction[] = [] as any;
+        try {
+          dbTransactions = await db.getTransactions(projectId);
+        } catch {}
         console.log('Transactions loaded from database:', dbTransactions.length);
 
         // Read any cached/local transactions and merge to avoid losing offline-added entries
-        const storageKey = `gull-transactions-${projectId}`;
         const cachedData = localStorage.getItem(storageKey);
         const cached: Transaction[] = cachedData ? JSON.parse(cachedData) : [];
 
@@ -49,7 +55,6 @@ export const useTransactions = (projectId: string) => {
         }
       } else {
         // Fallback to localStorage
-        const storageKey = `gull-transactions-${projectId}`;
         const data = localStorage.getItem(storageKey);
         const parsed = data ? JSON.parse(data) : [];
         setTransactions(parsed);
@@ -59,7 +64,6 @@ export const useTransactions = (projectId: string) => {
       console.error('Error loading transactions:', error);
       // Fallback to localStorage on database error
       try {
-        const storageKey = `gull-transactions-${projectId}`;
         const data = localStorage.getItem(storageKey);
         const parsed = data ? JSON.parse(data) : [];
         setTransactions(parsed);
@@ -178,7 +182,7 @@ export const useTransactions = (projectId: string) => {
       }
 
       // Try to delete from Supabase first
-      if (isSupabaseConfigured() && !isOfflineMode()) {
+      if (isSupabaseConfigured() && !isOfflineMode() && !isUserScope) {
         try {
           await db.deleteTransaction(transactionId, isImpersonating ? originalAdminUser?.id : undefined);
           console.log('Transaction deleted from Supabase:', transactionId);
@@ -188,7 +192,6 @@ export const useTransactions = (projectId: string) => {
       }
 
       // Always update localStorage
-      const storageKey = `gull-transactions-${projectId}`;
       localStorage.setItem(storageKey, JSON.stringify(transactions.filter(t => t.id !== transactionId)));
       
       // Update state using functional update
@@ -227,7 +230,7 @@ export const useTransactions = (projectId: string) => {
       }
 
       // Try to delete from Supabase first
-      if (isSupabaseConfigured() && !isOfflineMode()) {
+      if (isSupabaseConfigured() && !isOfflineMode() && !isUserScope) {
         try {
           // Delete each transaction from Supabase
           for (const transactionId of transactionIds) {
@@ -240,7 +243,6 @@ export const useTransactions = (projectId: string) => {
       }
 
       // Always update localStorage
-      const storageKey = `gull-transactions-${projectId}`;
       localStorage.setItem(storageKey, JSON.stringify(transactions.filter(t => !transactionIds.includes(t.id))));
       
       // Update state using functional update
@@ -281,7 +283,7 @@ export const useTransactions = (projectId: string) => {
       let newTransaction: Transaction;
 
       // Try to save to Supabase first (only if user is authenticated)
-      if (isSupabaseConfigured() && !isOfflineMode() && user?.id) {
+      if (isSupabaseConfigured() && !isOfflineMode() && user?.id && !isUserScope) {
         try {
           newTransaction = await db.createTransaction(user.id, transaction, isImpersonating ? originalAdminUser?.id : undefined);
           console.log('Transaction saved to Supabase:', newTransaction.id);
@@ -309,7 +311,6 @@ export const useTransactions = (projectId: string) => {
       setTransactions(prevTransactions => {
         const updatedTransactions = [...prevTransactions, newTransaction];
         // Always save to localStorage as backup/cache
-        const storageKey = `gull-transactions-${projectId}`;
         localStorage.setItem(storageKey, JSON.stringify(updatedTransactions));
         return updatedTransactions;
       });
@@ -355,7 +356,7 @@ export const useTransactions = (projectId: string) => {
       }
 
       // Try to update in Supabase first
-      if (isSupabaseConfigured() && !isOfflineMode()) {
+      if (isSupabaseConfigured() && !isOfflineMode() && !isUserScope) {
         try {
           // Prepare updates for Supabase (exclude id, projectId, createdAt, updatedAt)
           const { id, projectId: _, createdAt, updatedAt, ...supabaseUpdates } = updates;
@@ -367,7 +368,6 @@ export const useTransactions = (projectId: string) => {
       }
 
       // Update the transaction in local state
-      const storageKey = `gull-transactions-${projectId}`;
       const updated = transactions.map(t =>
         t.id === transactionId
           ? { ...t, ...updates, updatedAt: new Date().toISOString() }
