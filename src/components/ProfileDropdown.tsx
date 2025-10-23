@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
 import { getRecentLogins, removeRecentLogin, type RecentLogin } from '../utils/recentLogins';
 import { getCredential } from '../utils/savedCredentials';
 
@@ -10,7 +9,6 @@ const ProfileDropdown: React.FC = () => {
   const [recentLogins, setRecentLogins] = useState<RecentLogin[]>(getRecentLogins());
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { user, signOut, signIn } = useAuth();
-  const { theme } = useTheme();
   const navigate = useNavigate();
 
   // Close dropdown when clicking outside
