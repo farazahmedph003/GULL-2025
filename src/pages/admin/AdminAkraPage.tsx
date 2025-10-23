@@ -135,8 +135,8 @@ const AdminAkraPage: React.FC = () => {
 
       // Update transaction
       await db.updateTransaction(editingEntry.id, {
-        number: updatedTransaction.number,
-        entryType: updatedTransaction.entryType,
+        number: updatedTransaction.number || editingEntry.number,
+        entryType: updatedTransaction.entryType || 'akra',
         first: updatedTransaction.first,
         second: updatedTransaction.second,
         notes: updatedTransaction.notes,

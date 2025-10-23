@@ -115,8 +115,8 @@ const AdminOpenPage: React.FC = () => {
 
       // Update transaction
       await db.updateTransaction(editingEntry.id, {
-        number: updatedTransaction.number,
-        entryType: updatedTransaction.entryType,
+        number: updatedTransaction.number || editingEntry.number,
+        entryType: updatedTransaction.entryType || 'open',
         first: updatedTransaction.first,
         second: updatedTransaction.second,
         notes: updatedTransaction.notes,
