@@ -1208,7 +1208,7 @@ export class DatabaseService {
 
     // Check if auth user already exists
     const { data: existingAuthUser } = await supabaseAdmin.auth.admin.listUsers();
-    const authUserExists = existingAuthUser?.users?.some((u: any) => u.email === email);
+    const authUserExists = existingAuthUser?.users?.some((u: { email: string }) => u.email === email);
 
     if (authUserExists) {
       throw new Error('Auth user already exists for this email');

@@ -32,7 +32,6 @@ const AdminFilterPage: React.FC = () => {
   
   // Results
   const [calculatedResults, setCalculatedResults] = useState<CalculationResult[]>([]);
-  const [showSaveButton, setShowSaveButton] = useState(false);
   const [viewMode, setViewMode] = useState<'combined' | 'per-user'>('combined');
 
   const { showSuccess, showError } = useNotifications();
@@ -115,7 +114,6 @@ const AdminFilterPage: React.FC = () => {
 
     results.sort((a, b) => a.number.localeCompare(b.number));
     setCalculatedResults(results);
-    setShowSaveButton(results.length > 0);
   };
 
   const handleReset = () => {
@@ -124,7 +122,6 @@ const AdminFilterPage: React.FC = () => {
     setFirstLimit('');
     setSecondLimit('');
     setCalculatedResults([]);
-    setShowSaveButton(false);
   };
 
   const copyFirstResults = () => {

@@ -10,7 +10,7 @@ const ProfileDropdown: React.FC = () => {
   const [recentLogins, setRecentLogins] = useState<RecentLogin[]>(getRecentLogins());
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { user, signOut, signIn } = useAuth();
-  const { } = useTheme();
+  const { theme } = useTheme();
   const navigate = useNavigate();
 
   // Close dropdown when clicking outside
