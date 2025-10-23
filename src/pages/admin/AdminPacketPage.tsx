@@ -74,6 +74,9 @@ const AdminPacketPage: React.FC = () => {
       // Refund the balance to the user
       const refundAmount = deletingEntry.first_amount + deletingEntry.second_amount;
       const { data: userData } = await db.getUserBalance(deletingEntry.user_id);
+      if (!userData) {
+        throw new Error('User data not found');
+      }
       const newBalance = userData.balance + refundAmount;
       await db.updateUserBalance(deletingEntry.user_id, newBalance);
 
@@ -102,6 +105,9 @@ const AdminPacketPage: React.FC = () => {
 
       // Get current user balance
       const { data: userData } = await db.getUserBalance(editingEntry.user_id);
+      if (!userData) {
+        throw new Error('User data not found');
+      }
       const newBalance = userData.balance - difference;
 
       // Update user balance

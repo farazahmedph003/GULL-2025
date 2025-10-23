@@ -435,7 +435,7 @@ const AdminRingPage: React.FC = () => {
             createdAt: editingEntry.created_at,
             updatedAt: editingEntry.created_at,
           }}
-          onSave={handleEdit}
+          onSave={_handleEdit}
         />
       )}
 
