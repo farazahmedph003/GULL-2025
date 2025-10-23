@@ -140,12 +140,23 @@ export const useUserBalance = () => {
       } else {
         try {
           const newBalance = balance - amount;
-          const { error: updateError } = await supabase
-            .from('app_users')
-            .update({ balance: newBalance })
-            .eq('id', user.id);
+          
+          console.log('💰 Deducting balance:', {
+            userId: user.id,
+            currentBalance: balance,
+            amount,
+            newBalance
+          });
 
-          if (updateError) throw updateError;
+          // Use service role client to bypass RLS (app_users don't have auth sessions)
+          const { error: updateError } = await db.updateUserBalance(user.id, newBalance);
+
+          if (updateError) {
+            console.error('❌ Balance deduction failed:', updateError);
+            throw updateError;
+          }
+
+          console.log('✅ Balance deducted successfully');
 
           setBalance(newBalance);
           // track spent locally
@@ -159,7 +170,7 @@ export const useUserBalance = () => {
           playMoneyDeductSound(amount);
           return true;
         } catch (err) {
-          console.error('Error deducting balance:', err);
+          console.error('❌ Error deducting balance:', err);
           setError('Failed to deduct balance');
           return false;
         }
@@ -188,12 +199,23 @@ export const useUserBalance = () => {
       } else {
         try {
           const newBalance = balance + amount;
-          const { error: updateError } = await supabase
-            .from('app_users')
-            .update({ balance: newBalance })
-            .eq('id', user.id);
+          
+          console.log('💰 Adding balance:', {
+            userId: user.id,
+            currentBalance: balance,
+            amount,
+            newBalance
+          });
 
-          if (updateError) throw updateError;
+          // Use service role client to bypass RLS (app_users don't have auth sessions)
+          const { error: updateError } = await db.updateUserBalance(user.id, newBalance);
+
+          if (updateError) {
+            console.error('❌ Balance addition failed:', updateError);
+            throw updateError;
+          }
+
+          console.log('✅ Balance added successfully');
 
           setBalance(newBalance);
           window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
@@ -202,7 +224,7 @@ export const useUserBalance = () => {
           playMoneyDepositSound(amount);
           return true;
         } catch (err) {
-          console.error('Error adding balance:', err);
+          console.error('❌ Error adding balance:', err);
           setError('Failed to add balance');
           return false;
         }

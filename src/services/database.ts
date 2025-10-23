@@ -1215,6 +1215,33 @@ export class DatabaseService {
   }
 
   /**
+   * Update user balance (uses service role to bypass RLS)
+   */
+  async updateUserBalance(userId: string, newBalance: number): Promise<{ error?: any }> {
+    if (!isSupabaseConfigured() || !supabaseAdmin) {
+      return { error: new Error('Admin client required to update balance') };
+    }
+
+    try {
+      const { error } = await supabaseAdmin
+        .from('app_users')
+        .update({ balance: newBalance })
+        .eq('id', userId);
+
+      if (error) {
+        console.error('❌ Failed to update balance in database:', error);
+        return { error };
+      }
+
+      console.log('✅ Balance updated in database for user:', userId);
+      return {};
+    } catch (err) {
+      console.error('❌ Exception updating balance:', err);
+      return { error: err };
+    }
+  }
+
+  /**
    * Update user data (admin only)
    */
   async updateUser(userId: string, updates: {
