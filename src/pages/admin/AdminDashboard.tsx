@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../services/database';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { useNotifications } from '../../contexts/NotificationContext';
 import type { EntryType } from '../../types';
 
 interface UserStats {
@@ -22,6 +23,8 @@ const AdminDashboard: React.FC = () => {
   const [userStats, setUserStats] = useState<UserStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
+  const { showSuccess, showError } = useNotifications();
 
   const loadUsers = async () => {
     try {
@@ -87,6 +90,47 @@ const AdminDashboard: React.FC = () => {
   const systemUniqueNumbers = userStats.reduce((sum, u) => sum + Math.max(u.firstUnique, u.secondUnique), 0);
   const activeUsers = users.filter(u => u.is_active).length;
 
+  // Combined stats for all users
+  const combinedStats = {
+    totalEntries: userStats.reduce((sum, u) => sum + u.entryCount, 0),
+    firstPkr: userStats.reduce((sum, u) => sum + u.firstPkr, 0),
+    secondPkr: userStats.reduce((sum, u) => sum + u.secondPkr, 0),
+    totalPkr: userStats.reduce((sum, u) => sum + u.totalPkr, 0),
+    firstUnique: userStats.reduce((sum, u) => sum + u.firstUnique, 0),
+    secondUnique: userStats.reduce((sum, u) => sum + u.secondUnique, 0),
+  };
+
+  const handleResetAllData = async () => {
+    if (!confirm('Are you sure you want to reset ALL user data? This will delete all transactions and reset all balances to 0. This action cannot be undone!')) {
+      return;
+    }
+
+    try {
+      setIsResetting(true);
+      
+      // Reset all user balances to 0
+      for (const user of users) {
+        await db.updateUserBalance(user.id, 0);
+      }
+      
+      // Delete all transactions
+      await db.deleteAllTransactions();
+      
+      // Reload data
+      await loadUsers();
+      if (selectedFilter) {
+        await loadUserStatsForType(selectedFilter);
+      }
+      
+      showSuccess('Success', 'All user data has been reset successfully');
+    } catch (error) {
+      console.error('Reset error:', error);
+      showError('Error', 'Failed to reset user data');
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   if (loading && !selectedFilter) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -129,6 +173,7 @@ const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
+
         {/* Filter Buttons */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 mb-8">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Filter by Entry Type</h2>
@@ -163,6 +208,70 @@ const AdminDashboard: React.FC = () => {
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
               {selectedFilter.toUpperCase()} - User Statistics
             </h2>
+
+            {/* Combined Statistics Boxes */}
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Total Entries</p>
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">{combinedStats.totalEntries}</p>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">First PKR</p>
+                <p className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">
+                  {combinedStats.firstPkr.toLocaleString()}
+                </p>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Second PKR</p>
+                <p className="text-3xl font-bold text-amber-600 dark:text-amber-400">
+                  {combinedStats.secondPkr.toLocaleString()}
+                </p>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Total PKR</p>
+                <p className="text-3xl font-bold text-cyan-600 dark:text-cyan-400">
+                  {combinedStats.totalPkr.toLocaleString()}
+                </p>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">First Unique</p>
+                <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">
+                  {combinedStats.firstUnique}
+                </p>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Second Unique</p>
+                <p className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">
+                  {combinedStats.secondUnique}
+                </p>
+              </div>
+            </div>
+
+            {/* Reset Button */}
+            <div className="flex justify-end mb-8">
+              <button
+                onClick={handleResetAllData}
+                disabled={isResetting}
+                className="px-6 py-3 bg-red-500 hover:bg-red-600 disabled:bg-red-400 text-white rounded-lg font-semibold transition-all flex items-center gap-2"
+              >
+                {isResetting ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Resetting...
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Reset All Data
+                  </>
+                )}
+              </button>
+            </div>
 
             {loading ? (
               <div className="flex justify-center py-12">

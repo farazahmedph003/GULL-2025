@@ -22,7 +22,7 @@ import {
 } from '../utils/dataManagement';
 
 const Settings: React.FC = () => {
-  const { theme } = useTheme();
+  const { } = useTheme();
   const { fontSize, setFontSize, animationsEnabled, setAnimationsEnabled } = useAppearance();
   const { state: notificationState, enableNotifications, disableNotifications, requestPermission } = usePushNotifications();
   const { isOpen: shortcutsOpen, open: openShortcuts, close: closeShortcuts } = useKeyboardShortcuts();

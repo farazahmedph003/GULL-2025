@@ -148,7 +148,6 @@ const AdminPanel: React.FC = () => {
                   </svg>
                 </button>
               )}
-              <ThemeToggle />
             </div>
           </div>
         </div>

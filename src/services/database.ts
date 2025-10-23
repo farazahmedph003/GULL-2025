@@ -1,5 +1,5 @@
 import { supabase, supabaseAdmin, isSupabaseConfigured, isSupabaseConnected } from '../lib/supabase';
-import { cacheUsers, getUsersWithStatsFromCache, cacheTransactions, getEntriesByTypeFromCache, enqueue } from './localDb';
+import { cacheUsers, getUsersWithStatsFromCache, cacheTransactions, getEntriesByTypeFromCache, clearTransactionsCache } from './localDb';
 import type { Project, Transaction, FilterPreset, ActionHistory, EntryType } from '../types';
 
 // Get service key from environment
@@ -735,6 +735,28 @@ export class DatabaseService {
       .eq('project_id', projectId);
 
     if (error) throw error;
+  }
+
+  async deleteAllTransactions(): Promise<void> {
+    if (!this.isOnline() || !supabase) {
+      throw new Error('Database not available in offline mode');
+    }
+
+    // Use service role client to bypass RLS
+    const clientToUse = supabaseAdmin || supabase;
+
+    const { error } = await clientToUse
+      .from('transactions')
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all records
+
+    if (error) {
+      console.error('Error deleting all transactions:', error);
+      throw error;
+    }
+
+    // Clear local cache
+    await clearTransactionsCache();
   }
 
   // ============================================
@@ -1510,7 +1532,7 @@ export class DatabaseService {
         }
         
         // Get all unique user IDs from transactions
-        const userIds = [...new Set(transactions.map(t => t.user_id))];
+        const userIds = [...new Set(transactions.map((t: any) => t.user_id))];
         
         // Fetch user details for all users
         const { data: users, error: usersError } = await client
@@ -1528,12 +1550,12 @@ export class DatabaseService {
         
         // Create a map of user details
         const userMap = new Map();
-        (users || []).forEach(user => {
+        (users || []).forEach((user: any) => {
           userMap.set(user.id, { username: user.username, full_name: user.full_name });
         });
         
         // Combine transactions with user details
-        const data = transactions.map(transaction => ({
+        const data = transactions.map((transaction: any) => ({
           ...transaction,
           app_users: userMap.get(transaction.user_id) || { username: 'Unknown', full_name: 'Unknown User' }
         }));

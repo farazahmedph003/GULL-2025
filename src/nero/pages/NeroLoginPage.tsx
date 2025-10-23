@@ -10,7 +10,7 @@ const NeroLoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   
   const { login, isAuthenticated, isAdmin } = useNeroAuth();
-  const { theme } = useTheme();
+  const { } = useTheme();
   const navigate = useNavigate();
 
   // Redirect if already authenticated

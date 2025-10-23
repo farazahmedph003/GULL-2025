@@ -107,6 +107,10 @@ export async function getEntriesByTypeFromCache(entryType: string) {
   }));
 }
 
+export async function clearTransactionsCache() {
+  await localDb.transactions.clear();
+}
+
 // Queue helpers
 export async function enqueue(entity: SyncQueueItem['entity'], op: SyncQueueItem['op'], payload: any) {
   await localDb.syncQueue.add({ entity, op, payload, created_at: Date.now() });

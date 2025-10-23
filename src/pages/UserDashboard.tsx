@@ -6,13 +6,15 @@ import EntryHistoryPanel from '../components/EntryHistoryPanel';
 import AggregatedNumbersPanel from '../components/AggregatedNumbersPanel';
 import EntryFormsBar from '../components/EntryFormsBar';
 import LoadingSpinner from '../components/LoadingSpinner';
+import EditTransactionModal from '../components/EditTransactionModal';
+import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import { useTransactions } from '../hooks/useTransactions';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { useNotifications } from '../contexts/NotificationContext';
 import { formatDate } from '../utils/helpers';
 import { playReloadSound } from '../utils/audioFeedback';
 import { exportToJSON, exportToCSV, importFromJSON, importFromCSV } from '../utils/importExport';
-import type { Project, EntryType } from '../types';
+import type { Project, EntryType, Transaction } from '../types';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
 import { useSystemSettings } from '../hooks/useSystemSettings';
 
@@ -23,6 +25,9 @@ const UserDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [entryTab] = useState<'standard' | 'intelligent'>('standard');
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { showSuccess, showError } = useNotifications();
   // const { user } = useAuth();
@@ -34,11 +39,10 @@ const UserDashboard: React.FC = () => {
     getStatistics: _getStatistics, 
     addTransaction, 
     deleteTransaction,
-    bulkDeleteTransactions,
     updateTransaction,
   } = useTransactions('user-scope');
   
-  const { refresh: refreshBalance } = useUserBalance();
+  const { refresh: refreshBalance, addBalance, deductBalance } = useUserBalance();
   const { entriesEnabled } = useSystemSettings();
   
   // Comprehensive refresh function
@@ -87,6 +91,60 @@ const UserDashboard: React.FC = () => {
 
   const handleEntryAdded = () => {
     refresh();
+  };
+
+  const handleEditSave = async (updatedTransaction: Transaction) => {
+    if (!editingTransaction) return;
+
+    try {
+      // Calculate balance difference
+      const oldTotal = editingTransaction.first + editingTransaction.second;
+      const newTotal = updatedTransaction.first + updatedTransaction.second;
+      const difference = newTotal - oldTotal;
+
+      // Update user balance based on difference
+      if (difference > 0) {
+        // New total is higher, deduct the difference
+        await deductBalance(difference);
+      } else if (difference < 0) {
+        // New total is lower, add the difference (which is negative, so we add the absolute value)
+        await addBalance(Math.abs(difference));
+      }
+      
+      // Update transaction
+      await updateTransaction(editingTransaction.id, updatedTransaction);
+      
+      setEditingTransaction(null);
+      silentRefresh();
+      showSuccess('Success', 'Transaction updated successfully');
+    } catch (error) {
+      console.error('Edit error:', error);
+      showError('Error', 'Failed to update transaction');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingTransaction) return;
+
+    try {
+      setIsDeleting(true);
+
+      // Refund the balance to the user
+      const refundAmount = deletingTransaction.first + deletingTransaction.second;
+      await addBalance(refundAmount);
+
+      // Delete the transaction
+      await deleteTransaction(deletingTransaction.id);
+      
+      setDeletingTransaction(null);
+      silentRefresh();
+      showSuccess('Success', 'Transaction deleted successfully and balance refunded');
+    } catch (error) {
+      console.error('Delete error:', error);
+      showError('Error', 'Failed to delete transaction');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // Export handlers
@@ -197,6 +255,7 @@ const UserDashboard: React.FC = () => {
             <p className="text-sm sm:text-base text-gray-400">Track your entries with real-time calculations</p>
           </div>
 
+
           {/* Statistics Summary - only for entry-specific tabs (open/akra/ring/packet). None on ALL or FILTER */}
           {(['open','akra','ring','packet'] as EntryType[]).includes(activeTab as EntryType) && (
             (() => {
@@ -232,18 +291,12 @@ const UserDashboard: React.FC = () => {
                 transactions={transactions}
                 activeTab={(activeTab as any) as 'all' | 'open' | 'akra' | 'ring' | 'packet'}
                 projectEntryTypes={project.entryTypes}
-                onEdit={async (t) => {
-                  const firstStr = prompt('Update FIRST amount', String(t.first));
-                  const secondStr = prompt('Update SECOND amount', String(t.second));
-                  if (firstStr === null || secondStr === null) return;
-                  const updated = { ...t, first: Number(firstStr), second: Number(secondStr) };
-                  await updateTransaction(t.id, updated);
-                  silentRefresh();
-                }}
-                onDelete={async (idToDelete) => {
-                  if (!confirm('Delete this transaction?')) return;
-                  await deleteTransaction(idToDelete);
-                  silentRefresh();
+                onEdit={(t) => setEditingTransaction(t)}
+                onDelete={(transactionId) => {
+                  const transaction = transactions.find(t => t.id === transactionId);
+                  if (transaction) {
+                    setDeletingTransaction(transaction);
+                  }
                 }}
               />
 
@@ -314,6 +367,29 @@ const UserDashboard: React.FC = () => {
           onEntryAdded={handleEntryAdded}
         />
       </div>
+
+      {/* Edit Modal */}
+      {editingTransaction && (
+        <EditTransactionModal
+          isOpen={!!editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+          transaction={editingTransaction}
+          onSave={handleEditSave}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingTransaction && (
+        <DeleteConfirmationModal
+          isOpen={!!deletingTransaction}
+          onClose={() => setDeletingTransaction(null)}
+          onConfirm={handleDelete}
+          title="Delete Transaction"
+          message="Are you sure you want to delete this transaction?"
+          itemName={`Number: ${deletingTransaction.number} (${deletingTransaction.entryType})`}
+          isLoading={isDeleting}
+        />
+      )}
 
     </>
   );

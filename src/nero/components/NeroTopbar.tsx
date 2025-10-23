@@ -8,7 +8,7 @@ interface NeroTopbarProps {
 
 const NeroTopbar: React.FC<NeroTopbarProps> = ({ sidebarCollapsed }) => {
   const { user, logout, isImpersonating, exitImpersonation, originalUser } = useNeroAuth();
-  const { theme } = useTheme();
+  const { } = useTheme();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 

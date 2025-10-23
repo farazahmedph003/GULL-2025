@@ -33,7 +33,7 @@ const UserManagement: React.FC = () => {
   const [syncAuthModalOpen, setSyncAuthModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
 
-  const { showSuccess, showError } = useNotifications();
+  const { showSuccess, showError, showInfo } = useNotifications();
   const { entriesEnabled, toggleEntriesEnabled } = useSystemSettings();
 
   const loadUsers = async () => {

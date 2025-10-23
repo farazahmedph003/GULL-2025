@@ -32,7 +32,7 @@ const AdminFilterPage: React.FC = () => {
   
   // Results
   const [calculatedResults, setCalculatedResults] = useState<CalculationResult[]>([]);
-  const [showSaveButton, setShowSaveButton] = useState(false);
+  const [showSaveButton] = useState(false);
   const [viewMode, setViewMode] = useState<'combined' | 'per-user'>('combined');
 
   const { showSuccess, showError } = useNotifications();

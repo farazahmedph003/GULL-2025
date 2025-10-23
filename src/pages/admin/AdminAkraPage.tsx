@@ -3,6 +3,7 @@ import { db } from '../../services/database';
 import { useNotifications } from '../../contexts/NotificationContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import EditTransactionModal from '../../components/EditTransactionModal';
+import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
 
 interface Entry {
   id: string;
@@ -21,6 +22,9 @@ const AdminAkraPage: React.FC = () => {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
+  const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [viewMode, setViewMode] = useState<'aggregated' | 'history'>('aggregated');
   const [stats, setStats] = useState({
     totalEntries: 0,
     firstPkr: 0,
@@ -57,36 +61,56 @@ const AdminAkraPage: React.FC = () => {
     }
   };
 
+  // Group entries by number for aggregated view
+  const groupedEntries = React.useMemo(() => {
+    const groups = new Map<string, Entry[]>();
+    entries.forEach(entry => {
+      if (!groups.has(entry.number)) {
+        groups.set(entry.number, []);
+      }
+      groups.get(entry.number)!.push(entry);
+    });
+    return Array.from(groups.entries()).map(([number, entries]) => ({
+      number,
+      entries,
+      firstTotal: entries.reduce((sum, e) => sum + (e.first_amount || 0), 0),
+      secondTotal: entries.reduce((sum, e) => sum + (e.second_amount || 0), 0),
+      totalAmount: entries.reduce((sum, e) => sum + (e.first_amount || 0) + (e.second_amount || 0), 0),
+      userCount: new Set(entries.map(e => e.user_id)).size,
+      users: Array.from(new Set(entries.map(e => e.app_users.username))).join(', '),
+    }));
+  }, [entries]);
+
   useEffect(() => {
     loadEntries();
   }, []);
 
-  const handleDelete = async (entryId: string) => {
-    if (!confirm('Are you sure you want to delete this entry?')) {
-      return;
-    }
+  const handleDelete = async () => {
+    if (!deletingEntry) return;
 
     try {
-      // Find the entry to get user_id and amounts for balance refund
-      const entry = entries.find(e => e.id === entryId);
-      if (!entry) {
-        showError('Error', 'Entry not found');
-        return;
-      }
+      setIsDeleting(true);
 
       // Refund the balance to the user
-      const refundAmount = entry.first_amount + entry.second_amount;
-      const { data: userData } = await db.getUserBalance(entry.user_id);
+      const refundAmount = deletingEntry.first_amount + deletingEntry.second_amount;
+      const { data: userData } = await db.getUserBalance(deletingEntry.user_id);
+      if (!userData) {
+        throw new Error('User data not found');
+      }
       const newBalance = userData.balance + refundAmount;
-      await db.updateUserBalance(entry.user_id, newBalance);
+      await db.updateUserBalance(deletingEntry.user_id, newBalance);
 
       // Delete the transaction
-      await db.deleteTransaction(entryId);
+      await db.deleteTransaction(deletingEntry.id);
       await showSuccess('Success', 'Entry deleted successfully and balance refunded');
+      
+      setDeletingEntry(null);
       loadEntries();
     } catch (error) {
       console.error('Delete error:', error);
       showError('Error', 'Failed to delete entry');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -101,6 +125,9 @@ const AdminAkraPage: React.FC = () => {
 
       // Get current user balance
       const { data: userData } = await db.getUserBalance(editingEntry.user_id);
+      if (!userData) {
+        throw new Error('User data not found');
+      }
       const newBalance = userData.balance - difference;
 
       // Update user balance
@@ -108,8 +135,10 @@ const AdminAkraPage: React.FC = () => {
 
       // Update transaction
       await db.updateTransaction(editingEntry.id, {
-        first_amount: updatedTransaction.first,
-        second_amount: updatedTransaction.second,
+        number: updatedTransaction.number,
+        entryType: updatedTransaction.entryType,
+        first: updatedTransaction.first,
+        second: updatedTransaction.second,
         notes: updatedTransaction.notes,
       });
 
@@ -188,10 +217,89 @@ const AdminAkraPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Entries Table */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
+        {/* View Mode Toggle */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg mb-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">View Mode</h2>
+            <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('aggregated')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                  viewMode === 'aggregated'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Aggregated
+              </button>
+              <button
+                onClick={() => setViewMode('history')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                  viewMode === 'history'
+                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                History
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Content based on view mode */}
+        {viewMode === 'aggregated' ? (
+          /* Aggregated View */
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Aggregated View</h3>
+              {groupedEntries.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-gray-500 dark:text-gray-400">No akra entries found</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {groupedEntries.map((group) => (
+                    <div key={group.number} className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-xl font-bold text-gray-900 dark:text-white">{group.number}</h4>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          {group.userCount} user{group.userCount !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400">First PKR:</span>
+                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                            {group.firstTotal.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400">Second PKR:</span>
+                          <span className="font-semibold text-amber-600 dark:text-amber-400">
+                            {group.secondTotal.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm font-bold">
+                          <span className="text-gray-900 dark:text-white">Total PKR:</span>
+                          <span className="text-cyan-600 dark:text-cyan-400">
+                            {group.totalAmount.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                          Users: {group.users}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* History View */
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-900">
                 <tr>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
@@ -262,7 +370,7 @@ const AdminAkraPage: React.FC = () => {
                           </svg>
                         </button>
                         <button
-                          onClick={() => handleDelete(entry.id)}
+                          onClick={() => setDeletingEntry(entry)}
                           className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
                           title="Delete"
                         >
@@ -286,6 +394,7 @@ const AdminAkraPage: React.FC = () => {
             )}
           </div>
         </div>
+        )}
       </div>
 
       {/* Edit Modal */}
@@ -305,6 +414,19 @@ const AdminAkraPage: React.FC = () => {
             updatedAt: editingEntry.created_at,
           }}
           onSave={handleEdit}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingEntry && (
+        <DeleteConfirmationModal
+          isOpen={!!deletingEntry}
+          onClose={() => setDeletingEntry(null)}
+          onConfirm={handleDelete}
+          title="Delete Akra Entry"
+          message="Are you sure you want to delete this akra entry?"
+          itemName={`Number: ${deletingEntry.number} (${deletingEntry.app_users.username})`}
+          isLoading={isDeleting}
         />
       )}
     </div>

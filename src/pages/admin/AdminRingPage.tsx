@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../services/database';
 import { useNotifications } from '../../contexts/NotificationContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import EditTransactionModal from '../../components/EditTransactionModal';
+import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
 
 interface Entry {
   id: string;
@@ -21,6 +22,9 @@ const AdminRingPage: React.FC = () => {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
+  const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [viewMode, setViewMode] = useState<'aggregated' | 'history'>('aggregated');
   const [stats, setStats] = useState({
     totalEntries: 0,
     firstPkr: 0,
@@ -61,36 +65,36 @@ const AdminRingPage: React.FC = () => {
     loadEntries();
   }, []);
 
-  const handleDelete = async (entryId: string) => {
-    if (!confirm('Are you sure you want to delete this entry?')) {
-      return;
-    }
+  const handleDelete = async () => {
+    if (!deletingEntry) return;
 
     try {
-      // Find the entry to get user_id and amounts for balance refund
-      const entry = entries.find(e => e.id === entryId);
-      if (!entry) {
-        showError('Error', 'Entry not found');
-        return;
-      }
+      setIsDeleting(true);
 
       // Refund the balance to the user
-      const refundAmount = entry.first_amount + entry.second_amount;
-      const { data: userData } = await db.getUserBalance(entry.user_id);
+      const refundAmount = deletingEntry.first_amount + deletingEntry.second_amount;
+      const { data: userData } = await db.getUserBalance(deletingEntry.user_id);
+      if (!userData) {
+        throw new Error('User data not found');
+      }
       const newBalance = userData.balance + refundAmount;
-      await db.updateUserBalance(entry.user_id, newBalance);
+      await db.updateUserBalance(deletingEntry.user_id, newBalance);
 
       // Delete the transaction
-      await db.deleteTransaction(entryId);
+      await db.deleteTransaction(deletingEntry.id);
       await showSuccess('Success', 'Entry deleted successfully and balance refunded');
+      
+      setDeletingEntry(null);
       loadEntries();
     } catch (error) {
       console.error('Delete error:', error);
       showError('Error', 'Failed to delete entry');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-  const handleEdit = async (updatedTransaction: any) => {
+  const _handleEdit = async (updatedTransaction: any) => {
     if (!editingEntry) return;
 
     try {
@@ -101,6 +105,9 @@ const AdminRingPage: React.FC = () => {
 
       // Get current user balance
       const { data: userData } = await db.getUserBalance(editingEntry.user_id);
+      if (!userData) {
+        throw new Error('User data not found');
+      }
       const newBalance = userData.balance - difference;
 
       // Update user balance
@@ -108,8 +115,10 @@ const AdminRingPage: React.FC = () => {
 
       // Update transaction
       await db.updateTransaction(editingEntry.id, {
-        first_amount: updatedTransaction.first,
-        second_amount: updatedTransaction.second,
+        number: updatedTransaction.number,
+        entryType: updatedTransaction.entryType,
+        first: updatedTransaction.first,
+        second: updatedTransaction.second,
         notes: updatedTransaction.notes,
       });
 
@@ -134,6 +143,18 @@ const AdminRingPage: React.FC = () => {
     const index = parseInt(userId.slice(-1), 16) % colors.length;
     return colors[index];
   };
+
+  // Group entries by number for aggregated view
+  const groupedEntries = useMemo(() => {
+    const groups = new Map<string, Entry[]>();
+    entries.forEach(entry => {
+      if (!groups.has(entry.number)) {
+        groups.set(entry.number, []);
+      }
+      groups.get(entry.number)!.push(entry);
+    });
+    return groups;
+  }, [entries]);
 
   if (loading) {
     return (
@@ -262,7 +283,7 @@ const AdminRingPage: React.FC = () => {
                           </svg>
                         </button>
                         <button
-                          onClick={() => handleDelete(entry.id)}
+                          onClick={() => setDeletingEntry(entry)}
                           className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
                           title="Delete"
                         >
@@ -287,6 +308,39 @@ const AdminRingPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Edit Modal */}
+      {editingEntry && (
+        <EditTransactionModal
+          isOpen={!!editingEntry}
+          onClose={() => setEditingEntry(null)}
+          transaction={{
+            id: editingEntry.id,
+            number: editingEntry.number,
+            first: editingEntry.first_amount,
+            second: editingEntry.second_amount,
+            notes: '',
+            entryType: 'ring' as any,
+            projectId: 'admin',
+            createdAt: editingEntry.created_at,
+            updatedAt: editingEntry.created_at,
+          }}
+          onSave={handleEdit}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingEntry && (
+        <DeleteConfirmationModal
+          isOpen={!!deletingEntry}
+          onClose={() => setDeletingEntry(null)}
+          onConfirm={handleDelete}
+          title="Delete Ring Entry"
+          message="Are you sure you want to delete this ring entry?"
+          itemName={`Number: ${deletingEntry.number} (${deletingEntry.app_users.username})`}
+          isLoading={isDeleting}
+        />
+      )}
     </div>
   );
 };
