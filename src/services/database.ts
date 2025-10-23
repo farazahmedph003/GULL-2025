@@ -500,11 +500,13 @@ export class DatabaseService {
       });
 
       // Handle 'user-scope' by querying for NULL project_id
+      // For user-scope, we need to filter by the current user's app_user_id
       let query = clientToUse
         .from('transactions')
         .select('*');
 
       if (projectId === 'user-scope') {
+        // For user-scope, filter by NULL project_id only (all user's projectless transactions)
         query = query.is('project_id', null);
       } else {
         query = query.eq('project_id', projectId);
@@ -564,10 +566,11 @@ export class DatabaseService {
       usingServiceRole: clientToUse === supabaseAdmin
     });
 
-    const { data, error } = await clientToUse
+    const { data, error} = await clientToUse
       .from('transactions')
       .insert({
-        user_id: userId,
+        user_id: null, // Set to null for app_users (they don't have auth.users entries)
+        app_user_id: userId, // Use app_user_id for app_users
         project_id: projectId,
         number: transaction.number,
         entry_type: transaction.entryType,
@@ -1653,27 +1656,32 @@ export class DatabaseService {
    */
   async getSystemSettings(): Promise<{ entriesEnabled: boolean }> {
     if (!isSupabaseConfigured() || !supabase) {
-      // Fallback to localStorage
-      const stored = localStorage.getItem('gull-system-settings');
-      if (stored) {
-        return JSON.parse(stored);
-      }
+      console.log('🔍 Supabase not configured, using default: entriesEnabled = true');
       return { entriesEnabled: true };
     }
 
     try {
-      const { data, error } = await supabase
+      console.log('🔍 Fetching system settings from database...');
+      // Use service role client if available for reliable access
+      const clientToUse = supabaseAdmin || supabase;
+      console.log('🔍 Using client:', supabaseAdmin ? 'service role' : 'regular');
+      
+      const { data, error } = await clientToUse
         .from('system_settings')
-        .select('*')
-        .eq('key', 'entries_enabled')
+        .select('entries_enabled')
+        .eq('id', 'global')
         .single();
+
+      console.log('🔍 System settings query result:', { data, error });
 
       if (error && error.code !== 'PGRST116') {
         console.warn('Could not fetch system settings:', error);
         return { entriesEnabled: true };
       }
 
-      const entriesEnabled = data?.value === 'true' || data?.value === true;
+      const entriesEnabled = data?.entries_enabled === true;
+      console.log('🔍 Parsed entriesEnabled:', entriesEnabled);
+      
       return { entriesEnabled };
     } catch (err) {
       console.warn('System settings table not available:', err);
@@ -1682,22 +1690,34 @@ export class DatabaseService {
   }
 
   async setSystemSettings(settings: { entriesEnabled: boolean }): Promise<void> {
-    // Always update localStorage
-    localStorage.setItem('gull-system-settings', JSON.stringify(settings));
-
     if (!isSupabaseConfigured() || !supabase) {
-      return;
+      console.log('🔍 Supabase not configured, cannot save system settings');
+      throw new Error('Database not available');
     }
 
     try {
-      await supabase
+      console.log('🔍 Saving system settings to database:', settings);
+      // Use service role client if available for reliable access
+      const clientToUse = supabaseAdmin || supabase;
+      console.log('🔍 Using client for save:', supabaseAdmin ? 'service role' : 'regular');
+      
+      const { error } = await clientToUse
         .from('system_settings')
         .upsert({
-          key: 'entries_enabled',
-          value: String(settings.entriesEnabled),
+          id: 'global',
+          entries_enabled: settings.entriesEnabled,
+          updated_at: new Date().toISOString(),
         });
+      
+      if (error) {
+        console.error('❌ Error saving system settings:', error);
+        throw error;
+      }
+      
+      console.log('✅ System settings saved to database');
     } catch (err) {
-      console.warn('Could not save system settings to database:', err);
+      console.error('❌ Failed to save system settings:', err);
+      throw err;
     }
   }
 }

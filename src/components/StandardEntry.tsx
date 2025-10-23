@@ -2,21 +2,21 @@ import React, { useState, useRef } from 'react';
 import type { Transaction } from '../types';
 import { formatCurrency } from '../utils/helpers';
 import { useUserBalance } from '../hooks/useUserBalance';
-import { useTransactions } from '../hooks/useTransactions';
 import { useNotifications } from '../contexts/NotificationContext';
 import { playSuccessSound } from '../utils/audioFeedback';
 
 interface StandardEntryProps {
   projectId: string;
   onSuccess: () => void;
+  addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<boolean>;
 }
 
 const StandardEntry: React.FC<StandardEntryProps> = ({
   projectId,
   onSuccess: _onSuccess,
+  addTransaction,
 }) => {
   const { balance, hasSufficientBalance, deductBalance } = useUserBalance();
-  const { addTransaction } = useTransactions(projectId);
   const { showSuccess, showError } = useNotifications();
   const numbersInputRef = useRef<HTMLInputElement>(null);
   

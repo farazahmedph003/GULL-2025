@@ -133,7 +133,7 @@ export const useUserBalance = () => {
 
   // Deduct balance
   const deductBalance = useCallback(
-    async (amount: number): Promise<boolean> => {
+    async (amount: number, adjustSpent: boolean = true): Promise<boolean> => {
       // In offline mode we still allow deductions using effectiveUserId
 
       if (!hasSufficientBalance(amount)) {
@@ -148,11 +148,15 @@ export const useUserBalance = () => {
         localStorage.setItem('gull_user_balances', JSON.stringify(localBalances));
         const newBalance = localBalances[effectiveUserId];
         setBalance(newBalance);
-        // track spent
-        const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
-        spentMap[effectiveUserId] = (spentMap[effectiveUserId] || 0) + amount;
-        localStorage.setItem('gull_user_spent', JSON.stringify(spentMap));
-        setSpent(spentMap[effectiveUserId]);
+        
+        // track spent only if adjustSpent is true
+        if (adjustSpent) {
+          const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
+          spentMap[effectiveUserId] = (spentMap[effectiveUserId] || 0) + amount;
+          localStorage.setItem('gull_user_spent', JSON.stringify(spentMap));
+          setSpent(spentMap[effectiveUserId]);
+        }
+        
         window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
         
         // Play deduction sound
@@ -180,11 +184,15 @@ export const useUserBalance = () => {
           console.log('✅ Balance deducted successfully');
 
           setBalance(newBalance);
-          // track spent locally
-          const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
-          spentMap[effectiveUserId] = (spentMap[effectiveUserId] || 0) + amount;
-          localStorage.setItem('gull_user_spent', JSON.stringify(spentMap));
-          setSpent(spentMap[effectiveUserId]);
+          
+          // track spent locally only if adjustSpent is true
+          if (adjustSpent) {
+            const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
+            spentMap[effectiveUserId] = (spentMap[effectiveUserId] || 0) + amount;
+            localStorage.setItem('gull_user_spent', JSON.stringify(spentMap));
+            setSpent(spentMap[effectiveUserId]);
+          }
+          
           window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
           
           // Play deduction sound
@@ -200,9 +208,9 @@ export const useUserBalance = () => {
     [user, balance, hasSufficientBalance, effectiveUserId]
   );
 
-  // Add balance (for admin top-ups)
+  // Add balance (for admin top-ups and refunds)
   const addBalance = useCallback(
-    async (amount: number): Promise<boolean> => {
+    async (amount: number, adjustSpent: boolean = true): Promise<boolean> => {
       // In offline mode we still allow top-ups using effectiveUserId
 
       if (isOfflineMode() || !supabase || !user) {
@@ -212,6 +220,15 @@ export const useUserBalance = () => {
         localStorage.setItem('gull_user_balances', JSON.stringify(localBalances));
         const newBalance = localBalances[effectiveUserId];
         setBalance(newBalance);
+        
+        // Decrease spent when balance is added back only if adjustSpent is true (e.g., on delete or refund)
+        if (adjustSpent) {
+          const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
+          spentMap[effectiveUserId] = Math.max(0, (spentMap[effectiveUserId] || 0) - amount);
+          localStorage.setItem('gull_user_spent', JSON.stringify(spentMap));
+          setSpent(spentMap[effectiveUserId]);
+        }
+        
         window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
         
         // Play deposit sound
@@ -239,6 +256,15 @@ export const useUserBalance = () => {
           console.log('✅ Balance added successfully');
 
           setBalance(newBalance);
+          
+          // Decrease spent when balance is added back only if adjustSpent is true (e.g., on delete or refund)
+          if (adjustSpent) {
+            const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
+            spentMap[effectiveUserId] = Math.max(0, (spentMap[effectiveUserId] || 0) - amount);
+            localStorage.setItem('gull_user_spent', JSON.stringify(spentMap));
+            setSpent(spentMap[effectiveUserId]);
+          }
+          
           window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
           
           // Play deposit sound

@@ -21,6 +21,7 @@ export const useTransactions = (projectId: string) => {
     setError(null);
     
     try {
+      // Prefer database whenever we're online; reading does not require auth uid
       if (isSupabaseConfigured() && !isOfflineMode()) {
         // Online mode: ALWAYS fetch from database first
         console.log('🌐 Loading transactions from database for project:', projectId);
@@ -284,6 +285,8 @@ export const useTransactions = (projectId: string) => {
         try {
           console.log('🔍 Debug - Attempting to save transaction to Supabase for user:', user.id);
           console.log('🔍 Debug - Transaction data:', transaction);
+          console.log('🔍 Debug - isImpersonating:', isImpersonating);
+          console.log('🔍 Debug - originalAdminUser:', originalAdminUser?.id);
           newTransaction = await db.createTransaction(user.id, transaction, isImpersonating ? originalAdminUser?.id : undefined);
           console.log('✅ Transaction saved to Supabase:', newTransaction.id);
         } catch (dbError) {
@@ -298,6 +301,12 @@ export const useTransactions = (projectId: string) => {
           };
         }
       } else {
+        console.log('🔍 Debug - Not saving to Supabase, reasons:', {
+          isSupabaseConfigured: isSupabaseConfigured(),
+          isOfflineMode: isOfflineMode(),
+          hasUserId: !!user?.id,
+          userId: user?.id
+        });
         // Offline mode - use localStorage
         newTransaction = {
           ...transaction,
@@ -341,14 +350,14 @@ export const useTransactions = (projectId: string) => {
       // Handle balance adjustments
       if (balanceDifference !== 0) {
         if (balanceDifference > 0) {
-          // Need to deduct more balance
-          const success = await deductBalance(balanceDifference);
+          // Need to deduct more balance - also increase spent by difference
+          const success = await deductBalance(balanceDifference, true);
           if (!success) {
             throw new Error('Failed to deduct balance for transaction update');
           }
         } else {
-          // Refund balance
-          const success = await addBalance(Math.abs(balanceDifference));
+          // Refund balance - also decrease spent by difference
+          const success = await addBalance(Math.abs(balanceDifference), true);
           if (!success) {
             throw new Error('Failed to refund balance for transaction update');
           }

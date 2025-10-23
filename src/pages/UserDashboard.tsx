@@ -43,10 +43,12 @@ const UserDashboard: React.FC = () => {
   } = useTransactions('user-scope');
   
   const { refresh: refreshBalance, addBalance, deductBalance } = useUserBalance();
-  const { entriesEnabled } = useSystemSettings();
+  const { entriesEnabled, refresh: refreshSettings } = useSystemSettings();
   
   // Comprehensive refresh function
   const refresh = () => {
+    console.log('🔄 Refreshing transactions and balance...');
+    console.log('📊 Current transactions count:', transactions.length);
     playReloadSound();
     refreshTransactions();
     refreshBalance();
@@ -90,6 +92,7 @@ const UserDashboard: React.FC = () => {
   // Keyboard shortcuts removed for regular users
 
   const handleEntryAdded = () => {
+    console.log('🔄 Entry added, refreshing...');
     refresh();
   };
 
@@ -333,13 +336,27 @@ const UserDashboard: React.FC = () => {
                   <div>
                     {!entriesEnabled ? (
                       <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg text-yellow-800 dark:text-yellow-200">
-                        Entries are temporarily disabled by admin.
+                        <div className="flex items-center justify-between">
+                          <span>Entries are temporarily disabled by admin.</span>
+                          <button
+                            onClick={() => {
+                              console.log('🔄 Force refreshing system settings...');
+                              refreshSettings();
+                            }}
+                            className="ml-4 px-3 py-1 bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 rounded text-sm hover:bg-yellow-300 dark:hover:bg-yellow-700"
+                          >
+                            Refresh
+                          </button>
+                        </div>
                       </div>
                     ) : entryTab === 'standard' ? (
                       <StandardEntry
                         projectId={'user-scope'}
+                        addTransaction={addTransaction}
                         onSuccess={() => {
-                          silentRefresh();
+                          console.log('✅ StandardEntry onSuccess called');
+                          // Parent state is already updated via addTransaction. Keep a light refresh to sync balances.
+                          refreshBalance();
                         }}
                       />
                     ) : (
@@ -347,7 +364,8 @@ const UserDashboard: React.FC = () => {
                         projectId={'user-scope'}
                         entryType={project.entryTypes[0] || 'akra'}
                         onSuccess={() => {
-                          silentRefresh();
+                          console.log('✅ IntelligentEntry onSuccess called');
+                          refresh();
                         }}
                       />
                     )}
