@@ -82,24 +82,73 @@ const AdminAdvancedFilterPage: React.FC = () => {
       return false;
     }
     
-    // Wildcard: starts with (e.g., "1*")
-    if (trimmedQuery.endsWith('*') && !trimmedQuery.startsWith('*')) {
-      const searchPattern = trimmedQuery.slice(0, -1);
-      return lowerNumber.startsWith(searchPattern);
-    }
-    
-    // Wildcard: ends with (e.g., "*3")
-    if (trimmedQuery.startsWith('*') && !trimmedQuery.endsWith('*')) {
-      const searchPattern = trimmedQuery.slice(1);
-      return lowerNumber.endsWith(searchPattern);
-    }
-    
-    // Wildcard: starts and ends (e.g., "1*3")
+    // Multiple asterisk patterns (e.g., "1**", "*2*", "**1", "1***", "*2**", "**2*", "***1")
     if (trimmedQuery.includes('*')) {
-      const parts = trimmedQuery.split('*');
-      if (parts.length === 2) {
-        const startPart = parts[0];
-        const endPart = parts[1];
+      // Count asterisks and extract digits
+      const parts = trimmedQuery.split('');
+      const asteriskCount = parts.filter(c => c === '*').length;
+      const digits = parts.filter(c => c !== '*');
+      
+      // Pattern: 1** (first digit)
+      if (trimmedQuery.match(/^[^*]\*+$/)) {
+        const digit = trimmedQuery[0];
+        return lowerNumber[0] === digit;
+      }
+      
+      // Pattern: **1 (last digit)
+      if (trimmedQuery.match(/^\*+[^*]$/)) {
+        const digit = trimmedQuery[trimmedQuery.length - 1];
+        return lowerNumber[lowerNumber.length - 1] === digit;
+      }
+      
+      // Pattern: *2* (middle/second digit)
+      if (trimmedQuery.match(/^\*[^*]\*$/)) {
+        const digit = trimmedQuery[1];
+        return lowerNumber.length >= 2 && lowerNumber[1] === digit;
+      }
+      
+      // Pattern: 1*** (first digit with multiple asterisks)
+      if (trimmedQuery.match(/^[^*]\*{2,}$/)) {
+        const digit = trimmedQuery[0];
+        return lowerNumber[0] === digit;
+      }
+      
+      // Pattern: *2** (second digit)
+      if (trimmedQuery.match(/^\*[^*]\*{2,}$/)) {
+        const digit = trimmedQuery[1];
+        return lowerNumber.length >= 2 && lowerNumber[1] === digit;
+      }
+      
+      // Pattern: **2* (third digit)
+      if (trimmedQuery.match(/^\*{2}[^*]\*$/)) {
+        const digit = trimmedQuery[2];
+        return lowerNumber.length >= 3 && lowerNumber[2] === digit;
+      }
+      
+      // Pattern: ***1 (last digit with multiple asterisks)
+      if (trimmedQuery.match(/^\*{2,}[^*]$/)) {
+        const digit = trimmedQuery[trimmedQuery.length - 1];
+        return lowerNumber[lowerNumber.length - 1] === digit;
+      }
+      
+      // Legacy patterns for backward compatibility
+      // Wildcard: starts with (e.g., "1*")
+      if (trimmedQuery.endsWith('*') && !trimmedQuery.startsWith('*') && trimmedQuery.indexOf('*') === trimmedQuery.length - 1) {
+        const searchPattern = trimmedQuery.slice(0, -1);
+        return lowerNumber.startsWith(searchPattern);
+      }
+      
+      // Wildcard: ends with (e.g., "*3")
+      if (trimmedQuery.startsWith('*') && !trimmedQuery.endsWith('*') && trimmedQuery.lastIndexOf('*') === 0) {
+        const searchPattern = trimmedQuery.slice(1);
+        return lowerNumber.endsWith(searchPattern);
+      }
+      
+      // Wildcard: starts and ends (e.g., "1*3")
+      const asteriskIndex = trimmedQuery.indexOf('*');
+      if (asteriskIndex > 0 && asteriskIndex < trimmedQuery.length - 1 && trimmedQuery.split('*').length === 2) {
+        const startPart = trimmedQuery.substring(0, asteriskIndex);
+        const endPart = trimmedQuery.substring(asteriskIndex + 1);
         return lowerNumber.startsWith(startPart) && lowerNumber.endsWith(endPart);
       }
     }
@@ -162,7 +211,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
 
     const entryTypeUpper = selectedType.toUpperCase();
     const header = `${entryTypeUpper}\tFirst`;
-    const rows = firstFilteredResults.map(r => `${r.number}\tF ${r.amount}`);
+    const rows = firstFilteredResults.map(r => `${r.number} F ${r.amount}`);
     const data = `${header}\n${rows.join('\n')}`;
 
     navigator.clipboard.writeText(data).then(() => {
@@ -178,7 +227,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
 
     const entryTypeUpper = selectedType.toUpperCase();
     const header = `${entryTypeUpper}\tSecond`;
-    const rows = secondFilteredResults.map(r => `${r.number}\tS ${r.amount}`);
+    const rows = secondFilteredResults.map(r => `${r.number} S ${r.amount}`);
     const data = `${header}\n${rows.join('\n')}`;
 
     navigator.clipboard.writeText(data).then(() => {
@@ -445,7 +494,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
                   type="text"
                   value={firstNumbers}
                   onChange={(e) => setFirstNumbers(e.target.value)}
-                  placeholder="e.g., 5, 1*, *3, starts:8, ends:0"
+                  placeholder="e.g., 1**, *2*, **1, 1***, *2**, **2*, ***1"
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 mb-4"
                 />
 
@@ -511,7 +560,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
                   type="text"
                   value={secondNumbers}
                   onChange={(e) => setSecondNumbers(e.target.value)}
-                  placeholder="e.g., 5, 1*, *3, starts:8, ends:0"
+                  placeholder="e.g., 1**, *2*, **1, 1***, *2**, **2*, ***1"
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 mb-4"
                 />
 
@@ -560,11 +609,20 @@ const AdminAdvancedFilterPage: React.FC = () => {
               </h3>
               <div className="space-y-3 text-sm text-blue-800 dark:text-blue-200">
                 <div>
-                  <p className="font-semibold mb-2">Search Patterns:</p>
+                  <p className="font-semibold mb-2">Basic Wildcards:</p>
                   <ul className="space-y-1 ml-4">
                     <li><strong>Contains:</strong> Type <code className="px-1 py-0.5 bg-blue-100 dark:bg-blue-900/60 rounded">5</code> to find any number containing "5"</li>
                     <li><strong>Starts with:</strong> Type <code className="px-1 py-0.5 bg-blue-100 dark:bg-blue-900/60 rounded">1*</code> to find numbers starting with "1"</li>
                     <li><strong>Ends with:</strong> Type <code className="px-1 py-0.5 bg-blue-100 dark:bg-blue-900/60 rounded">*3</code> to find numbers ending with "3"</li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="font-semibold mb-2">Position Wildcards:</p>
+                  <ul className="space-y-1 ml-4">
+                    <li><strong>First digit:</strong> <code className="px-1 py-0.5 bg-blue-100 dark:bg-blue-900/60 rounded">1**</code> or <code className="px-1 py-0.5 bg-blue-100 dark:bg-blue-900/60 rounded">1***</code> = numbers starting with "1"</li>
+                    <li><strong>Second digit:</strong> <code className="px-1 py-0.5 bg-blue-100 dark:bg-blue-900/60 rounded">*2*</code> or <code className="px-1 py-0.5 bg-blue-100 dark:bg-blue-900/60 rounded">*2**</code> = 2nd digit is "2"</li>
+                    <li><strong>Third digit:</strong> <code className="px-1 py-0.5 bg-blue-100 dark:bg-blue-900/60 rounded">**2*</code> = 3rd digit is "2"</li>
+                    <li><strong>Last digit:</strong> <code className="px-1 py-0.5 bg-blue-100 dark:bg-blue-900/60 rounded">**1</code> or <code className="px-1 py-0.5 bg-blue-100 dark:bg-blue-900/60 rounded">***1</code> = ending with "1"</li>
                   </ul>
                 </div>
                 <div>
@@ -576,7 +634,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
                   </ul>
                 </div>
                 <p className="mt-3 p-2 bg-blue-100 dark:bg-blue-900/40 rounded">
-                  <strong>Multi-User View:</strong> Results show which users contributed to each number with color-coded badges
+                  <strong>Multi-User Aggregation:</strong> Amounts are totaled from all users. Results show which users contributed to each number with color-coded badges.
                 </p>
               </div>
             </div>
