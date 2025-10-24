@@ -40,7 +40,6 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, onEdi
   const { user } = useAuth();
   const [adminActions, setAdminActions] = useState<any[]>([]);
   const [topUps, setTopUps] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
 
   // Load admin actions and top-ups once
   useEffect(() => {
@@ -49,16 +48,13 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, onEdi
 
   const loadAdditionalHistory = async () => {
     if (!user?.id) {
-      setLoading(false);
       return;
     }
     
     try {
-      setLoading(true);
       const client = supabaseAdmin || supabase;
       
       if (!client) {
-        setLoading(false);
         return;
       }
 
@@ -94,8 +90,6 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, onEdi
       }
     } catch (error) {
       console.error('Error loading additional history:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -256,7 +250,19 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, onEdi
             <div className="flex items-center gap-2 ml-4">
               {onEdit && (
                 <button
-                  onClick={() => onEdit(item as Transaction)}
+                  onClick={() => {
+                    const transaction: Transaction = {
+                      id: item.id,
+                      number: item.number || '',
+                      entryType: (item.entryType || item.entry_type || 'akra') as any,
+                      first: getFirstAmount(item),
+                      second: getSecondAmount(item),
+                      projectId: 'user-scope',
+                      createdAt: getItemDate(item),
+                      updatedAt: getItemDate(item),
+                    };
+                    onEdit(transaction);
+                  }}
                   className="p-2.5 rounded-lg bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 transition-colors"
                   title="Edit entry"
                 >

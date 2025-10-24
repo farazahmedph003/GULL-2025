@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import StandardEntry from './StandardEntry';
 import IntelligentEntry from './IntelligentEntry';
-import type { EntryType } from '../types';
+import type { EntryType, Transaction } from '../types';
 
 interface EntryPanelProps {
   isOpen: boolean;
@@ -9,6 +9,7 @@ interface EntryPanelProps {
   projectId: string;
   entryType: EntryType;
   onEntryAdded?: () => void;
+  addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<boolean>;
 }
 
 const EntryPanel: React.FC<EntryPanelProps> = ({
@@ -17,6 +18,7 @@ const EntryPanel: React.FC<EntryPanelProps> = ({
   projectId,
   entryType,
   onEntryAdded,
+  addTransaction,
 }) => {
   const [activeTab, setActiveTab] = useState<'standard' | 'intelligent'>('standard');
 
@@ -107,6 +109,7 @@ const EntryPanel: React.FC<EntryPanelProps> = ({
             {activeTab === 'standard' ? (
               <StandardEntry
                 projectId={projectId}
+                addTransaction={addTransaction}
                 onSuccess={() => {
                   onEntryAdded?.();
                   // Don't close panel automatically - let user continue entering

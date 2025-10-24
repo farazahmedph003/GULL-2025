@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
 import StandardEntry from './StandardEntry';
 import IntelligentEntry from './IntelligentEntry';
+import type { Transaction } from '../types';
 
 interface EntryFormsBarProps {
   projectId: string;
   entryType?: 'akra' | 'ring' | 'open' | 'packet';
   onEntryAdded?: () => void;
+  addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<boolean>;
 }
 
 const EntryFormsBar: React.FC<EntryFormsBarProps> = ({
   projectId,
   entryType = 'akra',
   onEntryAdded,
+  addTransaction,
 }) => {
   const [activeTab, setActiveTab] = useState<'standard' | 'intelligent'>('standard');
 
@@ -48,6 +51,7 @@ const EntryFormsBar: React.FC<EntryFormsBarProps> = ({
         {activeTab === 'standard' ? (
           <StandardEntry
             projectId={projectId}
+            addTransaction={addTransaction}
             onSuccess={() => {
               onEntryAdded?.();
             }}

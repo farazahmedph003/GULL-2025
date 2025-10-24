@@ -216,7 +216,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
         
         let remainingToDeduct = result.amount;
         
-        for (const [userId, userEntries] of entriesByUser) {
+        for (const [, userEntries] of entriesByUser) {
           const userFirstTotal = userEntries.reduce((sum, e) => sum + (e.first || 0), 0);
           const totalFirst = entriesForNumber.reduce((sum, e) => sum + (e.first || 0), 0);
           const userShare = totalFirst > 0 ? (userFirstTotal / totalFirst) * result.amount : 0;
@@ -234,15 +234,10 @@ const AdminAdvancedFilterPage: React.FC = () => {
               remainingToDeduct -= deductAmount;
               
               await db.updateTransaction(entry.id, {
-                id: entry.id,
                 number: entry.number,
                 entryType: entry.entryType,
                 first: newFirst,
                 second: entry.second,
-                notes: '',
-                projectId: 'user-scope',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
               });
               
               processedEntries.add(entryKey);
@@ -316,7 +311,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
         
         let remainingToDeduct = result.amount;
         
-        for (const [userId, userEntries] of entriesByUser) {
+        for (const [, userEntries] of entriesByUser) {
           const userSecondTotal = userEntries.reduce((sum, e) => sum + (e.second || 0), 0);
           const totalSecond = entriesForNumber.reduce((sum, e) => sum + (e.second || 0), 0);
           const userShare = totalSecond > 0 ? (userSecondTotal / totalSecond) * result.amount : 0;
@@ -334,15 +329,10 @@ const AdminAdvancedFilterPage: React.FC = () => {
               remainingToDeduct -= deductAmount;
               
               await db.updateTransaction(entry.id, {
-                id: entry.id,
                 number: entry.number,
                 entryType: entry.entryType,
                 first: entry.first,
                 second: newSecond,
-                notes: '',
-                projectId: 'user-scope',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
               });
               
               processedEntries.add(entryKey);

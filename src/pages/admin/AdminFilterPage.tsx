@@ -261,15 +261,10 @@ const AdminFilterPage: React.FC = () => {
               console.log(`   ✅ Updating entry ${entry.id} with F: ${newFirst}, S: ${newSecond}`);
               
               await db.updateTransaction(entry.id, {
-                id: entry.id,
                 number: entry.number,
                 entryType: entry.entryType,
                 first: newFirst,
                 second: newSecond,
-                notes: '',
-                projectId: 'user-scope',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
               });
               
               processedEntries.add(entryKey);

@@ -428,6 +428,7 @@ const UserDashboard: React.FC = () => {
         <EntryFormsBar
           projectId={'user-scope'}
           entryType={project?.entryTypes?.[0] || 'akra'}
+          addTransaction={addTransaction}
           onEntryAdded={handleEntryAdded}
         />
       </div>

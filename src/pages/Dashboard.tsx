@@ -446,6 +446,7 @@ const Dashboard: React.FC = () => {
         onClose={() => setEntryPanelOpen(false)}
         projectId={id || ''}
         entryType={selectedEntryType === 'akra' ? 'akra' : selectedEntryType === 'ring' ? 'ring' : 'akra'}
+        addTransaction={addTransaction}
         onEntryAdded={handleEntryAdded}
       />
 
@@ -454,6 +455,7 @@ const Dashboard: React.FC = () => {
         <EntryFormsBar
           projectId={id || ''}
           entryType={project?.entryTypes?.[0] || 'akra'}
+          addTransaction={addTransaction}
           onEntryAdded={handleEntryAdded}
         />
       </div>
