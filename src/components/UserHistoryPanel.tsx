@@ -32,11 +32,12 @@ interface HistoryItem {
 
 interface UserHistoryPanelProps {
   transactions: Transaction[];
+  activeTab?: 'all' | 'open' | 'akra' | 'ring' | 'packet';
   onEdit?: (transaction: Transaction) => void;
   onDelete?: (transactionId: string) => void;
 }
 
-const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, onEdit, onDelete }) => {
+const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activeTab = 'all', onEdit, onDelete }) => {
   const { user } = useAuth();
   const [adminActions, setAdminActions] = useState<any[]>([]);
   const [topUps, setTopUps] = useState<any[]>([]);
@@ -95,8 +96,13 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, onEdi
 
   // Combine transactions (from props) with admin actions and top-ups
   const history = useMemo(() => {
+    // Filter transactions based on activeTab
+    const filteredTransactions = activeTab === 'all' 
+      ? transactions 
+      : transactions.filter(t => t.entryType === activeTab);
+    
     const combined = [
-      ...transactions.map((t: any) => ({ ...t, isEntry: true })),
+      ...filteredTransactions.map((t: any) => ({ ...t, isEntry: true })),
       ...topUps,
       ...adminActions,
     ];
@@ -108,7 +114,7 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, onEdi
     });
 
     return combined;
-  }, [transactions, topUps, adminActions]);
+  }, [transactions, topUps, adminActions, activeTab]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);

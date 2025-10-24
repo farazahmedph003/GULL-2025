@@ -350,6 +350,7 @@ const UserDashboard: React.FC = () => {
               {/* Right Panel - Complete History (Entries + Top-ups + Admin Actions) */}
               <UserHistoryPanel 
                 transactions={transactions}
+                activeTab={activeTab}
                 onEdit={(t) => setEditingTransaction(t)}
                 onDelete={(transactionId) => {
                   const transaction = transactions.find(t => t.id === transactionId);
