@@ -186,11 +186,6 @@ const AdminAdvancedFilterPage: React.FC = () => {
     
     // Multiple asterisk patterns (e.g., "1**", "*2*", "**1", "1***", "*2**", "**2*", "***1")
     if (trimmedQuery.includes('*')) {
-      // Count asterisks and extract digits
-      const parts = trimmedQuery.split('');
-      const asteriskCount = parts.filter(c => c === '*').length;
-      const digits = parts.filter(c => c !== '*');
-      
       // Pattern: 1** (first digit)
       if (trimmedQuery.match(/^[^*]\*+$/)) {
         const digit = trimmedQuery[0];
