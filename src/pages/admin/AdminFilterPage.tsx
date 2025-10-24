@@ -21,6 +21,7 @@ const AdminFilterPage: React.FC = () => {
   const [selectedType, setSelectedType] = useState<EntryType>('open');
   const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [processing, setProcessing] = useState(false); // Prevent double actions
   
   // Filter states
   const [firstComparison, setFirstComparison] = useState<ComparisonType>('>=');
@@ -37,7 +38,11 @@ const AdminFilterPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'combined' | 'per-user'>('combined');
   const [showSaveModal, setShowSaveModal] = useState(false);
 
-  const { showSuccess, showError } = useNotifications();
+  // Undo/Redo history
+  const [history, setHistory] = useState<Array<{entries: any[], results: CalculationResult[], timestamp: number}>>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+
+  const { showSuccess, showError} = useNotifications();
   const { user } = useAuth();
 
   // Load entries when type changes
@@ -67,6 +72,42 @@ const AdminFilterPage: React.FC = () => {
       showError('Error', 'Failed to load entries');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Save current state to history
+  const saveToHistory = () => {
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push({
+      entries: JSON.parse(JSON.stringify(entries)),
+      results: JSON.parse(JSON.stringify(calculatedResults)),
+      timestamp: Date.now(),
+    });
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+  };
+
+  // Undo action
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      setHistoryIndex(historyIndex - 1);
+      setEntries(JSON.parse(JSON.stringify(history[historyIndex - 1].entries)));
+      setCalculatedResults(JSON.parse(JSON.stringify(history[historyIndex - 1].results)));
+      showSuccess('Undo', 'Reverted to previous state');
+    } else {
+      showError('Undo', 'No more actions to undo');
+    }
+  };
+
+  // Redo action
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      setHistoryIndex(historyIndex + 1);
+      setEntries(JSON.parse(JSON.stringify(history[historyIndex + 1].entries)));
+      setCalculatedResults(JSON.parse(JSON.stringify(history[historyIndex + 1].results)));
+      showSuccess('Redo', 'Restored to next state');
+    } else {
+      showError('Redo', 'No more actions to redo');
     }
   };
 
@@ -173,7 +214,16 @@ const AdminFilterPage: React.FC = () => {
   };
 
   const handleConfirmSaveFilter = async () => {
+    if (processing) {
+      showError('Processing', 'An action is already in progress. Please wait.');
+      return;
+    }
+
     setShowSaveModal(false);
+    
+    // Save current state to history before making changes
+    saveToHistory();
+    setProcessing(true);
     
     try {
       console.log('🔄 Starting filter save...');
@@ -321,6 +371,8 @@ const AdminFilterPage: React.FC = () => {
     } catch (error) {
       console.error('❌ Save filter error:', error);
       showError('Error', 'Failed to save filter');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -504,12 +556,37 @@ const AdminFilterPage: React.FC = () => {
                   Reset
                 </button>
 
+                <button
+                  onClick={handleUndo}
+                  disabled={historyIndex <= 0}
+                  className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
+                  title="Undo (Ctrl+Z)"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                  </svg>
+                  Undo
+                </button>
+                
+                <button
+                  onClick={handleRedo}
+                  disabled={historyIndex >= history.length - 1}
+                  className="px-4 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-lg font-semibold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
+                  title="Redo (Ctrl+Y)"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />
+                  </svg>
+                  Redo
+                </button>
+
                 {calculatedResults.length > 0 && (
                   <button
                     onClick={handleSaveFilterClick}
-                    className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-semibold shadow-lg transition-all"
+                    disabled={processing}
+                    className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-semibold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    💾 Save Filter
+                    💾 {processing ? 'Processing...' : 'Save Filter'}
                   </button>
                 )}
               </div>

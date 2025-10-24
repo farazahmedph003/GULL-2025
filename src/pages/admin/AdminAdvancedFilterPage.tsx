@@ -10,10 +10,15 @@ const AdminAdvancedFilterPage: React.FC = () => {
   const [selectedType, setSelectedType] = useState<EntryType>('open');
   const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [processing, setProcessing] = useState(false); // Prevent double actions
   
   // Filter states
   const [firstNumbers, setFirstNumbers] = useState('');
   const [secondNumbers, setSecondNumbers] = useState('');
+
+  // Undo/Redo history
+  const [history, setHistory] = useState<Array<{entries: any[], timestamp: number}>>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
 
   const { showSuccess, showError } = useNotifications();
   const { user } = useAuth();
@@ -45,6 +50,39 @@ const AdminAdvancedFilterPage: React.FC = () => {
       showError('Error', 'Failed to load entries');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Save current state to history
+  const saveToHistory = () => {
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push({
+      entries: JSON.parse(JSON.stringify(entries)),
+      timestamp: Date.now(),
+    });
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+  };
+
+  // Undo action
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      setHistoryIndex(historyIndex - 1);
+      setEntries(JSON.parse(JSON.stringify(history[historyIndex - 1].entries)));
+      showSuccess('Undo', 'Reverted to previous state');
+    } else {
+      showError('Undo', 'No more actions to undo');
+    }
+  };
+
+  // Redo action
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      setHistoryIndex(historyIndex + 1);
+      setEntries(JSON.parse(JSON.stringify(history[historyIndex + 1].entries)));
+      showSuccess('Redo', 'Restored to next state');
+    } else {
+      showError('Redo', 'No more actions to redo');
     }
   };
 
@@ -236,6 +274,11 @@ const AdminAdvancedFilterPage: React.FC = () => {
   };
 
   const handleDeductFirst = async () => {
+    if (processing) {
+      showError('Processing', 'An action is already in progress. Please wait.');
+      return;
+    }
+
     if (firstFilteredResults.length === 0) {
       showError('Error', 'No results to deduct!');
       return;
@@ -244,6 +287,10 @@ const AdminAdvancedFilterPage: React.FC = () => {
     if (!confirm(`Are you sure you want to deduct FIRST amounts from ${firstFilteredResults.length} numbers?`)) {
       return;
     }
+
+    // Save current state to history before making changes
+    saveToHistory();
+    setProcessing(true);
 
     try {
       console.log('🔄 Starting FIRST deduction...');
@@ -327,10 +374,17 @@ const AdminAdvancedFilterPage: React.FC = () => {
     } catch (error) {
       console.error('❌ Deduct FIRST error:', error);
       showError('Error', 'Failed to deduct FIRST amounts');
+    } finally {
+      setProcessing(false);
     }
   };
 
   const handleDeductSecond = async () => {
+    if (processing) {
+      showError('Processing', 'An action is already in progress. Please wait.');
+      return;
+    }
+
     if (secondFilteredResults.length === 0) {
       showError('Error', 'No results to deduct!');
       return;
@@ -339,6 +393,10 @@ const AdminAdvancedFilterPage: React.FC = () => {
     if (!confirm(`Are you sure you want to deduct SECOND amounts from ${secondFilteredResults.length} numbers?`)) {
       return;
     }
+
+    // Save current state to history before making changes
+    saveToHistory();
+    setProcessing(true);
 
     try {
       console.log('🔄 Starting SECOND deduction...');
@@ -422,6 +480,8 @@ const AdminAdvancedFilterPage: React.FC = () => {
     } catch (error) {
       console.error('❌ Deduct SECOND error:', error);
       showError('Error', 'Failed to deduct SECOND amounts');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -440,7 +500,36 @@ const AdminAdvancedFilterPage: React.FC = () => {
 
         {/* Entry Type Tabs */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 mb-6">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Select Data Source</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Select Data Source</h2>
+            
+            {/* Undo/Redo Buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={handleUndo}
+                disabled={historyIndex <= 0}
+                className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
+                title="Undo (Ctrl+Z)"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+                Undo
+              </button>
+              <button
+                onClick={handleRedo}
+                disabled={historyIndex >= history.length - 1}
+                className="px-4 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-lg font-semibold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
+                title="Redo (Ctrl+Y)"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />
+                </svg>
+                Redo
+              </button>
+            </div>
+          </div>
+          
           <div className="flex flex-wrap gap-3">
             {(['open', 'akra', 'ring', 'packet'] as EntryType[]).map((type) => (
               <button
@@ -482,9 +571,10 @@ const AdminAdvancedFilterPage: React.FC = () => {
                       </button>
                       <button
                         onClick={handleDeductFirst}
-                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors"
+                        disabled={processing}
+                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        ➖ Deduct
+                        ➖ {processing ? 'Processing...' : 'Deduct'}
                       </button>
                     </div>
                   )}
@@ -548,9 +638,10 @@ const AdminAdvancedFilterPage: React.FC = () => {
                       </button>
                       <button
                         onClick={handleDeductSecond}
-                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors"
+                        disabled={processing}
+                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        ➖ Deduct
+                        ➖ {processing ? 'Processing...' : 'Deduct'}
                       </button>
                     </div>
                   )}
