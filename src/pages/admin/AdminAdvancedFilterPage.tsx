@@ -25,7 +25,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
 
   // Load entries when type changes
   useEffect(() => {
-    loadEntries();
+    loadEntries(true); // Save initial state to history
   }, [selectedType]);
 
   const loadEntries = async (saveHistory = false) => {
@@ -48,15 +48,18 @@ const AdminAdvancedFilterPage: React.FC = () => {
       
       // Save to history after loading if requested
       if (saveHistory) {
-        setTimeout(() => {
-          const newHistory = history.slice(0, historyIndex + 1);
-          newHistory.push({
-            entries: JSON.parse(JSON.stringify(transactions)),
-            timestamp: Date.now(),
+        requestAnimationFrame(() => {
+          setHistoryIndex(prevIndex => {
+            setHistory(prevHistory => {
+              const newHistory = [...prevHistory.slice(0, prevIndex + 1), {
+                entries: JSON.parse(JSON.stringify(transactions)),
+                timestamp: Date.now(),
+              }];
+              return newHistory;
+            });
+            return prevIndex + 1;
           });
-          setHistory(newHistory);
-          setHistoryIndex(newHistory.length - 1);
-        }, 100);
+        });
       }
     } catch (error) {
       console.error('Error loading entries:', error);
