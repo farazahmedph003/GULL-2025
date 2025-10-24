@@ -196,13 +196,51 @@ const UserDashboard: React.FC = () => {
           showError('Invalid Format', 'JSON file format not recognized');
         }
       } else if (file.name.endsWith('.csv')) {
-        const importedTransactions = await importFromCSV(file, 'user-scope');
-        // Import all transactions
-        for (const transaction of importedTransactions) {
-          await addTransaction(transaction);
+        const text = await file.text();
+        const lines = text.split('\n').filter(line => line.trim());
+        
+        // Check if it's aggregated CSV (has headers: Number, Entry Type, First Amount, etc.)
+        if (lines[0].includes('Entry Type') && lines[0].includes('First Amount')) {
+          // Aggregated CSV format from Excel export
+          let importedCount = 0;
+          
+          for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line || line.startsWith('TOTAL')) break; // Skip TOTAL row
+            
+            const parts = line.split(',');
+            if (parts.length >= 4) {
+              const number = parts[0].trim();
+              const entryType = parts[1].trim().toLowerCase();
+              const first = parseFloat(parts[2]) || 0;
+              const second = parseFloat(parts[3]) || 0;
+              
+              if (first > 0 || second > 0) {
+                await addTransaction({
+                  number,
+                  entryType: entryType as any,
+                  first,
+                  second,
+                  projectId: 'user-scope',
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                });
+                importedCount++;
+              }
+            }
+          }
+          
+          await showSuccess('Import Successful', `Imported ${importedCount} numbers from Excel CSV`);
+          refresh();
+        } else {
+          // Regular CSV format
+          const importedTransactions = await importFromCSV(file, 'user-scope');
+          for (const transaction of importedTransactions) {
+            await addTransaction(transaction);
+          }
+          await showSuccess('Import Successful', `Imported ${importedTransactions.length} transactions from CSV`);
+          refresh();
         }
-        await showSuccess('Import Successful', `Imported ${importedTransactions.length} transactions from CSV`);
-        refresh();
       } else {
         showError('Invalid File', 'Please select a JSON or CSV file');
       }

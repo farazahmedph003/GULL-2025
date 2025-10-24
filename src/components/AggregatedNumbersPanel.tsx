@@ -150,39 +150,54 @@ const AggregatedNumbersPanel: React.FC<AggregatedNumbersPanelProps> = ({
     });
   };
 
-  const exportToJSON = () => {
+  const exportToExcel = () => {
     if (aggregatedNumbers.length === 0) {
       alert('No data to export!');
       return;
     }
 
-    // Create export data with metadata
-    const exportData = {
-      exportDate: new Date().toISOString(),
-      entryType: activeTab,
-      totalNumbers: aggregatedNumbers.length,
-      data: aggregatedNumbers
-        .filter(item => item.firstTotal > 0 || item.secondTotal > 0)
-        .map(item => ({
-          number: item.number,
-          first: item.firstTotal,
-          second: item.secondTotal,
-          entryCount: item.entryCount,
-        })),
-    };
+    // Filter only numbers with data
+    const dataToExport = aggregatedNumbers.filter(item => item.firstTotal > 0 || item.secondTotal > 0);
 
-    // Create and download JSON file
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    // Create CSV content
+    const headers = ['Number', 'Entry Type', 'First Amount', 'Second Amount', 'Total Amount', 'Entry Count'];
+    const csvRows = [headers.join(',')];
+
+    dataToExport.forEach(item => {
+      const row = [
+        item.number,
+        activeTab.toUpperCase(),
+        item.firstTotal,
+        item.secondTotal,
+        item.firstTotal + item.secondTotal,
+        item.entryCount,
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    // Add totals row
+    const totalFirst = dataToExport.reduce((sum, item) => sum + item.firstTotal, 0);
+    const totalSecond = dataToExport.reduce((sum, item) => sum + item.secondTotal, 0);
+    const totalAmount = totalFirst + totalSecond;
+    const totalEntries = dataToExport.reduce((sum, item) => sum + item.entryCount, 0);
+    
+    csvRows.push(''); // Empty row
+    csvRows.push(['TOTAL', '', totalFirst, totalSecond, totalAmount, totalEntries].join(','));
+
+    const csvContent = csvRows.join('\n');
+
+    // Create and download CSV file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `aggregated-${activeTab}-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `aggregated-${activeTab}-${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    alert(`✓ Exported ${exportData.data.length} numbers to JSON!`);
+    alert(`✓ Exported ${dataToExport.length} numbers to Excel (CSV)!`);
   };
 
   if (!isVisible) {
@@ -223,12 +238,12 @@ const AggregatedNumbersPanel: React.FC<AggregatedNumbersPanelProps> = ({
               </button>
             )}
             <button
-              onClick={exportToJSON}
+              onClick={exportToExcel}
               className="p-1.5 bg-green-100 dark:bg-green-500/20 hover:bg-green-200 dark:hover:bg-green-500/30 text-green-700 dark:text-green-200 rounded-lg"
-              title="Export JSON (for importing)"
+              title="Export to Excel (CSV)"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </button>
             {onExportPDF && (
