@@ -112,6 +112,7 @@ const AdminFilterPage: React.FC = () => {
         const previousState = history[historyIndex - 1].entries;
         
         // Restore each entry to the database
+        console.log(`🔄 Undoing: Restoring ${previousState.length} entries to database...`);
         for (const entry of previousState) {
           await db.updateTransaction(entry.id, {
             number: entry.number,
@@ -122,9 +123,12 @@ const AdminFilterPage: React.FC = () => {
         }
         
         setHistoryIndex(historyIndex - 1);
-        setEntries(JSON.parse(JSON.stringify(previousState)));
         setCalculatedResults(JSON.parse(JSON.stringify(history[historyIndex - 1].results)));
-        showSuccess('Undo', 'Reverted to previous state');
+        
+        // Reload entries from database to ensure we have the latest state
+        await loadEntries(false); // Don't save to history
+        
+        showSuccess('Undo', 'Reverted to previous state. Refresh dashboards to see changes.');
       } catch (error) {
         console.error('Undo error:', error);
         showError('Error', 'Failed to undo changes');
@@ -144,6 +148,7 @@ const AdminFilterPage: React.FC = () => {
         const nextState = history[historyIndex + 1].entries;
         
         // Restore each entry to the database
+        console.log(`🔄 Redoing: Restoring ${nextState.length} entries to database...`);
         for (const entry of nextState) {
           await db.updateTransaction(entry.id, {
             number: entry.number,
@@ -154,9 +159,12 @@ const AdminFilterPage: React.FC = () => {
         }
         
         setHistoryIndex(historyIndex + 1);
-        setEntries(JSON.parse(JSON.stringify(nextState)));
         setCalculatedResults(JSON.parse(JSON.stringify(history[historyIndex + 1].results)));
-        showSuccess('Redo', 'Restored to next state');
+        
+        // Reload entries from database to ensure we have the latest state
+        await loadEntries(false); // Don't save to history
+        
+        showSuccess('Redo', 'Restored to next state. Refresh dashboards to see changes.');
       } catch (error) {
         console.error('Redo error:', error);
         showError('Error', 'Failed to redo changes');
