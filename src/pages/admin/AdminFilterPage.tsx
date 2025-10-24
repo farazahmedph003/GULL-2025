@@ -315,7 +315,7 @@ const AdminFilterPage: React.FC = () => {
           );
         }
       }
-
+      
       showSuccess('Success', `Saved filter! Updated ${processedEntries.size} entries.`);
       
       // Reload entries to show updated values
