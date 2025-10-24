@@ -211,7 +211,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
 
     const entryTypeUpper = selectedType.toUpperCase();
     const header = `${entryTypeUpper}\tFirst`;
-    const rows = firstFilteredResults.map(r => `${r.number} F ${r.amount}`);
+    const rows = firstFilteredResults.map(r => `${r.number}\tF ${r.amount}`);
     const data = `${header}\n${rows.join('\n')}`;
 
     navigator.clipboard.writeText(data).then(() => {
@@ -227,7 +227,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
 
     const entryTypeUpper = selectedType.toUpperCase();
     const header = `${entryTypeUpper}\tSecond`;
-    const rows = secondFilteredResults.map(r => `${r.number} S ${r.amount}`);
+    const rows = secondFilteredResults.map(r => `${r.number}\tS ${r.amount}`);
     const data = `${header}\n${rows.join('\n')}`;
 
     navigator.clipboard.writeText(data).then(() => {
