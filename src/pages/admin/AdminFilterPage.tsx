@@ -50,7 +50,7 @@ const AdminFilterPage: React.FC = () => {
     loadEntries();
   }, [selectedType]);
 
-  const loadEntries = async () => {
+  const loadEntries = async (saveHistory = false) => {
     try {
       setLoading(true);
       const data = await db.getAllEntriesByType(selectedType);
@@ -67,6 +67,20 @@ const AdminFilterPage: React.FC = () => {
       }));
       
       setEntries(transactions);
+      
+      // Save to history after loading if requested
+      if (saveHistory) {
+        setTimeout(() => {
+          const newHistory = history.slice(0, historyIndex + 1);
+          newHistory.push({
+            entries: JSON.parse(JSON.stringify(transactions)),
+            results: JSON.parse(JSON.stringify(calculatedResults)),
+            timestamp: Date.now(),
+          });
+          setHistory(newHistory);
+          setHistoryIndex(newHistory.length - 1);
+        }, 100);
+      }
     } catch (error) {
       console.error('Error loading entries:', error);
       showError('Error', 'Failed to load entries');
@@ -88,24 +102,64 @@ const AdminFilterPage: React.FC = () => {
   };
 
   // Undo action
-  const handleUndo = () => {
+  const handleUndo = async () => {
     if (historyIndex > 0) {
-      setHistoryIndex(historyIndex - 1);
-      setEntries(JSON.parse(JSON.stringify(history[historyIndex - 1].entries)));
-      setCalculatedResults(JSON.parse(JSON.stringify(history[historyIndex - 1].results)));
-      showSuccess('Undo', 'Reverted to previous state');
+      setProcessing(true);
+      try {
+        const previousState = history[historyIndex - 1].entries;
+        
+        // Restore each entry to the database
+        for (const entry of previousState) {
+          await db.updateTransaction(entry.id, {
+            number: entry.number,
+            entryType: entry.entryType,
+            first: entry.first,
+            second: entry.second,
+          });
+        }
+        
+        setHistoryIndex(historyIndex - 1);
+        setEntries(JSON.parse(JSON.stringify(previousState)));
+        setCalculatedResults(JSON.parse(JSON.stringify(history[historyIndex - 1].results)));
+        showSuccess('Undo', 'Reverted to previous state');
+      } catch (error) {
+        console.error('Undo error:', error);
+        showError('Error', 'Failed to undo changes');
+      } finally {
+        setProcessing(false);
+      }
     } else {
       showError('Undo', 'No more actions to undo');
     }
   };
 
   // Redo action
-  const handleRedo = () => {
+  const handleRedo = async () => {
     if (historyIndex < history.length - 1) {
-      setHistoryIndex(historyIndex + 1);
-      setEntries(JSON.parse(JSON.stringify(history[historyIndex + 1].entries)));
-      setCalculatedResults(JSON.parse(JSON.stringify(history[historyIndex + 1].results)));
-      showSuccess('Redo', 'Restored to next state');
+      setProcessing(true);
+      try {
+        const nextState = history[historyIndex + 1].entries;
+        
+        // Restore each entry to the database
+        for (const entry of nextState) {
+          await db.updateTransaction(entry.id, {
+            number: entry.number,
+            entryType: entry.entryType,
+            first: entry.first,
+            second: entry.second,
+          });
+        }
+        
+        setHistoryIndex(historyIndex + 1);
+        setEntries(JSON.parse(JSON.stringify(nextState)));
+        setCalculatedResults(JSON.parse(JSON.stringify(history[historyIndex + 1].results)));
+        showSuccess('Redo', 'Restored to next state');
+      } catch (error) {
+        console.error('Redo error:', error);
+        showError('Error', 'Failed to redo changes');
+      } finally {
+        setProcessing(false);
+      }
     } else {
       showError('Redo', 'No more actions to redo');
     }
@@ -363,8 +417,8 @@ const AdminFilterPage: React.FC = () => {
       
       showSuccess('Success', `Saved filter! Updated ${processedEntries.size} entries.`);
       
-      // Reload entries to show updated values
-      await loadEntries();
+      // Reload entries to show updated values and save to history
+      await loadEntries(true);
       
       // Clear results
       setCalculatedResults([]);

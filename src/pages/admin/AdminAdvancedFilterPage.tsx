@@ -28,7 +28,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
     loadEntries();
   }, [selectedType]);
 
-  const loadEntries = async () => {
+  const loadEntries = async (saveHistory = false) => {
     try {
       setLoading(true);
       const data = await db.getAllEntriesByType(selectedType);
@@ -45,6 +45,19 @@ const AdminAdvancedFilterPage: React.FC = () => {
       }));
       
       setEntries(transactions);
+      
+      // Save to history after loading if requested
+      if (saveHistory) {
+        setTimeout(() => {
+          const newHistory = history.slice(0, historyIndex + 1);
+          newHistory.push({
+            entries: JSON.parse(JSON.stringify(transactions)),
+            timestamp: Date.now(),
+          });
+          setHistory(newHistory);
+          setHistoryIndex(newHistory.length - 1);
+        }, 100);
+      }
     } catch (error) {
       console.error('Error loading entries:', error);
       showError('Error', 'Failed to load entries');
@@ -65,22 +78,62 @@ const AdminAdvancedFilterPage: React.FC = () => {
   };
 
   // Undo action
-  const handleUndo = () => {
+  const handleUndo = async () => {
     if (historyIndex > 0) {
-      setHistoryIndex(historyIndex - 1);
-      setEntries(JSON.parse(JSON.stringify(history[historyIndex - 1].entries)));
-      showSuccess('Undo', 'Reverted to previous state');
+      setProcessing(true);
+      try {
+        const previousState = history[historyIndex - 1].entries;
+        
+        // Restore each entry to the database
+        for (const entry of previousState) {
+          await db.updateTransaction(entry.id, {
+            number: entry.number,
+            entryType: entry.entryType,
+            first: entry.first,
+            second: entry.second,
+          });
+        }
+        
+        setHistoryIndex(historyIndex - 1);
+        setEntries(JSON.parse(JSON.stringify(previousState)));
+        showSuccess('Undo', 'Reverted to previous state');
+      } catch (error) {
+        console.error('Undo error:', error);
+        showError('Error', 'Failed to undo changes');
+      } finally {
+        setProcessing(false);
+      }
     } else {
       showError('Undo', 'No more actions to undo');
     }
   };
 
   // Redo action
-  const handleRedo = () => {
+  const handleRedo = async () => {
     if (historyIndex < history.length - 1) {
-      setHistoryIndex(historyIndex + 1);
-      setEntries(JSON.parse(JSON.stringify(history[historyIndex + 1].entries)));
-      showSuccess('Redo', 'Restored to next state');
+      setProcessing(true);
+      try {
+        const nextState = history[historyIndex + 1].entries;
+        
+        // Restore each entry to the database
+        for (const entry of nextState) {
+          await db.updateTransaction(entry.id, {
+            number: entry.number,
+            entryType: entry.entryType,
+            first: entry.first,
+            second: entry.second,
+          });
+        }
+        
+        setHistoryIndex(historyIndex + 1);
+        setEntries(JSON.parse(JSON.stringify(nextState)));
+        showSuccess('Redo', 'Restored to next state');
+      } catch (error) {
+        console.error('Redo error:', error);
+        showError('Error', 'Failed to redo changes');
+      } finally {
+        setProcessing(false);
+      }
     } else {
       showError('Redo', 'No more actions to redo');
     }
@@ -369,7 +422,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
       }
 
       showSuccess('Success', `Deducted FIRST amounts! Updated ${processedEntries.size} entries.`);
-      await loadEntries();
+      await loadEntries(true); // Save to history after reload
       setFirstNumbers('');
     } catch (error) {
       console.error('❌ Deduct FIRST error:', error);
@@ -475,7 +528,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
       }
 
       showSuccess('Success', `Deducted SECOND amounts! Updated ${processedEntries.size} entries.`);
-      await loadEntries();
+      await loadEntries(true); // Save to history after reload
       setSecondNumbers('');
     } catch (error) {
       console.error('❌ Deduct SECOND error:', error);
