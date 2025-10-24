@@ -67,28 +67,41 @@ export const generateUserReport = (data: UserReportData): void => {
   doc.text(`Generated: ${reportDate}`, pageWidth / 2, yPos, { align: 'center' });
   yPos += 15;
 
-  // User Details Box
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('User Information', margin, yPos);
-  yPos += 8;
+  // User Information Table
+  const userInfoData = [
+    ['Full Name', data.user.fullName],
+    ['Username', data.user.username],
+    ['Email', data.user.email],
+    ['Current Balance', `PKR ${data.user.balance.toLocaleString()}`],
+  ];
 
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Full Name: ${data.user.fullName}`, margin + 5, yPos);
-  yPos += 6;
-  doc.text(`Username: ${data.user.username}`, margin + 5, yPos);
-  yPos += 6;
-  doc.text(`Email: ${data.user.email}`, margin + 5, yPos);
-  yPos += 6;
-  doc.text(`Current Balance: PKR ${data.user.balance.toLocaleString()}`, margin + 5, yPos);
-  yPos += 10;
-
-  // Date Range if provided
   if (data.dateRange) {
-    doc.text(`Report Period: ${data.dateRange.start} to ${data.dateRange.end}`, margin + 5, yPos);
-    yPos += 10;
+    userInfoData.push(['Report Period', `${data.dateRange.start} to ${data.dateRange.end}`]);
   }
+
+  autoTable(doc, {
+    startY: yPos,
+    head: [['User Information', '']],
+    body: userInfoData,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [59, 130, 246],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 12,
+      halign: 'center',
+    },
+    bodyStyles: {
+      fontSize: 10,
+    },
+    columnStyles: {
+      0: { cellWidth: 50, fontStyle: 'bold', fillColor: [243, 244, 246] },
+      1: { cellWidth: 'auto' },
+    },
+    margin: { left: margin, right: margin },
+  });
+
+  yPos = (doc as any).lastAutoTable.finalY + 10;
 
   // Calculate summaries for each entry type
   const calculateSummary = (entries: Transaction[]): EntrySummary => {
@@ -110,22 +123,41 @@ export const generateUserReport = (data: UserReportData): void => {
   const totalBalanceSpent = openSummary.totalPKR + akraSummary.totalPKR + 
                              ringSummary.totalPKR + packetSummary.totalPKR;
 
-  // Overall Summary
+  // Overall Summary Table
   checkNewPage(30);
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Overall Summary', margin, yPos);
-  yPos += 8;
+  
+  const totalEntries = openSummary.totalEntries + akraSummary.totalEntries + 
+                      ringSummary.totalEntries + packetSummary.totalEntries;
+  
+  const summaryData = [
+    ['Total Entries', totalEntries.toString()],
+    ['Total Balance Spent', `PKR ${totalBalanceSpent.toLocaleString()}`],
+    ['Current Balance', `PKR ${data.user.balance.toLocaleString()}`],
+  ];
 
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Total Entries: ${openSummary.totalEntries + akraSummary.totalEntries + 
-           ringSummary.totalEntries + packetSummary.totalEntries}`, margin + 5, yPos);
-  yPos += 6;
-  doc.text(`Total Balance Spent: PKR ${totalBalanceSpent.toLocaleString()}`, margin + 5, yPos);
-  yPos += 6;
-  doc.text(`Current Balance: PKR ${data.user.balance.toLocaleString()}`, margin + 5, yPos);
-  yPos += 12;
+  autoTable(doc, {
+    startY: yPos,
+    head: [['Overall Summary', '']],
+    body: summaryData,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [16, 185, 129],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 12,
+      halign: 'center',
+    },
+    bodyStyles: {
+      fontSize: 10,
+    },
+    columnStyles: {
+      0: { cellWidth: 50, fontStyle: 'bold', fillColor: [243, 244, 246] },
+      1: { cellWidth: 'auto', halign: 'right', fontStyle: 'bold' },
+    },
+    margin: { left: margin, right: margin },
+  });
+
+  yPos = (doc as any).lastAutoTable.finalY + 15;
 
   // Function to add entry type table
   const addEntryTable = (title: string, entries: Transaction[], summary: EntrySummary) => {

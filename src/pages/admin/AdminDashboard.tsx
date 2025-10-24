@@ -42,15 +42,17 @@ const AdminDashboard: React.FC = () => {
     try {
       setLoading(true);
       const stats: UserStats[] = [];
+      const allEntries: any[] = []; // Collect all entries for global unique calculation
 
       for (const user of users) {
         const entries = await db.getUserEntries(user.id, entryType);
+        allEntries.push(...entries); // Add to global collection
         
         const firstPkr = entries.reduce((sum, e) => sum + (e.first_amount || 0), 0);
         const secondPkr = entries.reduce((sum, e) => sum + (e.second_amount || 0), 0);
         const totalPkr = firstPkr + secondPkr;
         
-        // Calculate unique numbers
+        // Calculate unique numbers per user
         const uniqueFirst = new Set(entries.filter(e => e.first_amount > 0).map(e => e.number)).size;
         const uniqueSecond = new Set(entries.filter(e => e.second_amount > 0).map(e => e.number)).size;
 
@@ -87,7 +89,53 @@ const AdminDashboard: React.FC = () => {
   }, [selectedFilter, users]);
 
   const systemTotalPkr = userStats.reduce((sum, u) => sum + u.totalPkr, 0);
-  const systemUniqueNumbers = userStats.reduce((sum, u) => sum + Math.max(u.firstUnique, u.secondUnique), 0);
+  
+  // Calculate GLOBAL unique numbers across all users (not sum of individual user uniques)
+  const [globalUniqueNumbers, setGlobalUniqueNumbers] = useState<number>(0);
+  const [globalFirstUnique, setGlobalFirstUnique] = useState<number>(0);
+  const [globalSecondUnique, setGlobalSecondUnique] = useState<number>(0);
+  
+  useEffect(() => {
+    const calculateGlobalUnique = async () => {
+      if (!selectedFilter) {
+        setGlobalUniqueNumbers(0);
+        setGlobalFirstUnique(0);
+        setGlobalSecondUnique(0);
+        return;
+      }
+      
+      try {
+        // Get all entries for this type across all users
+        const allNumbers = new Set<string>();
+        const firstNumbers = new Set<string>();
+        const secondNumbers = new Set<string>();
+        
+        for (const user of users) {
+          const entries = await db.getUserEntries(user.id, selectedFilter);
+          entries.forEach(e => {
+            allNumbers.add(e.number);
+            // Only add to firstNumbers if first_amount > 0
+            if (e.first_amount > 0) {
+              firstNumbers.add(e.number);
+            }
+            // Only add to secondNumbers if second_amount > 0
+            if (e.second_amount > 0) {
+              secondNumbers.add(e.number);
+            }
+          });
+        }
+        
+        setGlobalUniqueNumbers(allNumbers.size);
+        setGlobalFirstUnique(firstNumbers.size);
+        setGlobalSecondUnique(secondNumbers.size);
+      } catch (error) {
+        console.error('Error calculating global unique numbers:', error);
+      }
+    };
+    
+    calculateGlobalUnique();
+  }, [selectedFilter, users, userStats]);
+  
   const activeUsers = users.filter(u => u.is_active).length;
 
   // Combined stats for all users
@@ -101,7 +149,7 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleResetAllData = async () => {
-    if (!confirm('Are you sure you want to reset ALL user data? This will delete all transactions and reset all balances to 0. This action cannot be undone!')) {
+    if (!confirm('Are you sure you want to reset ALL user data? This will delete all transactions, reset all balances to 0, and reset spent to 0. This action cannot be undone!')) {
       return;
     }
 
@@ -116,13 +164,17 @@ const AdminDashboard: React.FC = () => {
       // Delete all transactions
       await db.deleteAllTransactions();
       
+      // Reset spent to 0 for all users in localStorage
+      localStorage.setItem('gull_user_spent', JSON.stringify({}));
+      console.log('✅ Spent reset to 0 for all users');
+      
       // Reload data
       await loadUsers();
       if (selectedFilter) {
         await loadUserStatsForType(selectedFilter);
       }
       
-      showSuccess('Success', 'All user data has been reset successfully');
+      showSuccess('Success', 'All user data has been reset successfully (balance, transactions, and spent)');
     } catch (error) {
       console.error('Reset error:', error);
       showError('Error', 'Failed to reset user data');
@@ -162,7 +214,7 @@ const AdminDashboard: React.FC = () => {
 
           <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-6 text-white shadow-lg">
             <h3 className="text-lg font-semibold mb-2">Unique Numbers</h3>
-            <p className="text-3xl font-bold">{systemUniqueNumbers}</p>
+            <p className="text-3xl font-bold">{globalUniqueNumbers}</p>
             <p className="text-orange-100 text-sm mt-2">Total unique entries</p>
           </div>
 
@@ -236,13 +288,13 @@ const AdminDashboard: React.FC = () => {
               <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg">
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">First Unique</p>
                 <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">
-                  {combinedStats.firstUnique}
+                  {globalFirstUnique}
                 </p>
               </div>
               <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg">
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Second Unique</p>
                 <p className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">
-                  {combinedStats.secondUnique}
+                  {globalSecondUnique}
                 </p>
               </div>
             </div>

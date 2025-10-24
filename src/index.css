@@ -2670,6 +2670,25 @@ button:active, a:active {
 }
 
 /* ================================
+   FONT SIZE SCALING CLASSES
+   ================================ */
+
+/* Small Font Size - Scale text only, not layout */
+html.font-sm {
+  font-size: 14px;
+}
+
+/* Medium Font Size (Base - Default) */
+html.font-base {
+  font-size: 16px;
+}
+
+/* Large Font Size - Scale text only, not layout */
+html.font-lg {
+  font-size: 17px;
+}
+
+/* ================================
    SCALING SLIDER STYLES
    ================================ */
 

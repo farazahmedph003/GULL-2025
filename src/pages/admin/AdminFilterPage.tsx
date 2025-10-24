@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { db } from '../../services/database';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { groupTransactionsByNumber } from '../../utils/transactionHelpers';
 import type { EntryType } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { exportFilterResultsToPDF } from '../../utils/pdfExport';
 
 type ComparisonType = '>=' | '>' | '<=' | '<' | '==';
 
@@ -33,8 +35,10 @@ const AdminFilterPage: React.FC = () => {
   // Results
   const [calculatedResults, setCalculatedResults] = useState<CalculationResult[]>([]);
   const [viewMode, setViewMode] = useState<'combined' | 'per-user'>('combined');
+  const [showSaveModal, setShowSaveModal] = useState(false);
 
   const { showSuccess, showError } = useNotifications();
+  const { user } = useAuth();
 
   // Load entries when type changes
   React.useEffect(() => {
@@ -125,10 +129,14 @@ const AdminFilterPage: React.FC = () => {
   };
 
   const copyFirstResults = () => {
-    const data = calculatedResults
+    const entryTypeUpper = selectedType.toUpperCase();
+    const header = `${entryTypeUpper}\tFirst`;
+    const rows = calculatedResults
       .filter(r => r.firstResult > 0)
-      .map(r => `${r.number}\t${r.firstResult}`)
+      .map(r => `${r.number}\tF ${r.firstResult}`)
       .join('\n');
+    
+    const data = `${header}\n${rows}`;
     
     navigator.clipboard.writeText(data).then(() => {
       showSuccess('Success', `Copied ${calculatedResults.filter(r => r.firstResult > 0).length} First results!`);
@@ -136,14 +144,189 @@ const AdminFilterPage: React.FC = () => {
   };
 
   const copySecondResults = () => {
-    const data = calculatedResults
+    const entryTypeUpper = selectedType.toUpperCase();
+    const header = `${entryTypeUpper}\tSecond`;
+    const rows = calculatedResults
       .filter(r => r.secondResult > 0)
-      .map(r => `${r.number}\t${r.secondResult}`)
+      .map(r => `${r.number}\tS ${r.secondResult}`)
       .join('\n');
+    
+    const data = `${header}\n${rows}`;
     
     navigator.clipboard.writeText(data).then(() => {
       showSuccess('Success', `Copied ${calculatedResults.filter(r => r.secondResult > 0).length} Second results!`);
     });
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      await exportFilterResultsToPDF(calculatedResults, selectedType, firstTotal, secondTotal);
+      showSuccess('Success', 'Filter results exported to PDF');
+    } catch (error) {
+      console.error('PDF export error:', error);
+      showError('Error', 'Failed to export to PDF');
+    }
+  };
+
+  const handleSaveFilterClick = () => {
+    setShowSaveModal(true);
+  };
+
+  const handleConfirmSaveFilter = async () => {
+    setShowSaveModal(false);
+    
+    try {
+      console.log('🔄 Starting filter save...');
+      console.log('📊 Calculated Results:', calculatedResults);
+      
+      // Process each number and deduct BOTH first and second if applicable
+      const processedEntries = new Set<string>();
+      
+      for (const result of calculatedResults) {
+        const entriesForNumber = entries.filter(e => e.number === result.number);
+        console.log(`📌 Processing number ${result.number}: ${entriesForNumber.length} entries found`);
+        console.log(`   First to deduct: ${result.firstResult}, Second to deduct: ${result.secondResult}`);
+        
+        // Group entries by user to deduct proportionally from each user
+        const entriesByUser = new Map<string, typeof entries>();
+        entriesForNumber.forEach(entry => {
+          const userId = entry.userId || 'unknown';
+          if (!entriesByUser.has(userId)) {
+            entriesByUser.set(userId, []);
+          }
+          entriesByUser.get(userId)!.push(entry);
+        });
+        
+        console.log(`   👥 Found ${entriesByUser.size} users with this number`);
+        
+        let remainingFirstToDeduct = result.firstResult;
+        let remainingSecondToDeduct = result.secondResult;
+        
+        // Process entries for each user proportionally
+        for (const [userId, userEntries] of entriesByUser) {
+          console.log(`   👤 Processing user ${userId}: ${userEntries.length} entries`);
+          
+          // Calculate user's total for this number
+          const userFirstTotal = userEntries.reduce((sum, e) => sum + (e.first || 0), 0);
+          const userSecondTotal = userEntries.reduce((sum, e) => sum + (e.second || 0), 0);
+          
+          // Calculate how much to deduct from this user (proportional to their share)
+          const totalFirst = entriesForNumber.reduce((sum, e) => sum + (e.first || 0), 0);
+          const totalSecond = entriesForNumber.reduce((sum, e) => sum + (e.second || 0), 0);
+          
+          const userFirstShare = totalFirst > 0 ? (userFirstTotal / totalFirst) * result.firstResult : 0;
+          const userSecondShare = totalSecond > 0 ? (userSecondTotal / totalSecond) * result.secondResult : 0;
+          
+          let userRemainingFirst = Math.min(userFirstShare, remainingFirstToDeduct, userFirstTotal);
+          let userRemainingSecond = Math.min(userSecondShare, remainingSecondToDeduct, userSecondTotal);
+          
+          console.log(`   📊 User share: F ${userRemainingFirst.toFixed(0)}, S ${userRemainingSecond.toFixed(0)}`);
+          
+          for (const entry of userEntries) {
+            const entryKey = `${entry.id}-${entry.number}`;
+            if (processedEntries.has(entryKey)) {
+              console.log(`   ⏭️ Skipping already processed entry ${entry.id}`);
+              continue;
+            }
+            
+            const currentFirst = entry.first || 0;
+            const currentSecond = entry.second || 0;
+            
+            let newFirst = currentFirst;
+            let newSecond = currentSecond;
+            let needsUpdate = false;
+            
+            // Deduct from first if needed
+            if (userRemainingFirst > 0 && currentFirst > 0) {
+              const deductAmount = Math.min(currentFirst, userRemainingFirst);
+              newFirst = currentFirst - deductAmount;
+              userRemainingFirst -= deductAmount;
+              remainingFirstToDeduct -= deductAmount;
+              needsUpdate = true;
+              console.log(`   💰 Entry ${entry.id} (@${entry.username}) - Deducting F ${deductAmount}: ${currentFirst} → ${newFirst}`);
+            }
+            
+            // Deduct from second if needed
+            if (userRemainingSecond > 0 && currentSecond > 0) {
+              const deductAmount = Math.min(currentSecond, userRemainingSecond);
+              newSecond = currentSecond - deductAmount;
+              userRemainingSecond -= deductAmount;
+              remainingSecondToDeduct -= deductAmount;
+              needsUpdate = true;
+              console.log(`   💎 Entry ${entry.id} (@${entry.username}) - Deducting S ${deductAmount}: ${currentSecond} → ${newSecond}`);
+            }
+            
+            // Update the entry if changes were made
+            if (needsUpdate) {
+              console.log(`   ✅ Updating entry ${entry.id} with F: ${newFirst}, S: ${newSecond}`);
+              
+              await db.updateTransaction(entry.id, {
+                id: entry.id,
+                number: entry.number,
+                entryType: entry.entryType,
+                first: newFirst,
+                second: newSecond,
+                notes: '',
+                projectId: 'user-scope',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              });
+              
+              processedEntries.add(entryKey);
+            }
+            
+            // Stop if user's share is fully deducted
+            if (userRemainingFirst <= 0 && userRemainingSecond <= 0) {
+              break;
+            }
+          }
+        }
+        
+        console.log(`   ✔️ Number ${result.number} complete. Remaining: F ${remainingFirstToDeduct.toFixed(0)}, S ${remainingSecondToDeduct.toFixed(0)}`);
+      }
+      
+      // Log admin action for each affected user
+      if (user?.id) {
+        const affectedUsers = new Set<string>();
+        for (const result of calculatedResults) {
+          const entriesForNumber = entries.filter(e => e.number === result.number);
+          entriesForNumber.forEach(entry => {
+            if (entry.userId) affectedUsers.add(entry.userId);
+          });
+        }
+
+        for (const targetUserId of affectedUsers) {
+          await db.logAdminAction(
+            user.id,
+            targetUserId,
+            'filter_save',
+            `Filter & Calculate: Deducted amounts from ${calculatedResults.length} numbers (${selectedType})`,
+            {
+              entryType: selectedType,
+              numbersCount: calculatedResults.length,
+              entriesUpdated: processedEntries.size,
+              firstLimit,
+              secondLimit,
+              firstFilterValue,
+              secondFilterValue,
+              firstComparison,
+              secondComparison,
+            }
+          );
+        }
+      }
+
+      showSuccess('Success', `Saved filter! Updated ${processedEntries.size} entries.`);
+      
+      // Reload entries to show updated values
+      await loadEntries();
+      
+      // Clear results
+      setCalculatedResults([]);
+    } catch (error) {
+      console.error('❌ Save filter error:', error);
+      showError('Error', 'Failed to save filter');
+    }
   };
 
   const firstTotal = calculatedResults.reduce((sum, r) => sum + r.firstResult, 0);
@@ -325,6 +508,15 @@ const AdminFilterPage: React.FC = () => {
                 >
                   Reset
                 </button>
+
+                {calculatedResults.length > 0 && (
+                  <button
+                    onClick={handleSaveFilterClick}
+                    className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-semibold shadow-lg transition-all"
+                  >
+                    💾 Save Filter
+                  </button>
+                )}
               </div>
             </div>
 
@@ -352,12 +544,20 @@ const AdminFilterPage: React.FC = () => {
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="font-bold text-gray-900 dark:text-white">💰 FIRST Results</h4>
-                      <button
-                        onClick={copyFirstResults}
-                        className="px-4 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-sm font-semibold hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
-                      >
-                        Copy
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={copyFirstResults}
+                          className="px-4 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-sm font-semibold hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+                        >
+                          📋 Copy
+                        </button>
+                        <button
+                          onClick={handleExportPDF}
+                          className="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-sm font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                        >
+                          📄 PDF
+                        </button>
+                      </div>
                     </div>
                     <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4 max-h-96 overflow-y-auto space-y-2">
                       {calculatedResults.filter(r => r.firstResult > 0).map((result) => (
@@ -368,10 +568,10 @@ const AdminFilterPage: React.FC = () => {
                           <span className="font-bold text-gray-900 dark:text-white">{result.number}</span>
                           <div className="text-right">
                             <div className="text-sm text-gray-500 dark:text-gray-400 line-through">
-                              {result.firstOriginal}
+                              F {result.firstOriginal}
                             </div>
                             <div className="text-lg font-bold text-green-600 dark:text-green-400">
-                              {result.firstResult}
+                              F {result.firstResult}
                             </div>
                           </div>
                         </div>
@@ -383,12 +583,20 @@ const AdminFilterPage: React.FC = () => {
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="font-bold text-gray-900 dark:text-white">💎 SECOND Results</h4>
-                      <button
-                        onClick={copySecondResults}
-                        className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg text-sm font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
-                      >
-                        Copy
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={copySecondResults}
+                          className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg text-sm font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                        >
+                          📋 Copy
+                        </button>
+                        <button
+                          onClick={handleExportPDF}
+                          className="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-sm font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                        >
+                          📄 PDF
+                        </button>
+                      </div>
                     </div>
                     <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4 max-h-96 overflow-y-auto space-y-2">
                       {calculatedResults.filter(r => r.secondResult > 0).map((result) => (
@@ -399,10 +607,10 @@ const AdminFilterPage: React.FC = () => {
                           <span className="font-bold text-gray-900 dark:text-white">{result.number}</span>
                           <div className="text-right">
                             <div className="text-sm text-gray-500 dark:text-gray-400 line-through">
-                              {result.secondOriginal}
+                              S {result.secondOriginal}
                             </div>
                             <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                              {result.secondResult}
+                              S {result.secondResult}
                             </div>
                           </div>
                         </div>
@@ -415,6 +623,52 @@ const AdminFilterPage: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* Confirmation Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 animate-scale-in">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                Confirm Save Filter
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                Are you sure you want to save this filter? This will deduct the filtered amounts from both First and Second entries in the database.
+              </p>
+              <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                <div className="text-sm space-y-1">
+                  <p className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                    First Total: {firstTotal.toLocaleString()}
+                  </p>
+                  <p className="text-blue-600 dark:text-blue-400 font-semibold">
+                    Second Total: {secondTotal.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSaveFilter}
+                className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-semibold shadow-lg transition-all"
+              >
+                Yes, Save Filter
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -70,15 +70,7 @@ const AdminAkraPage: React.FC = () => {
       }
       groups.get(entry.number)!.push(entry);
     });
-    return Array.from(groups.entries()).map(([number, entries]) => ({
-      number,
-      entries,
-      firstTotal: entries.reduce((sum, e) => sum + (e.first_amount || 0), 0),
-      secondTotal: entries.reduce((sum, e) => sum + (e.second_amount || 0), 0),
-      totalAmount: entries.reduce((sum, e) => sum + (e.first_amount || 0) + (e.second_amount || 0), 0),
-      userCount: new Set(entries.map(e => e.user_id)).size,
-      users: Array.from(new Set(entries.map(e => e.app_users.username))).join(', '),
-    }));
+    return groups;
   }, [entries]);
 
   useEffect(() => {
@@ -247,57 +239,74 @@ const AdminAkraPage: React.FC = () => {
         </div>
 
         {/* Content based on view mode */}
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
         {viewMode === 'aggregated' ? (
-          /* Aggregated View */
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Aggregated View</h3>
-              {groupedEntries.length === 0 ? (
-                <div className="text-center py-12">
-                  <p className="text-gray-500 dark:text-gray-400">No akra entries found</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {groupedEntries.map((group) => (
-                    <div key={group.number} className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-xl font-bold text-gray-900 dark:text-white">{group.number}</h4>
-                        <span className="text-sm text-gray-500 dark:text-gray-400">
-                          {group.userCount} user{group.userCount !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600 dark:text-gray-400">First PKR:</span>
-                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                            {group.firstTotal.toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600 dark:text-gray-400">Second PKR:</span>
-                          <span className="font-semibold text-amber-600 dark:text-amber-400">
-                            {group.secondTotal.toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm font-bold">
-                          <span className="text-gray-900 dark:text-white">Total PKR:</span>
-                          <span className="text-cyan-600 dark:text-cyan-400">
-                            {group.totalAmount.toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                          Users: {group.users}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+          /* Aggregated View - Unique Numbers with Combined Totals */
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 dark:bg-gray-900">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                      Number
+                    </th>
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                      First
+                    </th>
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                      Second
+                    </th>
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                      Total
+                    </th>
+                    <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                      Users
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {Array.from(groupedEntries.entries())
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([number, numberEntries]) => {
+                      const firstTotal = numberEntries.reduce((sum, e) => sum + (e.first_amount || 0), 0);
+                      const secondTotal = numberEntries.reduce((sum, e) => sum + (e.second_amount || 0), 0);
+                      const total = firstTotal + secondTotal;
+                      const userCount = numberEntries.length;
+                      
+                      return (
+                        <tr key={number} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="font-bold text-lg text-gray-900 dark:text-white">
+                              {number}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                              {firstTotal.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                              {secondTotal.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <span className="text-cyan-600 dark:text-cyan-400 font-bold">
+                              {total.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">
+                              {userCount} {userCount === 1 ? 'user' : 'users'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
             </div>
-          </div>
         ) : (
           /* History View */
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
               <thead className="bg-gray-50 dark:bg-gray-900">
@@ -393,8 +402,8 @@ const AdminAkraPage: React.FC = () => {
               </div>
             )}
           </div>
-        </div>
         )}
+        </div>
       </div>
 
       {/* Edit Modal */}

@@ -5,7 +5,6 @@ import { useNotifications } from '../../contexts/NotificationContext';
 import CreateUserModal from '../../components/CreateUserModal';
 import TopUpModal from '../../components/TopUpModal';
 import EditUserModal from '../../components/EditUserModal';
-import SyncAuthUserModal from '../../components/SyncAuthUserModal';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { generateUserReport } from '../../utils/pdfGenerator';
 
@@ -30,7 +29,6 @@ const UserManagement: React.FC = () => {
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
   const [topUpModalOpen, setTopUpModalOpen] = useState(false);
   const [editUserModalOpen, setEditUserModalOpen] = useState(false);
-  const [syncAuthModalOpen, setSyncAuthModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
 
   const { showSuccess, showError, showInfo } = useNotifications();
@@ -305,16 +303,6 @@ const UserManagement: React.FC = () => {
                     📜 History
                   </button>
                   <button
-                    onClick={() => {
-                      setSelectedUser(user);
-                      setSyncAuthModalOpen(true);
-                    }}
-                    className="px-4 py-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded-lg font-semibold hover:bg-yellow-200 dark:hover:bg-yellow-900/50 transition-colors text-sm"
-                    title="Create Supabase Auth account for this user"
-                  >
-                    🔐 Sync Auth
-                  </button>
-                  <button
                     onClick={() => handleGeneratePDF(user)}
                     className="px-4 py-2 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors text-sm"
                   >
@@ -348,13 +336,32 @@ const UserManagement: React.FC = () => {
                             </div>
                           ) : (
                             <div className="space-y-1">
-                              <div className="flex justify-between">
-                                <span className="font-semibold text-gray-900 dark:text-white">
-                                  {item.entry_type?.toUpperCase()}: {item.number}
-                                </span>
-                                <span className="text-gray-600 dark:text-gray-400">
-                                  PKR {((item.first_amount || 0) + (item.second_amount || 0)).toLocaleString()}
-                                </span>
+                              <div className="flex justify-between items-start">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-gray-900 dark:text-white text-lg">
+                                    {item.number}
+                                  </span>
+                                  <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">
+                                    {item.entry_type}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-sm">
+                                  {(item.first_amount || 0) > 0 && (
+                                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                      F {item.first_amount.toLocaleString()}
+                                    </span>
+                                  )}
+                                  {(item.second_amount || 0) > 0 && (
+                                    <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                      S {item.second_amount.toLocaleString()}
+                                    </span>
+                                  )}
+                                  {(item.first_amount || 0) <= 0 && (item.second_amount || 0) <= 0 && (
+                                    <span className="font-semibold text-red-600 dark:text-red-400">
+                                      Deduction
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               <div className="text-xs text-gray-500 dark:text-gray-500">
                                 {new Date(item.created_at).toLocaleString()}
@@ -417,19 +424,6 @@ const UserManagement: React.FC = () => {
         </>
       )}
 
-      {/* Sync Auth Modal */}
-      {syncAuthModalOpen && selectedUser && (
-        <SyncAuthUserModal
-          userId={selectedUser.id}
-          username={selectedUser.username}
-          email={selectedUser.email}
-          onClose={() => {
-            setSyncAuthModalOpen(false);
-            setSelectedUser(null);
-          }}
-          onSuccess={loadUsers}
-        />
-      )}
     </div>
   );
 };

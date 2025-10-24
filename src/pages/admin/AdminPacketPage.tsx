@@ -239,7 +239,7 @@ const AdminPacketPage: React.FC = () => {
         {/* Entries Display */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
           {viewMode === 'aggregated' ? (
-            /* Aggregated View */
+            /* Aggregated View - Unique Numbers with Combined Totals */
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 dark:bg-gray-900">
@@ -247,72 +247,59 @@ const AdminPacketPage: React.FC = () => {
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
                       Number
                     </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                      Total Entries
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                      First
                     </th>
                     <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                      First PKR Total
+                      Second
                     </th>
                     <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                      Second PKR Total
+                      Total
                     </th>
-                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                      Total PKR
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
                       Users
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {Array.from(groupedEntries.entries()).map(([number, groupEntries]) => {
-                    const firstTotal = groupEntries.reduce((sum, e) => sum + (e.first_amount || 0), 0);
-                    const secondTotal = groupEntries.reduce((sum, e) => sum + (e.second_amount || 0), 0);
-                    const totalPkr = firstTotal + secondTotal;
-                    const uniqueUsers = new Set(groupEntries.map(e => e.app_users.username));
-                    
-                    return (
-                      <tr key={number} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="font-semibold text-gray-900 dark:text-white">
-                            {number}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-gray-900 dark:text-white font-semibold">
-                            {groupEntries.length}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                          <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                            {firstTotal.toLocaleString()}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                          <span className="text-amber-600 dark:text-amber-400 font-semibold">
-                            {secondTotal.toLocaleString()}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                          <span className="text-cyan-600 dark:text-cyan-400 font-bold">
-                            {totalPkr.toLocaleString()}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex flex-wrap gap-1">
-                            {Array.from(uniqueUsers).map(username => (
-                              <span
-                                key={username}
-                                className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
-                              >
-                                {username}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {Array.from(groupedEntries.entries())
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([number, numberEntries]) => {
+                      const firstTotal = numberEntries.reduce((sum, e) => sum + (e.first_amount || 0), 0);
+                      const secondTotal = numberEntries.reduce((sum, e) => sum + (e.second_amount || 0), 0);
+                      const total = firstTotal + secondTotal;
+                      const userCount = numberEntries.length;
+                      
+                      return (
+                        <tr key={number} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="font-bold text-lg text-gray-900 dark:text-white">
+                              {number}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                              {firstTotal.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                              {secondTotal.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <span className="text-cyan-600 dark:text-cyan-400 font-bold">
+                              {total.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">
+                              {userCount} {userCount === 1 ? 'user' : 'users'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>

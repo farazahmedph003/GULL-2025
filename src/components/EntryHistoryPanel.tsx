@@ -88,15 +88,15 @@ const EntryHistoryPanel: React.FC<EntryHistoryPanelProps> = ({
   void allNumbers;
 
   return (
-    <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6">
+    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow">
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-300 mb-2">Entry History</h3>
-        <p className="text-sm text-gray-400">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-300 mb-2">Entry History</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
           {sortedTransactions.length} entries • {activeTab === 'all' ? 'All types' : activeTab.toUpperCase()}
         </p>
       </div>
 
-      <div className="bg-gray-900 rounded-lg p-2 min-h-[400px] max-h-[600px] overflow-y-auto">
+      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-2 min-h-[400px] max-h-[600px] overflow-y-auto">
         {sortedTransactions.length === 0 ? (
           <div className="text-center py-12">
             <div className="text-gray-500 mb-2">
@@ -108,18 +108,18 @@ const EntryHistoryPanel: React.FC<EntryHistoryPanelProps> = ({
             <p className="text-gray-600 text-sm mt-1">Add your first entry to get started</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-800">
+          <div className="divide-y divide-gray-200 dark:divide-gray-800">
             {sortedTransactions.map((transaction) => (
               <div
                 key={transaction.id}
-                className="px-3 py-3 hover:bg-gray-800/60 transition-colors rounded"
+                className="px-3 py-3 hover:bg-gray-100 dark:hover:bg-gray-800/60 transition-colors rounded"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
-                    <div className="text-gray-200 font-medium text-lg">
+                    <div className="text-gray-900 dark:text-gray-200 font-medium text-lg">
                       {transaction.number}
                     </div>
-                    <div className="text-xs text-gray-500 uppercase tracking-wide">
+                    <div className="text-xs text-gray-600 dark:text-gray-500 uppercase tracking-wide">
                       {transaction.entryType}
                     </div>
                   </div>
@@ -145,7 +145,7 @@ const EntryHistoryPanel: React.FC<EntryHistoryPanelProps> = ({
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => onEdit?.(transaction)}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300"
+                        className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300"
                         title="Edit"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

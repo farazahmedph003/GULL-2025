@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ProjectHeader from '../components/ProjectHeader';
 import StandardEntry from '../components/StandardEntry';
 import IntelligentEntry from '../components/IntelligentEntry';
-import EntryHistoryPanel from '../components/EntryHistoryPanel';
+import UserHistoryPanel from '../components/UserHistoryPanel';
 import AggregatedNumbersPanel from '../components/AggregatedNumbersPanel';
 import EntryFormsBar from '../components/EntryFormsBar';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -13,7 +13,8 @@ import { useUserBalance } from '../hooks/useUserBalance';
 import { useNotifications } from '../contexts/NotificationContext';
 import { formatDate } from '../utils/helpers';
 import { playReloadSound } from '../utils/audioFeedback';
-import { exportToJSON, exportToCSV, importFromJSON, importFromCSV } from '../utils/importExport';
+import { importFromCSV } from '../utils/importExport';
+import { exportUserTransactionsToPDF } from '../utils/pdfExport';
 import type { Project, EntryType, Transaction } from '../types';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
 import { useSystemSettings } from '../hooks/useSystemSettings';
@@ -42,7 +43,7 @@ const UserDashboard: React.FC = () => {
     updateTransaction,
   } = useTransactions('user-scope');
   
-  const { refresh: refreshBalance, addBalance, deductBalance } = useUserBalance();
+  const { refresh: refreshBalance } = useUserBalance();
   const { entriesEnabled, refresh: refreshSettings } = useSystemSettings();
   
   // Comprehensive refresh function
@@ -100,21 +101,7 @@ const UserDashboard: React.FC = () => {
     if (!editingTransaction) return;
 
     try {
-      // Calculate balance difference
-      const oldTotal = editingTransaction.first + editingTransaction.second;
-      const newTotal = updatedTransaction.first + updatedTransaction.second;
-      const difference = newTotal - oldTotal;
-
-      // Update user balance based on difference
-      if (difference > 0) {
-        // New total is higher, deduct the difference
-        await deductBalance(difference);
-      } else if (difference < 0) {
-        // New total is lower, add the difference (which is negative, so we add the absolute value)
-        await addBalance(Math.abs(difference));
-      }
-      
-      // Update transaction
+      // Update transaction (updateTransaction will handle balance adjustments automatically)
       await updateTransaction(editingTransaction.id, updatedTransaction);
       
       setEditingTransaction(null);
@@ -132,11 +119,7 @@ const UserDashboard: React.FC = () => {
     try {
       setIsDeleting(true);
 
-      // Refund the balance to the user
-      const refundAmount = deletingTransaction.first + deletingTransaction.second;
-      await addBalance(refundAmount);
-
-      // Delete the transaction
+      // Delete the transaction (deleteTransaction will handle balance refund automatically)
       await deleteTransaction(deletingTransaction.id);
       
       setDeletingTransaction(null);
@@ -151,16 +134,15 @@ const UserDashboard: React.FC = () => {
   };
 
   // Export handlers
-  const handleExportJSON = () => {
+  const handleExportPDF = async () => {
     if (!project) return;
-    exportToJSON(project, transactions);
-    showSuccess('Export Successful', `Exported ${transactions.length} transactions to JSON`);
-  };
-
-  const handleExportCSV = () => {
-    if (!project) return;
-    exportToCSV(project, transactions);
-    showSuccess('Export Successful', `Exported ${transactions.length} transactions to CSV`);
+    try {
+      await exportUserTransactionsToPDF(transactions, project.name);
+      showSuccess('Export Successful', `Exported ${transactions.length} transactions to PDF`);
+    } catch (error) {
+      console.error('PDF export error:', error);
+      showError('Export Failed', 'Failed to export transactions to PDF');
+    }
   };
 
   // Import handlers
@@ -174,16 +156,45 @@ const UserDashboard: React.FC = () => {
 
     try {
       if (file.name.endsWith('.json')) {
-        const data = await importFromJSON(file);
-        // Import all transactions
-        for (const transaction of data.transactions) {
-          await addTransaction({
-            ...transaction,
-            projectId: 'user-scope',
-          });
+        const text = await file.text();
+        const jsonData = JSON.parse(text);
+        
+        // Check if it's an aggregated export (has 'data' array) or regular transaction export (has 'transactions' array)
+        if (jsonData.data && Array.isArray(jsonData.data)) {
+          // Aggregated JSON format
+          const entryType = jsonData.entryType || 'akra';
+          let importedCount = 0;
+          
+          for (const item of jsonData.data) {
+            if (item.first > 0 || item.second > 0) {
+              await addTransaction({
+                number: item.number,
+                entryType: entryType,
+                first: item.first || 0,
+                second: item.second || 0,
+                projectId: 'user-scope',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              });
+              importedCount++;
+            }
+          }
+          
+          await showSuccess('Import Successful', `Imported ${importedCount} aggregated numbers from JSON`);
+          refresh();
+        } else if (jsonData.transactions && Array.isArray(jsonData.transactions)) {
+          // Regular transaction format
+          for (const transaction of jsonData.transactions) {
+            await addTransaction({
+              ...transaction,
+              projectId: 'user-scope',
+            });
+          }
+          await showSuccess('Import Successful', `Imported ${jsonData.transactions.length} transactions from JSON`);
+          refresh();
+        } else {
+          showError('Invalid Format', 'JSON file format not recognized');
         }
-        await showSuccess('Import Successful', `Imported ${data.transactions.length} transactions from JSON`);
-        refresh();
       } else if (file.name.endsWith('.csv')) {
         const importedTransactions = await importFromCSV(file, 'user-scope');
         // Import all transactions
@@ -252,10 +263,10 @@ const UserDashboard: React.FC = () => {
           
           {/* Page Header */}
           <div className="mb-6 sm:mb-8">
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white mb-2">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mb-2">
               📊 {project.name}
             </h1>
-            <p className="text-sm sm:text-base text-gray-400">Track your entries with real-time calculations</p>
+            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">Track your entries with real-time calculations</p>
           </div>
 
 
@@ -265,21 +276,21 @@ const UserDashboard: React.FC = () => {
               const s = computeTypeStats(activeTab as EntryType);
               return (
                 <div className="mb-6 sm:mb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-                  <div className="bg-gray-800 border border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6">
-                    <h3 className="text-sm sm:text-lg font-bold text-gray-100">FIRST PKR TOTAL</h3>
-                    <p className="text-lg sm:text-2xl font-bold text-emerald-300">PKR {s.firstTotal.toLocaleString()}</p>
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg hover:shadow-xl transition-shadow">
+                    <h3 className="text-sm sm:text-lg font-bold text-gray-700 dark:text-gray-100">FIRST PKR TOTAL</h3>
+                    <p className="text-lg sm:text-2xl font-bold text-emerald-600 dark:text-emerald-300">PKR {s.firstTotal.toLocaleString()}</p>
                   </div>
-                  <div className="bg-gray-800 border border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6">
-                    <h3 className="text-sm sm:text-lg font-bold text-gray-100">SECOND PKR TOTAL</h3>
-                    <p className="text-lg sm:text-2xl font-bold text-amber-300">PKR {s.secondTotal.toLocaleString()}</p>
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg hover:shadow-xl transition-shadow">
+                    <h3 className="text-sm sm:text-lg font-bold text-gray-700 dark:text-gray-100">SECOND PKR TOTAL</h3>
+                    <p className="text-lg sm:text-2xl font-bold text-amber-600 dark:text-amber-300">PKR {s.secondTotal.toLocaleString()}</p>
                   </div>
-                  <div className="bg-gray-800 border border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6">
-                    <h3 className="text-sm sm:text-lg font-bold text-gray-100">TOTAL PKR</h3>
-                    <p className="text-lg sm:text-2xl font-bold text-cyan-300">PKR {(s.totalPkr).toLocaleString()}</p>
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg hover:shadow-xl transition-shadow">
+                    <h3 className="text-sm sm:text-lg font-bold text-gray-700 dark:text-gray-100">TOTAL PKR</h3>
+                    <p className="text-lg sm:text-2xl font-bold text-cyan-600 dark:text-cyan-300">PKR {(s.totalPkr).toLocaleString()}</p>
                   </div>
-                  <div className="bg-gray-800 border border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6">
-                    <h3 className="text-sm sm:text-lg font-bold text-gray-100">UNIQUE NUMBER</h3>
-                    <p className="text-lg sm:text-2xl font-bold text-purple-300">{s.uniqueNumbers}</p>
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg hover:shadow-xl transition-shadow">
+                    <h3 className="text-sm sm:text-lg font-bold text-gray-700 dark:text-gray-100">UNIQUE NUMBER</h3>
+                    <p className="text-lg sm:text-2xl font-bold text-purple-600 dark:text-purple-300">{s.uniqueNumbers}</p>
                   </div>
                 </div>
               );
@@ -289,11 +300,18 @@ const UserDashboard: React.FC = () => {
           {/* Content Panels */}
           {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
-              {/* Left Panel - Entry History */}
-              <EntryHistoryPanel
+              {/* Left Panel - Aggregated Numbers */}
+              <AggregatedNumbersPanel
                 transactions={transactions}
                 activeTab={(activeTab as any) as 'all' | 'open' | 'akra' | 'ring' | 'packet'}
                 projectEntryTypes={project.entryTypes}
+                onImport={handleImportClick}
+                onExportPDF={handleExportPDF}
+              />
+
+              {/* Right Panel - Complete History (Entries + Top-ups + Admin Actions) */}
+              <UserHistoryPanel 
+                transactions={transactions}
                 onEdit={(t) => setEditingTransaction(t)}
                 onDelete={(transactionId) => {
                   const transaction = transactions.find(t => t.id === transactionId);
@@ -301,16 +319,6 @@ const UserDashboard: React.FC = () => {
                     setDeletingTransaction(transaction);
                   }
                 }}
-              />
-
-              {/* Right Panel - Aggregated Numbers */}
-              <AggregatedNumbersPanel
-                transactions={transactions}
-                activeTab={(activeTab as any) as 'all' | 'open' | 'akra' | 'ring' | 'packet'}
-                projectEntryTypes={project.entryTypes}
-                onImport={handleImportClick}
-                onExportJSON={handleExportJSON}
-                onExportCSV={handleExportCSV}
               />
             </div>
           }

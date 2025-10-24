@@ -283,88 +283,75 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         </div>
       )}
 
-      {/* Mobile-First Vertical Form */}
-      <div className="space-y-4">
-        {/* Numbers Input */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Numbers <span className="text-red-500">*</span>
-          </label>
-          <input
-            ref={numbersInputRef}
+      {/* Horizontal Layout Form - No Labels */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        {/* Left Side - Large Number Textarea */}
+        <div className="flex-1">
+          <textarea
+            ref={numbersInputRef as any}
             value={numbers}
             onChange={(e) => {
               setNumbers(e.target.value);
               if (errors.numbers) setErrors(prev => ({ ...prev, numbers: undefined }));
             }}
             placeholder="e.g., 0 1 2 (open) OR 00 01 02 (akra) OR 000 001 (ring) OR 0000 0001 (packet)"
-            className={`w-full px-4 py-3 text-base border rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${errors.numbers ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
+            className={`w-full h-full min-h-[200px] px-6 py-6 text-xl font-medium text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700 border-2 rounded-3xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none ${errors.numbers ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
             autoComplete="off"
-            inputMode="text"
+            rows={8}
           />
           {errors.numbers && (
             <p className="mt-2 text-sm text-red-500">{errors.numbers}</p>
           )}
         </div>
 
-        {/* Amount Inputs Row */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Right Side - Stacked Inputs and Button */}
+        <div className="flex flex-col gap-3 sm:w-64">
           {/* FIRST Amount */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              FIRST Amount
-            </label>
-            <input
-              type="number"
-              value={first}
-              onChange={(e) => {
-                setFirst(e.target.value);
-                if (errors.first) setErrors(prev => ({ ...prev, first: undefined }));
-              }}
-              placeholder="0"
-              className={`w-full px-4 py-3 text-base border rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${errors.first ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
-              step="0.01"
-              inputMode="decimal"
-            />
-            {errors.first && (
-              <p className="mt-2 text-sm text-red-500">{errors.first}</p>
-            )}
-          </div>
+          <input
+            type="number"
+            value={first}
+            onChange={(e) => {
+              setFirst(e.target.value);
+              if (errors.first) setErrors(prev => ({ ...prev, first: undefined }));
+            }}
+            placeholder="0"
+            className={`w-full px-5 py-4 text-lg font-medium text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700 border-2 rounded-3xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all ${errors.first ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
+            step="0.01"
+            inputMode="decimal"
+          />
+          {errors.first && (
+            <p className="text-xs text-red-500">{errors.first}</p>
+          )}
 
           {/* SECOND Amount */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              SECOND Amount
-            </label>
-            <input
-              type="number"
-              value={second}
-              onChange={(e) => {
-                setSecond(e.target.value);
-                if (errors.second) setErrors(prev => ({ ...prev, second: undefined }));
-              }}
-              placeholder="0"
-              className={`w-full px-4 py-3 text-base border rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${errors.second ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
-              step="0.01"
-              inputMode="decimal"
-            />
-            {errors.second && (
-              <p className="mt-2 text-sm text-red-500">{errors.second}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Submit Button */}
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="w-full px-6 py-4 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-base font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-3 min-h-[56px]"
-        >
-          {isSubmitting && (
-            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+          <input
+            type="number"
+            value={second}
+            onChange={(e) => {
+              setSecond(e.target.value);
+              if (errors.second) setErrors(prev => ({ ...prev, second: undefined }));
+            }}
+            placeholder="0"
+            className={`w-full px-5 py-4 text-lg font-medium text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700 border-2 rounded-3xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all ${errors.second ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
+            step="0.01"
+            inputMode="decimal"
+          />
+          {errors.second && (
+            <p className="text-xs text-red-500">{errors.second}</p>
           )}
-          {isSubmitting ? 'Adding Entry...' : 'Add Entry'}
-        </button>
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full px-5 py-4 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-lg font-semibold rounded-3xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
+          >
+            {isSubmitting && (
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+            )}
+            {isSubmitting ? 'Adding Entry...' : 'Add Entry'}
+          </button>
+        </div>
       </div>
     </form>
   );

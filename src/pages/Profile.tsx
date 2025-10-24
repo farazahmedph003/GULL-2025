@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useScaling } from '../contexts/ScalingContext';
+import { useAppearance, type FontSize } from '../contexts/AppearanceContext';
 import BackButton from '../components/BackButton';
 import ScalingSlider from '../components/ScalingSlider';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -12,6 +13,7 @@ import { isOfflineMode } from '../lib/supabase';
 const Profile: React.FC = () => {
   const { user, updateProfile, signOut, loading } = useAuth();
   const { scalePercentage, setScalePercentage } = useScaling();
+  const { fontSize, setFontSize } = useAppearance();
   const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName || '');
@@ -213,6 +215,44 @@ const Profile: React.FC = () => {
               </h2>
               
               <div className="space-y-6">
+                {/* Font Size */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Font Size
+                  </label>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    Adjust the text size throughout the application
+                  </p>
+                  <div className="flex items-center gap-3">
+                    {[
+                      { value: 'small' as FontSize, label: 'Small', preview: 'A' },
+                      { value: 'medium' as FontSize, label: 'Medium', preview: 'A' },
+                      { value: 'large' as FontSize, label: 'Large', preview: 'A' }
+                    ].map((size) => (
+                      <button
+                        key={size.value}
+                        onClick={() => setFontSize(size.value)}
+                        className={`flex-1 flex flex-col items-center justify-center space-y-2 px-4 py-3 rounded-lg border-2 transition-all ${
+                          fontSize === size.value
+                            ? 'bg-teal-500 border-teal-500 text-white shadow-lg'
+                            : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        <span
+                          className={`font-medium ${
+                            size.value === 'small' ? 'text-sm' :
+                            size.value === 'medium' ? 'text-base' : 'text-lg'
+                          }`}
+                        >
+                          {size.preview}
+                        </span>
+                        <span className="text-xs">{size.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Desktop Scaling */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Desktop Scaling

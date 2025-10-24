@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../../services/database';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { groupTransactionsByNumber } from '../../utils/transactionHelpers';
 import type { EntryType } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -15,6 +16,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
   const [secondNumbers, setSecondNumbers] = useState('');
 
   const { showSuccess, showError } = useNotifications();
+  const { user } = useAuth();
 
   // Load entries when type changes
   useEffect(() => {
@@ -158,9 +160,10 @@ const AdminAdvancedFilterPage: React.FC = () => {
       return;
     }
 
-    const header = `Number\tFirst\tUsers`;
-    const rows = firstFilteredResults.map(r => `${r.number}\t${r.amount}\t${r.users.join(', ')}`);
-    const data = [header, ...rows].join('\n');
+    const entryTypeUpper = selectedType.toUpperCase();
+    const header = `${entryTypeUpper}\tFirst`;
+    const rows = firstFilteredResults.map(r => `${r.number}\tF ${r.amount}`);
+    const data = `${header}\n${rows.join('\n')}`;
 
     navigator.clipboard.writeText(data).then(() => {
       showSuccess('Success', `Copied ${firstFilteredResults.length} First entries to clipboard!`);
@@ -173,13 +176,214 @@ const AdminAdvancedFilterPage: React.FC = () => {
       return;
     }
 
-    const header = `Number\tSecond\tUsers`;
-    const rows = secondFilteredResults.map(r => `${r.number}\t${r.amount}\t${r.users.join(', ')}`);
-    const data = [header, ...rows].join('\n');
+    const entryTypeUpper = selectedType.toUpperCase();
+    const header = `${entryTypeUpper}\tSecond`;
+    const rows = secondFilteredResults.map(r => `${r.number}\tS ${r.amount}`);
+    const data = `${header}\n${rows.join('\n')}`;
 
     navigator.clipboard.writeText(data).then(() => {
       showSuccess('Success', `Copied ${secondFilteredResults.length} Second entries to clipboard!`);
     });
+  };
+
+  const handleDeductFirst = async () => {
+    if (firstFilteredResults.length === 0) {
+      showError('Error', 'No results to deduct!');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to deduct FIRST amounts from ${firstFilteredResults.length} numbers?`)) {
+      return;
+    }
+
+    try {
+      console.log('🔄 Starting FIRST deduction...');
+      const processedEntries = new Set<string>();
+      
+      for (const result of firstFilteredResults) {
+        const entriesForNumber = entries.filter(e => e.number === result.number);
+        console.log(`📌 Processing number ${result.number}: ${entriesForNumber.length} entries found`);
+        
+        // Group entries by user
+        const entriesByUser = new Map<string, typeof entries>();
+        entriesForNumber.forEach(entry => {
+          const userId = entry.userId || 'unknown';
+          if (!entriesByUser.has(userId)) {
+            entriesByUser.set(userId, []);
+          }
+          entriesByUser.get(userId)!.push(entry);
+        });
+        
+        let remainingToDeduct = result.amount;
+        
+        for (const [userId, userEntries] of entriesByUser) {
+          const userFirstTotal = userEntries.reduce((sum, e) => sum + (e.first || 0), 0);
+          const totalFirst = entriesForNumber.reduce((sum, e) => sum + (e.first || 0), 0);
+          const userShare = totalFirst > 0 ? (userFirstTotal / totalFirst) * result.amount : 0;
+          let userRemaining = Math.min(userShare, remainingToDeduct, userFirstTotal);
+          
+          for (const entry of userEntries) {
+            const entryKey = `${entry.id}-${entry.number}`;
+            if (processedEntries.has(entryKey) || userRemaining <= 0) continue;
+            
+            const currentFirst = entry.first || 0;
+            if (currentFirst > 0) {
+              const deductAmount = Math.min(currentFirst, userRemaining);
+              const newFirst = currentFirst - deductAmount;
+              userRemaining -= deductAmount;
+              remainingToDeduct -= deductAmount;
+              
+              await db.updateTransaction(entry.id, {
+                id: entry.id,
+                number: entry.number,
+                entryType: entry.entryType,
+                first: newFirst,
+                second: entry.second,
+                notes: '',
+                projectId: 'user-scope',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              });
+              
+              processedEntries.add(entryKey);
+            }
+          }
+        }
+      }
+      
+      // Log admin action for each affected user
+      if (user?.id) {
+        const affectedUsers = new Set<string>();
+        for (const result of firstFilteredResults) {
+          const entriesForNumber = entries.filter(e => e.number === result.number);
+          entriesForNumber.forEach(entry => {
+            if (entry.userId) affectedUsers.add(entry.userId);
+          });
+        }
+
+        for (const targetUserId of affectedUsers) {
+          await db.logAdminAction(
+            user.id,
+            targetUserId,
+            'deduct_first',
+            `Advanced Filter: Deducted FIRST amounts from ${firstFilteredResults.length} numbers (${selectedType})`,
+            {
+              entryType: selectedType,
+              numbersCount: firstFilteredResults.length,
+              entriesUpdated: processedEntries.size,
+              searchQuery: firstNumbers,
+            }
+          );
+        }
+      }
+
+      showSuccess('Success', `Deducted FIRST amounts! Updated ${processedEntries.size} entries.`);
+      await loadEntries();
+      setFirstNumbers('');
+    } catch (error) {
+      console.error('❌ Deduct FIRST error:', error);
+      showError('Error', 'Failed to deduct FIRST amounts');
+    }
+  };
+
+  const handleDeductSecond = async () => {
+    if (secondFilteredResults.length === 0) {
+      showError('Error', 'No results to deduct!');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to deduct SECOND amounts from ${secondFilteredResults.length} numbers?`)) {
+      return;
+    }
+
+    try {
+      console.log('🔄 Starting SECOND deduction...');
+      const processedEntries = new Set<string>();
+      
+      for (const result of secondFilteredResults) {
+        const entriesForNumber = entries.filter(e => e.number === result.number);
+        console.log(`📌 Processing number ${result.number}: ${entriesForNumber.length} entries found`);
+        
+        // Group entries by user
+        const entriesByUser = new Map<string, typeof entries>();
+        entriesForNumber.forEach(entry => {
+          const userId = entry.userId || 'unknown';
+          if (!entriesByUser.has(userId)) {
+            entriesByUser.set(userId, []);
+          }
+          entriesByUser.get(userId)!.push(entry);
+        });
+        
+        let remainingToDeduct = result.amount;
+        
+        for (const [userId, userEntries] of entriesByUser) {
+          const userSecondTotal = userEntries.reduce((sum, e) => sum + (e.second || 0), 0);
+          const totalSecond = entriesForNumber.reduce((sum, e) => sum + (e.second || 0), 0);
+          const userShare = totalSecond > 0 ? (userSecondTotal / totalSecond) * result.amount : 0;
+          let userRemaining = Math.min(userShare, remainingToDeduct, userSecondTotal);
+          
+          for (const entry of userEntries) {
+            const entryKey = `${entry.id}-${entry.number}`;
+            if (processedEntries.has(entryKey) || userRemaining <= 0) continue;
+            
+            const currentSecond = entry.second || 0;
+            if (currentSecond > 0) {
+              const deductAmount = Math.min(currentSecond, userRemaining);
+              const newSecond = currentSecond - deductAmount;
+              userRemaining -= deductAmount;
+              remainingToDeduct -= deductAmount;
+              
+              await db.updateTransaction(entry.id, {
+                id: entry.id,
+                number: entry.number,
+                entryType: entry.entryType,
+                first: entry.first,
+                second: newSecond,
+                notes: '',
+                projectId: 'user-scope',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              });
+              
+              processedEntries.add(entryKey);
+            }
+          }
+        }
+      }
+      
+      // Log admin action for each affected user
+      if (user?.id) {
+        const affectedUsers = new Set<string>();
+        for (const result of secondFilteredResults) {
+          const entriesForNumber = entries.filter(e => e.number === result.number);
+          entriesForNumber.forEach(entry => {
+            if (entry.userId) affectedUsers.add(entry.userId);
+          });
+        }
+
+        for (const targetUserId of affectedUsers) {
+          await db.logAdminAction(
+            user.id,
+            targetUserId,
+            'deduct_second',
+            `Advanced Filter: Deducted SECOND amounts from ${secondFilteredResults.length} numbers (${selectedType})`,
+            {
+              entryType: selectedType,
+              numbersCount: secondFilteredResults.length,
+              entriesUpdated: processedEntries.size,
+              searchQuery: secondNumbers,
+            }
+          );
+        }
+      }
+
+      showSuccess('Success', `Deducted SECOND amounts! Updated ${processedEntries.size} entries.`);
+      await loadEntries();
+      setSecondNumbers('');
+    } catch (error) {
+      console.error('❌ Deduct SECOND error:', error);
+      showError('Error', 'Failed to deduct SECOND amounts');
+    }
   };
 
   return (
@@ -230,12 +434,20 @@ const AdminAdvancedFilterPage: React.FC = () => {
                     FIRST (Result)
                   </div>
                   {firstFilteredResults.length > 0 && (
-                    <button
-                      onClick={copyFirstResults}
-                      className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-xs font-semibold hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
-                    >
-                      Copy ({firstFilteredResults.length})
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={copyFirstResults}
+                        className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg text-xs font-semibold hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+                      >
+                        📋 Copy ({firstFilteredResults.length})
+                      </button>
+                      <button
+                        onClick={handleDeductFirst}
+                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors"
+                      >
+                        ➖ Deduct
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -288,12 +500,20 @@ const AdminAdvancedFilterPage: React.FC = () => {
                     SECOND (Result)
                   </div>
                   {secondFilteredResults.length > 0 && (
-                    <button
-                      onClick={copySecondResults}
-                      className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg text-xs font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
-                    >
-                      Copy ({secondFilteredResults.length})
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={copySecondResults}
+                        className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg text-xs font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                      >
+                        📋 Copy ({secondFilteredResults.length})
+                      </button>
+                      <button
+                        onClick={handleDeductSecond}
+                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors"
+                      >
+                        ➖ Deduct
+                      </button>
+                    </div>
                   )}
                 </div>
 

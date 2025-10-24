@@ -17,6 +17,7 @@ import Welcome from './pages/Welcome';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import UserDashboard from './pages/UserDashboard';
+import LoadingSpinner from './components/LoadingSpinner';
 import AdminRoute from './components/AdminRoute';
 import AdminLayout from './components/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -58,7 +59,7 @@ const AppWithNotifications: React.FC = () => {
     });
   }, [showSuccess, showError, showWarning, showInfo, confirm]);
   
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const isAdmin = user?.role === 'admin';
 
   return (
@@ -73,7 +74,15 @@ const AppWithNotifications: React.FC = () => {
                 path="/"
                 element={
                   <ProtectedRoute>
-                    {isAdmin ? <Navigate to="/admin" replace /> : <UserDashboard />}
+                    {loading ? (
+                      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+                        <LoadingSpinner size="lg" text="Loading..." />
+                      </div>
+                    ) : isAdmin ? (
+                      <Navigate to="/admin" replace />
+                    ) : (
+                      <UserDashboard />
+                    )}
                   </ProtectedRoute>
                 }
               />

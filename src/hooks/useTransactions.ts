@@ -28,8 +28,10 @@ export const useTransactions = (projectId: string) => {
         
         let dbTransactions: Transaction[] = [];
         try {
-          dbTransactions = await db.getTransactions(projectId);
-          console.log('✅ Transactions loaded from database:', dbTransactions.length);
+          // Pass user ID to filter transactions for this specific user only
+          const userId = user?.id;
+          dbTransactions = await db.getTransactions(projectId, userId);
+          console.log('✅ Transactions loaded from database:', dbTransactions.length, userId ? `(filtered by user: ${userId})` : '(all users)');
         } catch (dbError) {
           console.error('❌ Database fetch failed:', dbError);
           throw dbError;
@@ -82,7 +84,7 @@ export const useTransactions = (projectId: string) => {
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, user?.id]);
 
   // Initial load
   useEffect(() => {

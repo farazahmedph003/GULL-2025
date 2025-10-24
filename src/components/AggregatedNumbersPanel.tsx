@@ -6,8 +6,7 @@ interface AggregatedNumbersPanelProps {
   transactions: Transaction[];
   activeTab: 'all' | 'open' | 'akra' | 'ring' | 'packet';
   projectEntryTypes: string[];
-  onExportJSON?: () => void;
-  onExportCSV?: () => void;
+  onExportPDF?: () => void;
   onImport?: () => void;
 }
 
@@ -15,8 +14,7 @@ const AggregatedNumbersPanel: React.FC<AggregatedNumbersPanelProps> = ({
   transactions,
   activeTab,
   projectEntryTypes,
-  onExportJSON,
-  onExportCSV,
+  onExportPDF,
   onImport,
 }) => {
   const [isVisible, setIsVisible] = useState(true);
@@ -152,14 +150,49 @@ const AggregatedNumbersPanel: React.FC<AggregatedNumbersPanelProps> = ({
     });
   };
 
+  const exportToJSON = () => {
+    if (aggregatedNumbers.length === 0) {
+      alert('No data to export!');
+      return;
+    }
+
+    // Create export data with metadata
+    const exportData = {
+      exportDate: new Date().toISOString(),
+      entryType: activeTab,
+      totalNumbers: aggregatedNumbers.length,
+      data: aggregatedNumbers
+        .filter(item => item.firstTotal > 0 || item.secondTotal > 0)
+        .map(item => ({
+          number: item.number,
+          first: item.firstTotal,
+          second: item.secondTotal,
+          entryCount: item.entryCount,
+        })),
+    };
+
+    // Create and download JSON file
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `aggregated-${activeTab}-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    alert(`✓ Exported ${exportData.data.length} numbers to JSON!`);
+  };
+
   if (!isVisible) {
     return (
-      <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-300">Aggregated Numbers</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-300">Aggregated Numbers</h3>
           <button
             onClick={() => setIsVisible(true)}
-            className="p-2 text-gray-400 hover:text-white transition-colors"
+            className="p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
             title="Show Panel"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -173,15 +206,15 @@ const AggregatedNumbersPanel: React.FC<AggregatedNumbersPanelProps> = ({
   }
 
   return (
-    <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6">
+    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 shadow-lg">
       <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-lg font-semibold text-gray-300">Aggregated Numbers</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-300">Aggregated Numbers</h3>
           <div className="flex items-center gap-2">
             {onImport && (
               <button
                 onClick={onImport}
-                className="p-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 rounded-lg"
+                className="p-1.5 bg-blue-100 dark:bg-blue-500/20 hover:bg-blue-200 dark:hover:bg-blue-500/30 text-blue-700 dark:text-blue-200 rounded-lg"
                 title="Import"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -189,32 +222,30 @@ const AggregatedNumbersPanel: React.FC<AggregatedNumbersPanelProps> = ({
                 </svg>
               </button>
             )}
-            {onExportJSON && (
+            <button
+              onClick={exportToJSON}
+              className="p-1.5 bg-green-100 dark:bg-green-500/20 hover:bg-green-200 dark:hover:bg-green-500/30 text-green-700 dark:text-green-200 rounded-lg"
+              title="Export JSON (for importing)"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </button>
+            {onExportPDF && (
               <button
-                onClick={onExportJSON}
-                className="p-1.5 bg-green-500/20 hover:bg-green-500/30 text-green-200 rounded-lg"
-                title="Export JSON"
+                onClick={onExportPDF}
+                className="p-1.5 bg-red-100 dark:bg-red-500/20 hover:bg-red-200 dark:hover:bg-red-500/30 text-red-700 dark:text-red-200 rounded-lg"
+                title="Export PDF (for viewing)"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-              </button>
-            )}
-            {onExportCSV && (
-              <button
-                onClick={onExportCSV}
-                className="p-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 rounded-lg"
-                title="Export CSV"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
               </button>
             )}
             {aggregatedNumbers.length > 0 && (
               <button
                 onClick={copyResults}
-                className="p-1.5 text-gray-400 hover:text-white transition-colors"
+                className="p-1.5 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
                 title="Copy Results"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -224,7 +255,7 @@ const AggregatedNumbersPanel: React.FC<AggregatedNumbersPanelProps> = ({
             )}
             <button
               onClick={() => setIsVisible(false)}
-              className="p-1.5 text-gray-400 hover:text-white transition-colors"
+              className="p-1.5 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
               title="Hide Panel"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -233,66 +264,66 @@ const AggregatedNumbersPanel: React.FC<AggregatedNumbersPanelProps> = ({
             </button>
           </div>
         </div>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-gray-600 dark:text-gray-400">
           {aggregatedNumbers.length} numbers • {activeTab === 'all' ? 'All types' : activeTab.toUpperCase()}
         </p>
       </div>
 
-      <div className="bg-gray-900 rounded-lg p-2 min-h-[400px] max-h-[600px] overflow-y-auto">
-        <div className="divide-y divide-gray-800">
+      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-2 min-h-[400px] max-h-[600px] overflow-y-auto">
+        <div className="divide-y divide-gray-200 dark:divide-gray-800">
           {aggregatedNumbers.map((item) => (
             <div
               key={item.number}
-              className="px-3 py-3 hover:bg-gray-800/60 transition-colors rounded cursor-pointer"
+              className="px-3 py-3 hover:bg-gray-100 dark:hover:bg-gray-800/60 transition-colors rounded cursor-pointer"
               onClick={() => setSelectedNumber(selectedNumber === item.number ? null : item.number)}
             >
               <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-4">
-                <div className="text-gray-200 font-medium text-lg">
+                <div className="text-gray-900 dark:text-gray-200 font-medium text-lg">
                   {item.number}
                 </div>
                 
                 <div className="text-right">
                   {item.firstTotal > 0 ? (
-                    <div className="text-cyan-300 font-semibold">
+                    <div className="text-cyan-600 dark:text-cyan-300 font-semibold">
                       F {item.firstTotal.toLocaleString()}
                     </div>
                   ) : (
-                    <div className="text-gray-600">F 0</div>
+                    <div className="text-gray-500 dark:text-gray-600">F 0</div>
                   )}
                 </div>
                 
                 <div className="text-right">
                   {item.secondTotal > 0 ? (
-                    <div className="text-cyan-300 font-semibold">
+                    <div className="text-cyan-600 dark:text-cyan-300 font-semibold">
                       S {item.secondTotal.toLocaleString()}
                     </div>
                   ) : (
-                    <div className="text-gray-600">S 0</div>
+                    <div className="text-gray-500 dark:text-gray-600">S 0</div>
                   )}
                 </div>
               </div>
               
-              <div className="mt-1 text-xs text-gray-600">
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-600">
                 {item.entryCount} entries
               </div>
               
               {/* Expanded details for selected number */}
               {selectedNumber === item.number && (
-                <div className="mt-3 pt-3 border-t border-gray-700">
+                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
                   <div className="text-xs text-gray-500 mb-2">Entry History:</div>
                   <div className="space-y-1">
                     {selectedNumberTransactions.length === 0 ? (
-                      <div className="text-xs text-gray-500 italic">No entries yet</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-500 italic">No entries yet</div>
                     ) : (
                       selectedNumberTransactions.map((transaction) => (
                         <div key={transaction.id} className="flex justify-between text-xs">
-                          <span className="text-gray-400">
+                          <span className="text-gray-600 dark:text-gray-400">
                             {transaction.first > 0 && `F ${transaction.first}`}
                             {transaction.first > 0 && transaction.second > 0 && ' + '}
                             {transaction.second > 0 && `S ${transaction.second}`}
                             {transaction.first <= 0 && transaction.second <= 0 && 'Deduction'}
                           </span>
-                          <span className="text-gray-600">
+                          <span className="text-gray-700 dark:text-gray-600">
                             {new Date(transaction.createdAt).toLocaleTimeString()}
                           </span>
                         </div>

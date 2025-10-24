@@ -479,7 +479,7 @@ export class DatabaseService {
   // TRANSACTIONS
   // ============================================
 
-  async getTransactions(projectId: string): Promise<Transaction[]> {
+  async getTransactions(projectId: string, userId?: string): Promise<Transaction[]> {
     if (!isSupabaseConfigured()) {
       throw new Error('Supabase is not properly configured. Please check your environment settings.');
     }
@@ -495,6 +495,7 @@ export class DatabaseService {
 
       console.log('🔍 getTransactions debug:', {
         projectId,
+        userId,
         hasSupabaseAdmin: !!supabaseAdmin,
         usingClient: supabaseAdmin ? 'supabaseAdmin (service role)' : 'supabase (fallback)'
       });
@@ -510,6 +511,12 @@ export class DatabaseService {
         query = query.is('project_id', null);
       } else {
         query = query.eq('project_id', projectId);
+      }
+
+      // Filter by user ID if provided (for regular users to see only their own entries)
+      if (userId) {
+        query = query.eq('app_user_id', userId);
+        console.log('🔒 Filtering transactions by user ID:', userId);
       }
 
       const { data, error } = await query.order('created_at', { ascending: true });
@@ -1478,7 +1485,7 @@ export class DatabaseService {
       let query = client
         .from('transactions')
         .select('*')
-        .eq('user_id', userId)
+        .eq('app_user_id', userId) // Use app_user_id for app_users
         .order('created_at', { ascending: false });
 
       if (entryType) {
@@ -1517,7 +1524,7 @@ export class DatabaseService {
         // First, get all transactions for this entry type
         const { data: transactions, error: txError } = await client
           .from('transactions')
-          .select('id, user_id, project_id, number, entry_type, first_amount, second_amount, created_at, updated_at')
+          .select('id, user_id, app_user_id, project_id, number, entry_type, first_amount, second_amount, created_at, updated_at')
           .eq('entry_type', entryType)
           .order('created_at', { ascending: false });
         
@@ -1534,8 +1541,8 @@ export class DatabaseService {
           return [];
         }
         
-        // Get all unique user IDs from transactions
-        const userIds = [...new Set(transactions.map((t: any) => t.user_id))];
+        // Get all unique user IDs from transactions (use app_user_id for app_users)
+        const userIds = [...new Set(transactions.map((t: any) => t.app_user_id || t.user_id).filter(Boolean))];
         
         // Fetch user details for all users
         const { data: users, error: usersError } = await client
@@ -1560,7 +1567,8 @@ export class DatabaseService {
         // Combine transactions with user details
         const data = transactions.map((transaction: any) => ({
           ...transaction,
-          app_users: userMap.get(transaction.user_id) || { username: 'Unknown', full_name: 'Unknown User' }
+          user_id: transaction.app_user_id || transaction.user_id, // Ensure user_id is populated for consistency
+          app_users: userMap.get(transaction.app_user_id || transaction.user_id) || { username: 'Unknown', full_name: 'Unknown User' }
         }));
         
         console.log('🔍 getAllEntriesByType final result:', {
@@ -1591,7 +1599,7 @@ export class DatabaseService {
   }
 
   /**
-   * Get user history (entries + top-ups)
+   * Get user history (entries + top-ups + admin actions)
    */
   async getUserHistory(userId: string): Promise<any[]> {
     if (!isSupabaseConfigured() || !supabase) {
@@ -1608,11 +1616,11 @@ export class DatabaseService {
     });
 
     return this.withRetry(async () => {
-      // Get entries
+      // Get entries (use app_user_id for app_users)
       const { data: entries, error: entriesError } = await client
         .from('transactions')
         .select('*')
-        .eq('user_id', userId)
+        .eq('app_user_id', userId)
         .order('created_at', { ascending: false });
 
       if (entriesError) throw entriesError;
@@ -1623,7 +1631,7 @@ export class DatabaseService {
         const { data: balanceHistory, error: balanceError } = await client
           .from('balance_history')
           .select('*')
-          .eq('user_id', userId)
+          .eq('app_user_id', userId) // Use app_user_id for app_users
           .eq('type', 'top_up')
           .order('created_at', { ascending: false });
 
@@ -1637,10 +1645,30 @@ export class DatabaseService {
         console.warn('Balance history table not available:', err);
       }
 
+      // Try to get admin actions affecting this user
+      let adminActions: any[] = [];
+      try {
+        const { data: actions, error: actionsError } = await client
+          .from('admin_actions')
+          .select('*, admin_user:admin_user_id(username, email)')
+          .eq('target_user_id', userId)
+          .order('created_at', { ascending: false });
+
+        if (!actionsError && actions) {
+          adminActions = actions.map((action: any) => ({
+            ...action,
+            isAdminAction: true,
+          }));
+        }
+      } catch (err) {
+        console.warn('Admin actions table not available:', err);
+      }
+
       // Combine and sort by date
       const combined = [
         ...entries.map((e: any) => ({ ...e, isEntry: true })),
         ...topUps,
+        ...adminActions,
       ];
 
       combined.sort((a, b) => 

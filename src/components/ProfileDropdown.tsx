@@ -52,8 +52,8 @@ const ProfileDropdown: React.FC = () => {
         // Support username or email sign-in
         await signIn({ username: usernameKey || login.email, email: login.email, password: savedPassword });
         
-        // Navigate to home
-        navigate('/');
+        // Force reload to ensure auth state is properly updated
+        window.location.href = '/';
       } catch (error) {
         console.error('Auto-login failed:', error);
         // Fall back to manual login
@@ -167,8 +167,6 @@ const ProfileDropdown: React.FC = () => {
             </svg>
             <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">My Profile</span>
           </button>
-
-          {/* Theme controls removed as requested */}
 
           {/* Other Accounts */}
           {otherAccounts.length > 0 && (
