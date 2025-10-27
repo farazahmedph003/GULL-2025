@@ -1502,8 +1502,10 @@ export class DatabaseService {
 
   /**
    * Get all entries by type (all users)
+   * @param entryType - The entry type to filter by
+   * @param adminView - If true, applies admin deductions to amounts (admin-only view)
    */
-  async getAllEntriesByType(entryType: string): Promise<any[]> {
+  async getAllEntriesByType(entryType: string, adminView: boolean = false): Promise<any[]> {
     // Cache-first
     const cached = await getEntriesByTypeFromCache(entryType);
     if (!isSupabaseConfigured() || !supabase) return cached;
@@ -1513,6 +1515,7 @@ export class DatabaseService {
     
     console.log('🔍 getAllEntriesByType debug:', {
       entryType,
+      adminView,
       hasSupabaseAdmin: !!supabaseAdmin,
       usingClient: supabaseAdmin ? 'supabaseAdmin (service role)' : 'supabase (fallback)',
       supabaseAdminKey: supabaseAdmin ? 'SET' : 'NOT SET',
@@ -1564,33 +1567,103 @@ export class DatabaseService {
           userMap.set(user.id, { username: user.username, full_name: user.full_name });
         });
         
-        // Combine transactions with user details
-        const data = transactions.map((transaction: any) => ({
-          ...transaction,
-          user_id: transaction.app_user_id || transaction.user_id, // Ensure user_id is populated for consistency
-          app_users: userMap.get(transaction.app_user_id || transaction.user_id) || { username: 'Unknown', full_name: 'Unknown User' }
-        }));
+        // Get admin deductions if adminView is true
+        let deductionsMap = new Map<string, { first: number; second: number }>();
+        if (adminView) {
+          try {
+            const { data: deductions, error: dedError } = await client
+              .from('admin_deductions')
+              .select('transaction_id, deducted_first, deducted_second')
+              .in('transaction_id', transactions.map(t => t.id));
+            
+            if (!dedError && deductions) {
+              // Sum up all deductions per transaction
+              deductions.forEach((ded: any) => {
+                const existing = deductionsMap.get(ded.transaction_id) || { first: 0, second: 0 };
+                deductionsMap.set(ded.transaction_id, {
+                  first: existing.first + (ded.deducted_first || 0),
+                  second: existing.second + (ded.deducted_second || 0),
+                });
+              });
+            }
+          } catch (err) {
+            console.warn('Could not load admin deductions:', err);
+          }
+        }
+        
+        // Split bulk entries and combine transactions with user details
+        const allEntries: any[] = [];
+        
+        transactions.forEach((transaction: any) => {
+          const userId = transaction.app_user_id || transaction.user_id;
+          const userInfo = userMap.get(userId) || { username: 'Unknown', full_name: 'Unknown User' };
+          
+          // Check if this is a bulk entry (comma or space separated numbers)
+          const isBulkEntry = transaction.number && (transaction.number.includes(',') || transaction.number.includes(' '));
+          
+          if (isBulkEntry) {
+            // Split bulk entry into individual entries
+            const numbers = transaction.number.split(/[,\s]+/).filter((n: string) => n.trim().length > 0);
+            
+            numbers.forEach((number: string) => {
+              const trimmedNumber = number.trim();
+              
+              // Apply admin deductions if in admin view
+              let firstAmount = transaction.first_amount || 0;
+              let secondAmount = transaction.second_amount || 0;
+              
+              if (adminView) {
+                const deductions = deductionsMap.get(transaction.id) || { first: 0, second: 0 };
+                // Distribute deductions equally across split entries
+                const deductionPerEntry = {
+                  first: deductions.first / numbers.length,
+                  second: deductions.second / numbers.length,
+                };
+                firstAmount = Math.max(0, firstAmount - deductionPerEntry.first);
+                secondAmount = Math.max(0, secondAmount - deductionPerEntry.second);
+              }
+              
+              allEntries.push({
+                ...transaction,
+                number: trimmedNumber,
+                first_amount: firstAmount,
+                second_amount: secondAmount,
+                user_id: userId,
+                app_users: userInfo,
+                is_split_entry: true,
+                original_transaction_id: transaction.id,
+              });
+            });
+          } else {
+            // Single entry
+            let firstAmount = transaction.first_amount || 0;
+            let secondAmount = transaction.second_amount || 0;
+            
+            if (adminView) {
+              const deductions = deductionsMap.get(transaction.id) || { first: 0, second: 0 };
+              firstAmount = Math.max(0, firstAmount - deductions.first);
+              secondAmount = Math.max(0, secondAmount - deductions.second);
+            }
+            
+            allEntries.push({
+              ...transaction,
+              first_amount: firstAmount,
+              second_amount: secondAmount,
+              user_id: userId,
+              app_users: userInfo,
+            });
+          }
+        });
         
         console.log('🔍 getAllEntriesByType final result:', {
           entryType,
-          finalDataLength: data.length,
-          sampleEntry: data[0] || 'none'
+          adminView,
+          originalTransactions: transactions.length,
+          finalDataLength: allEntries.length,
+          sampleEntry: allEntries[0] || 'none'
         });
         
-        return data;
-        // Cache flattened transactions
-        await cacheTransactions((data || []).map((d: any) => ({
-          id: d.id,
-          user_id: d.user_id,
-          project_id: d.project_id,
-          number: d.number,
-          entry_type: d.entry_type,
-          first_amount: d.first_amount,
-          second_amount: d.second_amount,
-          created_at: d.created_at,
-          updated_at: d.updated_at
-        })));
-        return data || [];
+        return allEntries;
       });
       return rows;
     } catch {
@@ -1747,6 +1820,223 @@ export class DatabaseService {
       console.error('❌ Failed to save system settings:', err);
       throw err;
     }
+  }
+
+  // ============================================
+  // ADMIN DEDUCTION FUNCTIONS
+  // ============================================
+
+  /**
+   * Save admin deduction (affects admin view only, not actual user data)
+   */
+  async saveAdminDeduction(
+    transactionId: string,
+    adminUserId: string,
+    deductedFirst: number,
+    deductedSecond: number,
+    deductionType: string,
+    metadata?: any
+  ): Promise<void> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    return this.withRetry(async () => {
+      const { error } = await client
+        .from('admin_deductions')
+        .insert({
+          transaction_id: transactionId,
+          admin_user_id: adminUserId,
+          deducted_first: deductedFirst,
+          deducted_second: deductedSecond,
+          deduction_type: deductionType,
+          metadata: metadata || {},
+        });
+
+      if (error) throw error;
+    });
+  }
+
+  /**
+   * Get all admin deductions for specific transactions
+   */
+  async getAdminDeductions(transactionIds: string[]): Promise<any[]> {
+    if (!isSupabaseConfigured() || !supabase) {
+      return [];
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    try {
+      const { data, error } = await client
+        .from('admin_deductions')
+        .select('*')
+        .in('transaction_id', transactionIds);
+
+      if (error) throw error;
+
+      return data || [];
+    } catch (err) {
+      console.warn('Could not fetch admin deductions:', err);
+      return [];
+    }
+  }
+
+  // ============================================
+  // USER MANAGEMENT FUNCTIONS
+  // ============================================
+
+  /**
+   * Toggle user active status
+   */
+  async toggleUserActiveStatus(userId: string, isActive: boolean): Promise<void> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    return this.withRetry(async () => {
+      const { error } = await client
+        .from('app_users')
+        .update({ is_active: isActive })
+        .eq('id', userId);
+
+      if (error) throw error;
+    });
+  }
+
+  /**
+   * Delete user (soft delete - sets is_active to false and deleted_at)
+   */
+  async deleteUser(userId: string, hardDelete: boolean = false): Promise<void> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    return this.withRetry(async () => {
+      if (hardDelete) {
+        // Hard delete - remove from database (cascades to transactions)
+        const { error } = await client
+          .from('app_users')
+          .delete()
+          .eq('id', userId);
+
+        if (error) throw error;
+      } else {
+        // Soft delete - set inactive and deleted_at timestamp
+        const { error } = await client
+          .from('app_users')
+          .update({
+            is_active: false,
+            deleted_at: new Date().toISOString(),
+          })
+          .eq('id', userId);
+
+        if (error) throw error;
+      }
+    });
+  }
+
+  /**
+   * Reset user history (delete all transactions for a specific user)
+   */
+  async resetUserHistory(userId: string): Promise<{ deletedCount: number }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    return this.withRetry(async () => {
+      // First, get count of transactions to be deleted
+      const { count, error: countError } = await client
+        .from('transactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId);
+
+      if (countError) throw countError;
+
+      // Delete all transactions for this user
+      const { error: deleteError } = await client
+        .from('transactions')
+        .delete()
+        .eq('user_id', userId);
+
+      if (deleteError) throw deleteError;
+
+      // Delete all admin deductions for this user's transactions
+      // Note: These will also be cascade-deleted if foreign key is set properly,
+      // but we do it explicitly to be safe
+      const { error: deductionsError } = await client
+        .from('admin_deductions')
+        .delete()
+        .eq('admin_user_id', userId);
+
+      // Don't throw on deductions error as they might not exist
+      if (deductionsError) {
+        console.warn('Error deleting admin deductions:', deductionsError);
+      }
+
+      // Clear cache
+      clearTransactionsCache();
+
+      return { deletedCount: count || 0 };
+    });
+  }
+
+  /**
+   * Withdraw from user balance (opposite of top-up)
+   */
+  async withdrawUserBalance(userId: string, amount: number): Promise<void> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    return this.withRetry(async () => {
+      // Get current balance
+      const { data: user, error: fetchError } = await client
+        .from('app_users')
+        .select('balance')
+        .eq('id', userId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      const currentBalance = user.balance || 0;
+      if (currentBalance < amount) {
+        throw new Error('Insufficient balance for withdrawal');
+      }
+
+      // Update balance
+      const newBalance = currentBalance - amount;
+      const { error: updateError } = await client
+        .from('app_users')
+        .update({ balance: newBalance })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
+
+      // Log the withdrawal in balance_history table (if it exists)
+      try {
+        await client
+          .from('balance_history')
+          .insert({
+            user_id: userId,
+            amount: -amount, // Negative to indicate withdrawal
+            type: 'withdrawal',
+            balance_after: newBalance,
+          });
+      } catch (err) {
+        console.warn('Could not log balance history:', err);
+      }
+    });
   }
 }
 

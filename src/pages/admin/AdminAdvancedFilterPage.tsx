@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../../services/database';
+import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { groupTransactionsByNumber } from '../../utils/transactionHelpers';
@@ -26,12 +27,31 @@ const AdminAdvancedFilterPage: React.FC = () => {
   // Load entries when type changes
   useEffect(() => {
     loadEntries(true); // Save initial state to history
+
+    // Set up real-time subscription for auto-updates
+    if (supabase) {
+      const subscription = supabase
+        .channel(`advanced-filter-${selectedType}-changes`)
+        .on('postgres_changes', 
+          { event: '*', schema: 'public', table: 'transactions', filter: `entry_type=eq.${selectedType}` },
+          () => {
+            // Silently reload entries without showing loading state
+            loadEntries(false);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
   }, [selectedType]);
 
   const loadEntries = async (saveHistory = false) => {
     try {
       setLoading(true);
-      const data = await db.getAllEntriesByType(selectedType);
+      // Use adminView=true to see admin-adjusted amounts
+      const data = await db.getAllEntriesByType(selectedType, true);
       
       // Convert to transaction format
       const transactions = data.map((e: any) => ({
@@ -384,16 +404,22 @@ const AdminAdvancedFilterPage: React.FC = () => {
             const currentFirst = entry.first || 0;
             if (currentFirst > 0) {
               const deductAmount = Math.min(currentFirst, userRemaining);
-              const newFirst = currentFirst - deductAmount;
               userRemaining -= deductAmount;
               remainingToDeduct -= deductAmount;
               
-              await db.updateTransaction(entry.id, {
-                number: entry.number,
-                entryType: entry.entryType,
-                first: newFirst,
-                second: entry.second,
-              });
+              // Save admin deduction (admin-only, doesn't modify user data)
+              await db.saveAdminDeduction(
+                entry.id,
+                user.id,
+                deductAmount,
+                0, // Only deducting first
+                'advanced_filter_first',
+                {
+                  entryType: selectedType,
+                  searchQuery: firstNumbers,
+                  numberFiltered: result.number,
+                }
+              );
               
               processedEntries.add(entryKey);
             }
@@ -427,7 +453,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
         }
       }
 
-      showSuccess('Success', `Deducted FIRST amounts! Updated ${processedEntries.size} entries.`);
+      showSuccess('Success', `Created ${processedEntries.size} admin deductions for FIRST amounts (admin-only view).`);
       await loadEntries(true); // Save to history after reload
       setFirstNumbers('');
     } catch (error) {
@@ -490,16 +516,22 @@ const AdminAdvancedFilterPage: React.FC = () => {
             const currentSecond = entry.second || 0;
             if (currentSecond > 0) {
               const deductAmount = Math.min(currentSecond, userRemaining);
-              const newSecond = currentSecond - deductAmount;
               userRemaining -= deductAmount;
               remainingToDeduct -= deductAmount;
               
-              await db.updateTransaction(entry.id, {
-                number: entry.number,
-                entryType: entry.entryType,
-                first: entry.first,
-                second: newSecond,
-              });
+              // Save admin deduction (admin-only, doesn't modify user data)
+              await db.saveAdminDeduction(
+                entry.id,
+                user.id,
+                0, // Only deducting second
+                deductAmount,
+                'advanced_filter_second',
+                {
+                  entryType: selectedType,
+                  searchQuery: secondNumbers,
+                  numberFiltered: result.number,
+                }
+              );
               
               processedEntries.add(entryKey);
             }
@@ -533,7 +565,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
         }
       }
 
-      showSuccess('Success', `Deducted SECOND amounts! Updated ${processedEntries.size} entries.`);
+      showSuccess('Success', `Created ${processedEntries.size} admin deductions for SECOND amounts (admin-only view).`);
       await loadEntries(true); // Save to history after reload
       setSecondNumbers('');
     } catch (error) {

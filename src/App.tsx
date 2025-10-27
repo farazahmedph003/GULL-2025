@@ -28,6 +28,7 @@ import AdminRingPage from './pages/admin/AdminRingPage';
 import AdminPacketPage from './pages/admin/AdminPacketPage';
 import AdminFilterPage from './pages/admin/AdminFilterPage';
 import AdminAdvancedFilterPage from './pages/admin/AdminAdvancedFilterPage';
+import TestAdminFeatures from './pages/admin/TestAdminFeatures';
 import NotFound from './pages/NotFound';
 
 // Component that renders notifications and initializes custom popups
@@ -128,6 +129,7 @@ const AppWithNotifications: React.FC = () => {
             <Route path="packet" element={<AdminPacketPage />} />
             <Route path="filter" element={<AdminFilterPage />} />
             <Route path="advanced-filter" element={<AdminAdvancedFilterPage />} />
+            <Route path="test-features" element={<TestAdminFeatures />} />
           </Route>
               
               {/* 404 route */}

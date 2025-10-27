@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../services/database';
+import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import EditTransactionModal from '../../components/EditTransactionModal';
@@ -25,6 +26,7 @@ const AdminPacketPage: React.FC = () => {
   const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<'aggregated' | 'history'>('aggregated');
+  const [searchNumber, setSearchNumber] = useState('');
   const [stats, setStats] = useState({
     totalEntries: 0,
     firstPkr: 0,
@@ -38,7 +40,8 @@ const AdminPacketPage: React.FC = () => {
   const loadEntries = async () => {
     try {
       setLoading(true);
-      const data = await db.getAllEntriesByType('packet');
+      // Use adminView=true to apply admin deductions
+      const data = await db.getAllEntriesByType('packet', true);
       setEntries(data);
 
       // Calculate stats
@@ -61,8 +64,33 @@ const AdminPacketPage: React.FC = () => {
     }
   };
 
+  // Filter entries by search
+  const filteredEntries = useMemo(() => {
+    if (!searchNumber.trim()) return entries;
+    const search = searchNumber.trim().toLowerCase();
+    return entries.filter(entry => entry.number.toLowerCase().includes(search));
+  }, [entries, searchNumber]);
+
   useEffect(() => {
     loadEntries();
+
+    // Set up real-time subscription for auto-updates
+    if (supabase) {
+      const subscription = supabase
+        .channel('packet-entries-changes')
+        .on('postgres_changes', 
+          { event: '*', schema: 'public', table: 'transactions', filter: `entry_type=eq.packet` },
+          () => {
+            // Silently reload entries without showing loading state
+            loadEntries();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
   }, []);
 
   const handleDelete = async () => {
@@ -145,14 +173,14 @@ const AdminPacketPage: React.FC = () => {
   // Group entries by number for aggregated view
   const groupedEntries = useMemo(() => {
     const groups = new Map<string, Entry[]>();
-    entries.forEach(entry => {
+    filteredEntries.forEach(entry => {
       if (!groups.has(entry.number)) {
         groups.set(entry.number, []);
       }
       groups.get(entry.number)!.push(entry);
     });
     return groups;
-  }, [entries]);
+  }, [filteredEntries]);
 
   if (loading) {
     return (
@@ -175,31 +203,47 @@ const AdminPacketPage: React.FC = () => {
           </p>
         </div>
 
-        {/* View Mode Toggle */}
+        {/* View Mode Toggle & Search */}
         <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg mb-8">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">View Mode</h2>
-            <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('aggregated')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                  viewMode === 'aggregated'
-                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                Aggregated
-              </button>
-              <button
-                onClick={() => setViewMode('history')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                  viewMode === 'history'
-                    ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                History
-              </button>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 sm:mb-0">View Mode</h2>
+              <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode('aggregated')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                    viewMode === 'aggregated'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Aggregated
+                </button>
+                <button
+                  onClick={() => setViewMode('history')}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                    viewMode === 'history'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  History
+                </button>
+              </div>
+            </div>
+
+            {/* Search */}
+            <div className="w-full sm:w-auto">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                🔍 Search Number
+              </label>
+              <input
+                type="text"
+                value={searchNumber}
+                onChange={(e) => setSearchNumber(e.target.value)}
+                placeholder="e.g., 1234, 5678..."
+                className="w-full sm:w-64 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              />
             </div>
           </div>
         </div>
@@ -330,10 +374,10 @@ const AdminPacketPage: React.FC = () => {
                     <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
                       Actions
                     </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {entries.map((entry) => (
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {filteredEntries.map((entry) => (
                     <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
@@ -394,10 +438,10 @@ const AdminPacketPage: React.FC = () => {
             </div>
           )}
 
-          {entries.length === 0 && (
+          {filteredEntries.length === 0 && (
             <div className="text-center py-12">
               <p className="text-gray-500 dark:text-gray-400 text-lg">
-                No packet entries found
+                {searchNumber ? 'No entries match your search' : 'No packet entries found'}
               </p>
             </div>
           )}

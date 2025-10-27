@@ -30,10 +30,7 @@ const AdminLayout: React.FC = () => {
 
           {/* Center: Title */}
           <div className="flex items-center gap-2">
-            <span className="px-3 py-1 bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 text-xs font-bold rounded-lg">
-              ADMIN
-            </span>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white hidden sm:block">
+            <h1 className="text-lg font-bold text-gray-900 dark:text-white">
               Admin Panel
             </h1>
           </div>

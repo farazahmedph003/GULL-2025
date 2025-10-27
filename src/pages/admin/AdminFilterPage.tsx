@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { db } from '../../services/database';
+import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { groupTransactionsByNumber } from '../../utils/transactionHelpers';
@@ -48,12 +49,31 @@ const AdminFilterPage: React.FC = () => {
   // Load entries when type changes
   React.useEffect(() => {
     loadEntries(true); // Save initial state to history
+
+    // Set up real-time subscription for auto-updates
+    if (supabase) {
+      const subscription = supabase
+        .channel(`filter-${selectedType}-changes`)
+        .on('postgres_changes', 
+          { event: '*', schema: 'public', table: 'transactions', filter: `entry_type=eq.${selectedType}` },
+          () => {
+            // Silently reload entries without showing loading state
+            loadEntries(false);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
   }, [selectedType]);
 
   const loadEntries = async (saveHistory = false) => {
     try {
       setLoading(true);
-      const data = await db.getAllEntriesByType(selectedType);
+      // Use adminView=true to see admin-adjusted amounts
+      const data = await db.getAllEntriesByType(selectedType, true);
       
       // Convert to transaction format
       const transactions = data.map((e: any) => ({
@@ -371,16 +391,30 @@ const AdminFilterPage: React.FC = () => {
               console.log(`   💎 Entry ${entry.id} (@${entry.username}) - Deducting S ${deductAmount}: ${currentSecond} → ${newSecond}`);
             }
             
-            // Update the entry if changes were made
+            // Save admin deduction (admin-only, doesn't modify user data)
             if (needsUpdate) {
-              console.log(`   ✅ Updating entry ${entry.id} with F: ${newFirst}, S: ${newSecond}`);
+              const deductedFirst = currentFirst - newFirst;
+              const deductedSecond = currentSecond - newSecond;
               
-              await db.updateTransaction(entry.id, {
-                number: entry.number,
-                entryType: entry.entryType,
-                first: newFirst,
-                second: newSecond,
-              });
+              console.log(`   ✅ Saving admin deduction for entry ${entry.id}: F ${deductedFirst}, S ${deductedSecond}`);
+              
+              await db.saveAdminDeduction(
+                entry.id,
+                user.id,
+                deductedFirst,
+                deductedSecond,
+                'filter_save',
+                {
+                  entryType: selectedType,
+                  numberFiltered: result.number,
+                  firstLimit,
+                  secondLimit,
+                  firstFilterValue,
+                  secondFilterValue,
+                  firstComparison,
+                  secondComparison,
+                }
+              );
               
               processedEntries.add(entryKey);
             }
@@ -426,7 +460,7 @@ const AdminFilterPage: React.FC = () => {
         }
       }
       
-      showSuccess('Success', `Saved filter! Updated ${processedEntries.size} entries.`);
+      showSuccess('Success', `Saved filter! Created ${processedEntries.size} admin deductions (admin-only view).`);
       
       // Reload entries to show updated values and save to history
       await loadEntries(true);

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../services/database';
+import { supabase } from '../../lib/supabase';
 import { useSystemSettings } from '../../hooks/useSystemSettings';
 import { useNotifications } from '../../contexts/NotificationContext';
 import CreateUserModal from '../../components/CreateUserModal';
@@ -49,6 +50,31 @@ const UserManagement: React.FC = () => {
 
   useEffect(() => {
     loadUsers();
+
+    // Set up real-time subscription for auto-updates
+    if (supabase) {
+      const subscription = supabase
+        .channel('users-changes')
+        .on('postgres_changes', 
+          { event: '*', schema: 'public', table: 'app_users' },
+          () => {
+            // Silently reload users without showing loading state
+            loadUsers();
+          }
+        )
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'transactions' },
+          () => {
+            // Also reload when transactions change (for entry count)
+            loadUsers();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
   }, []);
 
   const handleCreateUser = async (userData: {
@@ -67,12 +93,17 @@ const UserManagement: React.FC = () => {
     }
   };
 
-  const handleTopUp = async (amount: number) => {
+  const handleTopUp = async (amount: number, isWithdraw?: boolean) => {
     if (!selectedUser) return;
     
     try {
-      await db.topUpUserBalance(selectedUser.id, amount);
-      await showSuccess('Success', `Added PKR ${amount.toLocaleString()} to ${selectedUser.username}'s balance`);
+      if (isWithdraw) {
+        await db.withdrawUserBalance(selectedUser.id, amount);
+        await showSuccess('Success', `Withdrew PKR ${amount.toLocaleString()} from ${selectedUser.username}'s balance`);
+      } else {
+        await db.topUpUserBalance(selectedUser.id, amount);
+        await showSuccess('Success', `Added PKR ${amount.toLocaleString()} to ${selectedUser.username}'s balance`);
+      }
       loadUsers();
     } catch (error) {
       throw error;
@@ -122,6 +153,61 @@ const UserManagement: React.FC = () => {
       showError('Error', 'Failed to load user history');
     } finally {
       setLoadingHistory(false);
+    }
+  };
+
+  const handleToggleActive = async (user: UserData) => {
+    try {
+      const newStatus = !user.is_active;
+      await db.toggleUserActiveStatus(user.id, newStatus);
+      await showSuccess('Success', `User ${user.username} is now ${newStatus ? 'active' : 'inactive'}`);
+      loadUsers();
+    } catch (error) {
+      console.error('Error toggling user status:', error);
+      showError('Error', 'Failed to update user status');
+    }
+  };
+
+  const handleDeleteUser = async (user: UserData) => {
+    if (!confirm(`Are you sure you want to delete user "${user.full_name}" (@${user.username})? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await db.deleteUser(user.id, false); // Soft delete
+      await showSuccess('Success', `User ${user.username} has been deleted`);
+      loadUsers();
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      showError('Error', 'Failed to delete user');
+    }
+  };
+
+  const handleResetUserHistory = async (user: UserData) => {
+    if (!confirm(`⚠️ Are you sure you want to RESET ALL HISTORY for "${user.full_name}" (@${user.username})?\n\nThis will permanently delete:\n• All transactions (Open, Akra, Ring, Packet)\n• All entry history\n• All admin deductions\n\nThis action CANNOT be undone!`)) {
+      return;
+    }
+
+    // Double confirmation for safety
+    if (!confirm(`🚨 FINAL CONFIRMATION\n\nYou are about to delete ALL ${user.entryCount} entries for ${user.username}.\n\nAre you absolutely sure?`)) {
+      return;
+    }
+
+    try {
+      const result = await db.resetUserHistory(user.id);
+      await showSuccess(
+        'History Reset', 
+        `Successfully deleted ${result.deletedCount} transaction(s) for ${user.username}`
+      );
+      loadUsers();
+      // Close expanded history if it was open
+      if (expandedUserId === user.id) {
+        setExpandedUserId(null);
+        setHistoryData([]);
+      }
+    } catch (error) {
+      console.error('Error resetting user history:', error);
+      showError('Error', 'Failed to reset user history');
     }
   };
 
@@ -252,12 +338,27 @@ const UserManagement: React.FC = () => {
                     <p className="text-sm text-gray-600 dark:text-gray-400">@{user.username}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">{user.email}</p>
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                    user.is_active
-                      ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                      : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                  }`}>
-                    {user.is_active ? 'Active' : 'Inactive'}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleToggleActive(user)}
+                      className={`px-3 py-1 rounded-full text-xs font-semibold transition-all hover:opacity-80 cursor-pointer ${
+                        user.is_active
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                      }`}
+                      title="Click to toggle active/inactive"
+                    >
+                      {user.is_active ? 'Active' : 'Inactive'}
+                    </button>
+                    <button
+                      onClick={() => handleDeleteUser(user)}
+                      className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                      title="Delete user"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
 
@@ -285,7 +386,7 @@ const UserManagement: React.FC = () => {
                     }}
                     className="px-4 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg font-semibold hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors text-sm"
                   >
-                    💰 Top Up
+                    💰 Load
                   </button>
                   <button
                     onClick={() => {
@@ -307,6 +408,12 @@ const UserManagement: React.FC = () => {
                     className="px-4 py-2 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors text-sm"
                   >
                     📄 PDF
+                  </button>
+                  <button
+                    onClick={() => handleResetUserHistory(user)}
+                    className="col-span-2 px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors text-sm border-2 border-red-300 dark:border-red-700"
+                  >
+                    🔄 Reset History
                   </button>
                 </div>
               </div>

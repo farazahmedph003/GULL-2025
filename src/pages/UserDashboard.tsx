@@ -3,7 +3,6 @@ import ProjectHeader from '../components/ProjectHeader';
 import StandardEntry from '../components/StandardEntry';
 import IntelligentEntry from '../components/IntelligentEntry';
 import UserHistoryPanel from '../components/UserHistoryPanel';
-import AggregatedNumbersPanel from '../components/AggregatedNumbersPanel';
 import EntryFormsBar from '../components/EntryFormsBar';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EditTransactionModal from '../components/EditTransactionModal';
@@ -351,16 +350,7 @@ const UserDashboard: React.FC = () => {
           {/* Content Panels */}
           {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
-              {/* Left Panel - Aggregated Numbers */}
-              <AggregatedNumbersPanel
-                transactions={transactions}
-                activeTab={(activeTab as any) as 'all' | 'open' | 'akra' | 'ring' | 'packet'}
-                projectEntryTypes={project.entryTypes}
-                onImport={handleImportClick}
-                onExportPDF={handleExportPDF}
-              />
-
-              {/* Right Panel - Complete History (Entries + Top-ups + Admin Actions) */}
+              {/* Left Panel - History (moved from right) */}
               <UserHistoryPanel 
                 transactions={transactions}
                 activeTab={activeTab}
@@ -372,20 +362,30 @@ const UserDashboard: React.FC = () => {
                   }
                 }}
               />
-            </div>
-          }
 
-          {/* Entry Panel - hidden on Filter tab */}
-          {
-            <div className="w-full px-0 sm:px-4 py-4 sm:py-6">
+              {/* Right Panel - Entry Panel (moved from bottom) */}
               <div className="bg-white dark:bg-gray-800 rounded-xl sm:rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
                 <div className="p-4 sm:p-6">
                   <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-3">
                     <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
                       Add Entry
                     </h3>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleImportClick}
+                        className="px-3 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors text-sm flex items-center gap-1"
+                      >
+                        📥 Import
+                      </button>
+                      <button
+                        onClick={handleExportPDF}
+                        className="px-3 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-lg font-semibold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors text-sm flex items-center gap-1"
+                      >
+                        📄 Export
+                      </button>
+                    </div>
                   </div>
-                  {/* Hidden file input for imports (buttons moved to Aggregated panel) */}
+                  {/* Hidden file input for imports */}
                   <input
                     ref={fileInputRef}
                     type="file"
