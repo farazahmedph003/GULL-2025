@@ -48,7 +48,7 @@ const UserManagement: React.FC = () => {
 
   useEffect(() => {
     // Register refresh callback for the refresh button
-    setRefreshCallback(() => loadUsers);
+    setRefreshCallback(loadUsers);
     
     loadUsers();
 

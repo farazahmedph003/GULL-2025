@@ -49,7 +49,7 @@ const AdminFilterPage: React.FC = () => {
   // Load entries when type changes
   React.useEffect(() => {
     // Register refresh callback for the refresh button
-    setRefreshCallback(() => loadEntries);
+    setRefreshCallback(loadEntries);
     
     loadEntries(true); // Save initial state to history
 

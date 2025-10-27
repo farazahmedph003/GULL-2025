@@ -70,7 +70,7 @@ const AdminPacketPage: React.FC = () => {
 
   useEffect(() => {
     // Register refresh callback for the refresh button
-    setRefreshCallback(() => loadEntries);
+    setRefreshCallback(loadEntries);
     
     // Initial load
     loadEntries();
