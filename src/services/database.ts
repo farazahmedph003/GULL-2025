@@ -501,7 +501,7 @@ export class DatabaseService {
       });
 
       // Handle 'user-scope' by querying for NULL project_id
-      // For user-scope, we need to filter by the current user's app_user_id
+      // For user-scope, we need to filter by the current user's user_id
       let query = clientToUse
         .from('transactions')
         .select('*');
@@ -515,7 +515,7 @@ export class DatabaseService {
 
       // Filter by user ID if provided (for regular users to see only their own entries)
       if (userId) {
-        query = query.eq('app_user_id', userId);
+        query = query.eq('user_id', userId);
         console.log('🔒 Filtering transactions by user ID:', userId);
       }
 
@@ -576,8 +576,7 @@ export class DatabaseService {
     const { data, error} = await clientToUse
       .from('transactions')
       .insert({
-        user_id: null, // Set to null for app_users (they don't have auth.users entries)
-        app_user_id: userId, // Use app_user_id for app_users
+        user_id: userId,
         project_id: projectId,
         number: transaction.number,
         entry_type: transaction.entryType,
@@ -1485,7 +1484,7 @@ export class DatabaseService {
       let query = client
         .from('transactions')
         .select('*')
-        .eq('app_user_id', userId) // Use app_user_id for app_users
+        .eq('user_id', userId) // Use user_id for app_users
         .order('created_at', { ascending: false });
 
       if (entryType) {
@@ -1527,7 +1526,7 @@ export class DatabaseService {
         // First, get all transactions for this entry type
         const { data: transactions, error: txError } = await client
           .from('transactions')
-          .select('id, user_id, app_user_id, project_id, number, entry_type, first_amount, second_amount, created_at, updated_at')
+          .select('id, user_id, project_id, number, entry_type, first_amount, second_amount, created_at, updated_at')
           .eq('entry_type', entryType)
           .order('created_at', { ascending: false });
         
@@ -1544,8 +1543,8 @@ export class DatabaseService {
           return [];
         }
         
-        // Get all unique user IDs from transactions (use app_user_id for app_users)
-        const userIds = [...new Set(transactions.map((t: any) => t.app_user_id || t.user_id).filter(Boolean))];
+        // Get all unique user IDs from transactions
+        const userIds = [...new Set(transactions.map((t: any) => t.user_id).filter(Boolean))];
         
         // Fetch user details for all users
         const { data: users, error: usersError } = await client
@@ -1595,7 +1594,7 @@ export class DatabaseService {
         const allEntries: any[] = [];
         
         transactions.forEach((transaction: any) => {
-          const userId = transaction.app_user_id || transaction.user_id;
+          const userId = transaction.user_id;
           const userInfo = userMap.get(userId) || { username: 'Unknown', full_name: 'Unknown User' };
           
           // Check if this is a bulk entry (comma or space separated numbers)
@@ -1689,11 +1688,11 @@ export class DatabaseService {
     });
 
     return this.withRetry(async () => {
-      // Get entries (use app_user_id for app_users)
+      // Get entries (use user_id for app_users)
       const { data: entries, error: entriesError } = await client
         .from('transactions')
         .select('*')
-        .eq('app_user_id', userId)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
       if (entriesError) throw entriesError;
@@ -1704,7 +1703,7 @@ export class DatabaseService {
         const { data: balanceHistory, error: balanceError } = await client
           .from('balance_history')
           .select('*')
-          .eq('app_user_id', userId) // Use app_user_id for app_users
+          .eq('user_id', userId) // Use user_id for app_users
           .eq('type', 'top_up')
           .order('created_at', { ascending: false });
 
