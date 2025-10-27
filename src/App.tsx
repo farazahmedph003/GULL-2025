@@ -13,7 +13,6 @@ import NotificationBanner from './components/NotificationBanner';
 import { useNotifications } from './contexts/NotificationContext';
 import { useConfirmation } from './hooks/useConfirmation.tsx';
 import { initializeCustomPopups } from './utils/customPopups';
-import LoadingSpinner from './components/LoadingSpinner';
 import AdminRoute from './components/AdminRoute';
 import AdminLayout from './components/AdminLayout';
 
@@ -62,17 +61,13 @@ const AppWithNotifications: React.FC = () => {
     });
   }, [showSuccess, showError, showWarning, showInfo, confirm]);
   
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
   return (
       <>
         <NotificationBanner />
-        <Suspense fallback={
-          <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-            <LoadingSpinner size="lg" text="Loading..." />
-          </div>
-        }>
+        <Suspense fallback={<div></div>}>
         <Routes>
               {/* Public routes */}
               <Route path="/welcome" element={<Welcome />} />
@@ -82,11 +77,7 @@ const AppWithNotifications: React.FC = () => {
                 path="/"
                 element={
                   <ProtectedRoute>
-                    {loading ? (
-                      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-                        <LoadingSpinner size="lg" text="Loading..." />
-                      </div>
-                    ) : isAdmin ? (
+                    {isAdmin ? (
                       <Navigate to="/admin" replace />
                     ) : (
                       <UserDashboard />

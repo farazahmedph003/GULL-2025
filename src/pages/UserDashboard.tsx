@@ -4,12 +4,12 @@ import StandardEntry from '../components/StandardEntry';
 import IntelligentEntry from '../components/IntelligentEntry';
 import UserHistoryPanel from '../components/UserHistoryPanel';
 import EntryFormsBar from '../components/EntryFormsBar';
-import LoadingSpinner from '../components/LoadingSpinner';
 import EditTransactionModal from '../components/EditTransactionModal';
 import DeleteConfirmationModal from '../components/DeleteConfirmationModal';
 import { useTransactions } from '../hooks/useTransactions';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { useNotifications } from '../contexts/NotificationContext';
+import { useAuth } from '../contexts/AuthContext';
 import { formatDate } from '../utils/helpers';
 import { playReloadSound } from '../utils/audioFeedback';
 import { importFromCSV } from '../utils/importExport';
@@ -17,12 +17,12 @@ import { exportUserTransactionsToPDF } from '../utils/pdfExport';
 import type { Project, EntryType, Transaction } from '../types';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
 import { useSystemSettings } from '../hooks/useSystemSettings';
+import { useUserRealtimeSubscriptions } from '../hooks/useRealtimeSubscriptions';
 
 type TabType = 'all' | 'open' | 'akra' | 'ring' | 'packet';
 
 const UserDashboard: React.FC = () => {
   const [project, setProject] = useState<Project | null>(null);
-  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [entryTab] = useState<'standard' | 'intelligent'>('standard');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -30,8 +30,7 @@ const UserDashboard: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { showSuccess, showError } = useNotifications();
-  // const { user } = useAuth();
-  // const isActualAdmin = user ? isAdminEmail(user.email) : false;
+  const { user } = useAuth();
 
   const { 
     transactions,
@@ -86,8 +85,10 @@ const UserDashboard: React.FC = () => {
   // Projectless: set a virtual project for UI titles only
   useEffect(() => {
     setProject({ id: 'virtual', name: 'User Dashboard', date: new Date().toISOString(), entryTypes: ['open','akra','ring','packet'], createdAt: '', updatedAt: '' });
-    setLoading(false);
   }, []);
+
+  // Real-time subscriptions for instant updates
+  useUserRealtimeSubscriptions(user?.id, silentRefresh);
 
   // Keyboard shortcuts removed for regular users
 
@@ -262,24 +263,8 @@ const UserDashboard: React.FC = () => {
     { id: 'packet' as TabType, label: 'PACKET', description: 'Packet entries' },
   ];
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <LoadingSpinner text="Loading project..." />
-      </div>
-    );
-  }
-
   if (!project) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-center py-12">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            Project not found
-          </h2>
-        </div>
-      </div>
-    );
+    return null; // Will initialize instantly
   }
 
   return (

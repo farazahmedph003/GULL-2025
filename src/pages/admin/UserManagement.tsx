@@ -6,7 +6,6 @@ import { useNotifications } from '../../contexts/NotificationContext';
 import CreateUserModal from '../../components/CreateUserModal';
 import TopUpModal from '../../components/TopUpModal';
 import EditUserModal from '../../components/EditUserModal';
-import LoadingSpinner from '../../components/LoadingSpinner';
 import { generateUserReport } from '../../utils/pdfGenerator';
 
 interface UserData {
@@ -21,10 +20,8 @@ interface UserData {
 
 const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<UserData[]>([]);
-  const [loading, setLoading] = useState(true);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [historyData, setHistoryData] = useState<any[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // Modals
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
@@ -37,14 +34,11 @@ const UserManagement: React.FC = () => {
 
   const loadUsers = async () => {
     try {
-      setLoading(true);
       const data = await db.getAllUsersWithStats();
       setUsers(data);
     } catch (error) {
       console.error('Error loading users:', error);
       showError('Error', 'Failed to load users');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -144,15 +138,12 @@ const UserManagement: React.FC = () => {
     }
 
     setExpandedUserId(user.id);
-    setLoadingHistory(true);
     try {
       const history = await db.getUserHistory(user.id);
       setHistoryData(history);
     } catch (error) {
       console.error('Error loading history:', error);
       showError('Error', 'Failed to load user history');
-    } finally {
-      setLoadingHistory(false);
     }
   };
 
@@ -262,14 +253,6 @@ const UserManagement: React.FC = () => {
       showError('Error', 'Failed to generate PDF report');
     }
   };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner text="Loading users..." />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 pb-20">
@@ -422,11 +405,7 @@ const UserManagement: React.FC = () => {
               {expandedUserId === user.id && (
                 <div className="border-t border-gray-200 dark:border-gray-700 p-6 bg-gray-50 dark:bg-gray-900/50">
                   <h4 className="font-bold text-gray-900 dark:text-white mb-4">User History</h4>
-                  {loadingHistory ? (
-                    <div className="flex justify-center py-4">
-                      <LoadingSpinner size="sm" />
-                    </div>
-                  ) : historyData.length === 0 ? (
+                  {historyData.length === 0 ? (
                     <p className="text-gray-500 dark:text-gray-400 text-sm">No history found</p>
                   ) : (
                     <div className="space-y-2 max-h-64 overflow-y-auto">
