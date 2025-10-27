@@ -16,6 +16,7 @@ interface UserData {
   full_name: string;
   email: string;
   balance: number;
+  total_spent: number;
   entryCount: number;
   is_active: boolean;
 }
@@ -241,6 +242,29 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  const handleResetUserSpent = async (user: UserData) => {
+    if (!confirm) return;
+    
+    const result = await confirm(
+      `Are you sure you want to RESET SPENT AMOUNT for "${user.full_name}" (@${user.username})?\n\nCurrent Spent: PKR ${(user.total_spent || 0).toLocaleString()}\n\nThis will set their spent amount to 0.\n\nThis action CANNOT be undone!`,
+      { type: 'warning', title: '💸 Reset User Spent' }
+    );
+    
+    if (!result) return;
+
+    try {
+      await db.resetUserSpent(user.id);
+      await showSuccess(
+        'Spent Reset',
+        `Successfully reset spent amount for ${user.username} to PKR 0`
+      );
+      loadUsers();
+    } catch (error) {
+      console.error('Error resetting user spent:', error);
+      showError('Error', 'Failed to reset user spent');
+    }
+  };
+
   const handleGeneratePDF = async (user: UserData) => {
     try {
       await showInfo('Generating...', 'Preparing PDF report...');
@@ -392,6 +416,12 @@ const UserManagement: React.FC = () => {
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Total Spent:</span>
+                    <span className="font-bold text-red-600 dark:text-red-400">
+                      PKR {(user.total_spent || 0).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600 dark:text-gray-400">Total Entries:</span>
                     <span className="font-semibold text-gray-900 dark:text-white">
                       {user.entryCount}
@@ -432,8 +462,14 @@ const UserManagement: React.FC = () => {
                     📄 PDF
                   </button>
                   <button
+                    onClick={() => handleResetUserSpent(user)}
+                    className="px-4 py-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded-lg font-semibold hover:bg-yellow-200 dark:hover:bg-yellow-900/50 transition-colors text-sm border-2 border-yellow-300 dark:border-yellow-700"
+                  >
+                    💸 Reset Spent
+                  </button>
+                  <button
                     onClick={() => handleResetUserHistory(user)}
-                    className="col-span-2 px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors text-sm border-2 border-red-300 dark:border-red-700"
+                    className="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors text-sm border-2 border-red-300 dark:border-red-700"
                   >
                     🔄 Reset History
                   </button>

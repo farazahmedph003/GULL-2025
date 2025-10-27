@@ -1085,7 +1085,7 @@ export class DatabaseService {
       const usersWithStats = await this.withRetry(async () => {
         const { data: users, error } = await client
           .from('app_users')
-          .select('id, username, full_name, email, role, is_active, balance, created_at, updated_at')
+          .select('id, username, full_name, email, role, is_active, balance, total_spent, created_at, updated_at')
           .order('created_at', { ascending: false });
         if (error) throw error;
 
@@ -2062,6 +2062,26 @@ export class DatabaseService {
       clearTransactionsCache();
 
       return { deletedCount: count || 0 };
+    });
+  }
+
+  /**
+   * Reset user's total spent amount to 0
+   */
+  async resetUserSpent(userId: string): Promise<void> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    return this.withRetry(async () => {
+      const { error } = await client
+        .from('app_users')
+        .update({ total_spent: 0 })
+        .eq('id', userId);
+
+      if (error) throw error;
     });
   }
 
