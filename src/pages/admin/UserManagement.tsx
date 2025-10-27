@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useSystemSettings } from '../../hooks/useSystemSettings';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
+import { ConfirmationContext } from '../../App';
 import CreateUserModal from '../../components/CreateUserModal';
 import TopUpModal from '../../components/TopUpModal';
 import EditUserModal from '../../components/EditUserModal';
@@ -31,6 +33,8 @@ const UserManagement: React.FC = () => {
 
   const { showSuccess, showError, showInfo } = useNotifications();
   const { entriesEnabled, toggleEntriesEnabled } = useSystemSettings();
+  const { setRefreshCallback } = useAdminRefresh();
+  const confirm = useContext(ConfirmationContext);
 
   const loadUsers = async () => {
     try {
@@ -43,33 +47,42 @@ const UserManagement: React.FC = () => {
   };
 
   useEffect(() => {
+    // Register refresh callback for the refresh button
+    setRefreshCallback(() => loadUsers);
+    
     loadUsers();
 
     // Set up real-time subscription for auto-updates
     if (supabase) {
       const subscription = supabase
-        .channel('users-changes')
+        .channel('users-changes-realtime')
         .on('postgres_changes', 
           { event: '*', schema: 'public', table: 'app_users' },
-          () => {
-            // Silently reload users without showing loading state
+          (payload: any) => {
+            console.log('🔴 Real-time update received for users:', payload);
             loadUsers();
           }
         )
         .on('postgres_changes',
           { event: '*', schema: 'public', table: 'transactions' },
-          () => {
-            // Also reload when transactions change (for entry count)
+          (payload: any) => {
+            console.log('🔴 Real-time update received for transactions (user stats):', payload);
             loadUsers();
           }
         )
-        .subscribe();
+        .subscribe((status: string) => {
+          console.log('📡 User management subscription status:', status);
+          if (status === 'SUBSCRIBED') {
+            console.log('✅ User management real-time subscription active');
+          }
+        });
 
       return () => {
+        console.log('🔌 Unsubscribing from user management real-time updates');
         subscription.unsubscribe();
       };
     }
-  }, []);
+  }, [setRefreshCallback]);
 
   const handleCreateUser = async (userData: {
     username: string;
@@ -160,9 +173,14 @@ const UserManagement: React.FC = () => {
   };
 
   const handleDeleteUser = async (user: UserData) => {
-    if (!confirm(`Are you sure you want to delete user "${user.full_name}" (@${user.username})? This action cannot be undone.`)) {
-      return;
-    }
+    if (!confirm) return;
+    
+    const result = await confirm(
+      `Are you sure you want to delete user "${user.full_name}" (@${user.username})? This action cannot be undone.`,
+      { type: 'danger', title: 'Delete User' }
+    );
+    
+    if (!result) return;
 
     try {
       await db.deleteUser(user.id, false); // Soft delete
@@ -175,19 +193,27 @@ const UserManagement: React.FC = () => {
   };
 
   const handleResetUserHistory = async (user: UserData) => {
-    if (!confirm(`⚠️ Are you sure you want to RESET ALL HISTORY for "${user.full_name}" (@${user.username})?\n\nThis will permanently delete:\n• All transactions (Open, Akra, Ring, Packet)\n• All entry history\n• All admin deductions\n\nThis action CANNOT be undone!`)) {
-      return;
-    }
+    if (!confirm) return;
+    
+    const firstConfirm = await confirm(
+      `Are you sure you want to RESET ALL HISTORY for "${user.full_name}" (@${user.username})?\n\nThis will permanently delete:\n• All transactions (Open, Akra, Ring, Packet)\n• All entry history\n• All admin deductions\n\nThis action CANNOT be undone!`,
+      { type: 'danger', title: '⚠️ Reset User History' }
+    );
+    
+    if (!firstConfirm) return;
 
     // Double confirmation for safety
-    if (!confirm(`🚨 FINAL CONFIRMATION\n\nYou are about to delete ALL ${user.entryCount} entries for ${user.username}.\n\nAre you absolutely sure?`)) {
-      return;
-    }
+    const finalConfirm = await confirm(
+      `You are about to delete ALL ${user.entryCount} entries for ${user.username}.\n\nAre you absolutely sure?`,
+      { type: 'danger', title: '🚨 FINAL CONFIRMATION' }
+    );
+    
+    if (!finalConfirm) return;
 
     try {
       const result = await db.resetUserHistory(user.id);
       await showSuccess(
-        'History Reset', 
+        'History Reset',
         `Successfully deleted ${result.deletedCount} transaction(s) for ${user.username}`
       );
       loadUsers();

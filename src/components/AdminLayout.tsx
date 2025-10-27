@@ -2,15 +2,18 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import AdminSidebar from './AdminSidebar';
 import ProfileDropdown from './ProfileDropdown';
+import { AdminRefreshProvider, useAdminRefresh } from '../contexts/AdminRefreshContext';
 
 /**
- * AdminLayout Component
- * 
- * Wrapper layout for admin pages that includes the sidebar and header
- * Provides hamburger button to toggle sidebar
+ * Inner AdminLayout Component with access to AdminRefreshContext
  */
-const AdminLayout: React.FC = () => {
+const AdminLayoutInner: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { triggerRefresh } = useAdminRefresh();
+
+  const handleRefresh = () => {
+    triggerRefresh();
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
@@ -28,11 +31,21 @@ const AdminLayout: React.FC = () => {
             </svg>
           </button>
 
-          {/* Center: Title */}
-          <div className="flex items-center gap-2">
+          {/* Center: Title and Refresh Button */}
+          <div className="flex items-center gap-3">
             <h1 className="text-lg font-bold text-gray-900 dark:text-white">
               Admin Panel
             </h1>
+            <button
+              onClick={handleRefresh}
+              className="p-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg shadow-md hover:shadow-lg transform hover:scale-105 transition-all duration-200"
+              aria-label="Refresh data"
+              title="Refresh current page data"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
           </div>
 
           {/* Right: Profile Dropdown */}
@@ -48,6 +61,20 @@ const AdminLayout: React.FC = () => {
         <Outlet />
       </div>
     </div>
+  );
+};
+
+/**
+ * AdminLayout Component
+ * 
+ * Wrapper layout for admin pages that includes the sidebar and header
+ * Provides hamburger button to toggle sidebar and refresh functionality
+ */
+const AdminLayout: React.FC = () => {
+  return (
+    <AdminRefreshProvider>
+      <AdminLayoutInner />
+    </AdminRefreshProvider>
   );
 };
 

@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, createContext } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AppearanceProvider } from './contexts/AppearanceContext';
@@ -15,6 +15,16 @@ import { useConfirmation } from './hooks/useConfirmation.tsx';
 import { initializeCustomPopups } from './utils/customPopups';
 import AdminRoute from './components/AdminRoute';
 import AdminLayout from './components/AdminLayout';
+
+// Create and export Confirmation Context for global access
+interface ConfirmationOptions {
+  title?: string;
+  confirmText?: string;
+  cancelText?: string;
+  type?: 'danger' | 'warning' | 'info';
+}
+
+export const ConfirmationContext = createContext<((message: string, options?: ConfirmationOptions) => Promise<boolean>) | null>(null);
 
 // Lazy load pages for better performance
 const Welcome = lazy(() => import('./pages/Welcome'));
@@ -65,7 +75,7 @@ const AppWithNotifications: React.FC = () => {
   const isAdmin = user?.role === 'admin';
 
   return (
-      <>
+      <ConfirmationContext.Provider value={confirm}>
         <NotificationBanner />
         <Suspense fallback={<div></div>}>
         <Routes>
@@ -140,7 +150,7 @@ const AppWithNotifications: React.FC = () => {
         onClose={removeNotification} 
       />
       <ConfirmationComponent />
-    </>
+    </ConfirmationContext.Provider>
   );
 };
 

@@ -1,8 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useContext } from 'react';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
+import { ConfirmationContext } from '../../App';
 import { groupTransactionsByNumber } from '../../utils/transactionHelpers';
 import type { EntryType } from '../../types';
 
@@ -21,29 +23,45 @@ const AdminAdvancedFilterPage: React.FC = () => {
 
   const { showSuccess, showError } = useNotifications();
   const { user } = useAuth();
+  const { setRefreshCallback } = useAdminRefresh();
+  const confirm = useContext(ConfirmationContext);
 
   // Load entries when type changes
   useEffect(() => {
+    // Register refresh callback for the refresh button
+    setRefreshCallback(() => loadEntries);
+    
     loadEntries(true); // Save initial state to history
 
     // Set up real-time subscription for auto-updates
     if (supabase) {
       const subscription = supabase
-        .channel(`advanced-filter-${selectedType}-changes`)
+        .channel(`advanced-filter-${selectedType}-realtime`)
         .on('postgres_changes', 
-          { event: '*', schema: 'public', table: 'transactions', filter: `entry_type=eq.${selectedType}` },
-          () => {
-            // Silently reload entries without showing loading state
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'transactions', 
+            filter: `entry_type=eq.${selectedType}` 
+          },
+          (payload: any) => {
+            console.log(`🔴 Real-time update received for ${selectedType} (advanced filter):`, payload);
             loadEntries(false);
           }
         )
-        .subscribe();
+        .subscribe((status: string) => {
+          console.log(`📡 ${selectedType} advanced filter subscription status:`, status);
+          if (status === 'SUBSCRIBED') {
+            console.log(`✅ ${selectedType} advanced filter real-time subscription active`);
+          }
+        });
 
       return () => {
+        console.log(`🔌 Unsubscribing from ${selectedType} advanced filter real-time updates`);
         subscription.unsubscribe();
       };
     }
-  }, [selectedType]);
+  }, [selectedType, setRefreshCallback]);
 
   const loadEntries = async (saveHistory = false) => {
     try {
@@ -358,9 +376,14 @@ const AdminAdvancedFilterPage: React.FC = () => {
       return;
     }
 
-    if (!confirm(`Are you sure you want to deduct FIRST amounts from ${firstFilteredResults.length} numbers?`)) {
-      return;
-    }
+    if (!confirm) return;
+    
+    const result = await confirm(
+      `Are you sure you want to deduct FIRST amounts from ${firstFilteredResults.length} numbers?`,
+      { type: 'warning', title: 'Deduct FIRST Amounts' }
+    );
+    
+    if (!result) return;
 
     // Save current state to history before making changes
     saveToHistory();
@@ -470,9 +493,14 @@ const AdminAdvancedFilterPage: React.FC = () => {
       return;
     }
 
-    if (!confirm(`Are you sure you want to deduct SECOND amounts from ${secondFilteredResults.length} numbers?`)) {
-      return;
-    }
+    if (!confirm) return;
+    
+    const result = await confirm(
+      `Are you sure you want to deduct SECOND amounts from ${secondFilteredResults.length} numbers?`,
+      { type: 'warning', title: 'Deduct SECOND Amounts' }
+    );
+    
+    if (!result) return;
 
     // Save current state to history before making changes
     saveToHistory();

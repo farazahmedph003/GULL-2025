@@ -33,6 +33,11 @@ try {
         persistSession: true,
         detectSessionInUrl: true,
       },
+      realtime: {
+        params: {
+          eventsPerSecond: 10
+        }
+      },
       db: {
         schema: 'public',
       },
@@ -49,6 +54,11 @@ try {
         auth: {
           autoRefreshToken: false,
           persistSession: false,
+        },
+        realtime: {
+          params: {
+            eventsPerSecond: 10
+          }
         },
         db: {
           schema: 'public',

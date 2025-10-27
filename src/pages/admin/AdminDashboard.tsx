@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { db } from '../../services/database';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
+import { ConfirmationContext } from '../../App';
 import type { EntryType } from '../../types';
 
 interface UserStats {
@@ -23,6 +25,8 @@ const AdminDashboard: React.FC = () => {
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
   const { showSuccess, showError } = useNotifications();
+  const { setRefreshCallback } = useAdminRefresh();
+  const confirm = useContext(ConfirmationContext);
 
   const loadUsers = async () => {
     try {
@@ -71,8 +75,11 @@ const AdminDashboard: React.FC = () => {
   };
 
   useEffect(() => {
+    // Register refresh callback for the refresh button
+    setRefreshCallback(() => loadUsers);
+    
     loadUsers();
-  }, []);
+  }, [setRefreshCallback]);
 
   useEffect(() => {
     if (selectedFilter) {
@@ -141,9 +148,14 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleResetAllData = async () => {
-    if (!confirm('Are you sure you want to reset ALL user data? This will delete all transactions, reset all balances to 0, and reset spent to 0. This action cannot be undone!')) {
-      return;
-    }
+    if (!confirm) return;
+    
+    const result = await confirm(
+      'Are you sure you want to reset ALL user data? This will delete all transactions, reset all balances to 0, and reset spent to 0. This action cannot be undone!',
+      { type: 'danger', title: 'Reset All Data' }
+    );
+    
+    if (!result) return;
 
     try {
       setIsResetting(true);

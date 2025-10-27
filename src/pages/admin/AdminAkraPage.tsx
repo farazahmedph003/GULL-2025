@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import EditTransactionModal from '../../components/EditTransactionModal';
 import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
 
@@ -34,6 +35,7 @@ const AdminAkraPage: React.FC = () => {
   });
 
   const { showSuccess, showError } = useNotifications();
+  const { setRefreshCallback } = useAdminRefresh();
 
   const loadEntries = async () => {
     try {
@@ -79,26 +81,42 @@ const AdminAkraPage: React.FC = () => {
   }, [filteredEntries]);
 
   useEffect(() => {
+    // Register refresh callback for the refresh button
+    setRefreshCallback(() => loadEntries);
+    
+    // Initial load
     loadEntries();
 
     // Set up real-time subscription for auto-updates
     if (supabase) {
       const subscription = supabase
-        .channel('akra-entries-changes')
+        .channel('akra-entries-realtime')
         .on('postgres_changes', 
-          { event: '*', schema: 'public', table: 'transactions', filter: `entry_type=eq.akra` },
-          () => {
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'transactions', 
+            filter: `entry_type=eq.akra` 
+          },
+          (payload: any) => {
+            console.log('🔴 Real-time update received for Akra:', payload);
             // Silently reload entries without showing loading state
             loadEntries();
           }
         )
-        .subscribe();
+        .subscribe((status: string) => {
+          console.log('📡 Akra subscription status:', status);
+          if (status === 'SUBSCRIBED') {
+            console.log('✅ Akra real-time subscription active');
+          }
+        });
 
       return () => {
+        console.log('🔌 Unsubscribing from Akra real-time updates');
         subscription.unsubscribe();
       };
     }
-  }, []);
+  }, [setRefreshCallback]);
 
   const handleDelete = async () => {
     if (!deletingEntry) return;

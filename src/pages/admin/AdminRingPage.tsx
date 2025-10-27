@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import EditTransactionModal from '../../components/EditTransactionModal';
 import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
 
@@ -34,6 +35,7 @@ const AdminRingPage: React.FC = () => {
   });
 
   const { showSuccess, showError } = useNotifications();
+  const { setRefreshCallback } = useAdminRefresh();
 
   const loadEntries = async () => {
     try {
@@ -67,26 +69,41 @@ const AdminRingPage: React.FC = () => {
   }, [entries, searchNumber]);
 
   useEffect(() => {
+    // Register refresh callback for the refresh button
+    setRefreshCallback(() => loadEntries);
+    
+    // Initial load
     loadEntries();
 
     // Set up real-time subscription for auto-updates
     if (supabase) {
       const subscription = supabase
-        .channel('ring-entries-changes')
+        .channel('ring-entries-realtime')
         .on('postgres_changes', 
-          { event: '*', schema: 'public', table: 'transactions', filter: `entry_type=eq.ring` },
-          () => {
-            // Silently reload entries without showing loading state
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'transactions', 
+            filter: `entry_type=eq.ring` 
+          },
+          (payload: any) => {
+            console.log('🔴 Real-time update received for Ring:', payload);
             loadEntries();
           }
         )
-        .subscribe();
+        .subscribe((status: string) => {
+          console.log('📡 Ring subscription status:', status);
+          if (status === 'SUBSCRIBED') {
+            console.log('✅ Ring real-time subscription active');
+          }
+        });
 
       return () => {
+        console.log('🔌 Unsubscribing from Ring real-time updates');
         subscription.unsubscribe();
       };
     }
-  }, []);
+  }, [setRefreshCallback]);
 
   const handleDelete = async () => {
     if (!deletingEntry) return;

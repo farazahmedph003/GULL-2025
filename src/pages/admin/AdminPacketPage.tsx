@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import EditTransactionModal from '../../components/EditTransactionModal';
 import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
 
@@ -34,6 +35,7 @@ const AdminPacketPage: React.FC = () => {
   });
 
   const { showSuccess, showError } = useNotifications();
+  const { setRefreshCallback } = useAdminRefresh();
 
   const loadEntries = async () => {
     try {
@@ -67,26 +69,41 @@ const AdminPacketPage: React.FC = () => {
   }, [entries, searchNumber]);
 
   useEffect(() => {
+    // Register refresh callback for the refresh button
+    setRefreshCallback(() => loadEntries);
+    
+    // Initial load
     loadEntries();
 
     // Set up real-time subscription for auto-updates
     if (supabase) {
       const subscription = supabase
-        .channel('packet-entries-changes')
+        .channel('packet-entries-realtime')
         .on('postgres_changes', 
-          { event: '*', schema: 'public', table: 'transactions', filter: `entry_type=eq.packet` },
-          () => {
-            // Silently reload entries without showing loading state
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'transactions', 
+            filter: `entry_type=eq.packet` 
+          },
+          (payload: any) => {
+            console.log('🔴 Real-time update received for Packet:', payload);
             loadEntries();
           }
         )
-        .subscribe();
+        .subscribe((status: string) => {
+          console.log('📡 Packet subscription status:', status);
+          if (status === 'SUBSCRIBED') {
+            console.log('✅ Packet real-time subscription active');
+          }
+        });
 
       return () => {
+        console.log('🔌 Unsubscribing from Packet real-time updates');
         subscription.unsubscribe();
       };
     }
-  }, []);
+  }, [setRefreshCallback]);
 
   const handleDelete = async () => {
     if (!deletingEntry) return;

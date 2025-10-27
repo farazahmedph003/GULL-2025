@@ -3,6 +3,7 @@ import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import { groupTransactionsByNumber } from '../../utils/transactionHelpers';
 import type { EntryType } from '../../types';
 import { exportFilterResultsToPDF } from '../../utils/pdfExport';
@@ -43,29 +44,44 @@ const AdminFilterPage: React.FC = () => {
 
   const { showSuccess, showError} = useNotifications();
   const { user } = useAuth();
+  const { setRefreshCallback } = useAdminRefresh();
 
   // Load entries when type changes
   React.useEffect(() => {
+    // Register refresh callback for the refresh button
+    setRefreshCallback(() => loadEntries);
+    
     loadEntries(true); // Save initial state to history
 
     // Set up real-time subscription for auto-updates
     if (supabase) {
       const subscription = supabase
-        .channel(`filter-${selectedType}-changes`)
+        .channel(`filter-${selectedType}-realtime`)
         .on('postgres_changes', 
-          { event: '*', schema: 'public', table: 'transactions', filter: `entry_type=eq.${selectedType}` },
-          () => {
-            // Silently reload entries without showing loading state
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'transactions', 
+            filter: `entry_type=eq.${selectedType}` 
+          },
+          (payload: any) => {
+            console.log(`🔴 Real-time update received for ${selectedType} (filter):`, payload);
             loadEntries(false);
           }
         )
-        .subscribe();
+        .subscribe((status: string) => {
+          console.log(`📡 ${selectedType} filter subscription status:`, status);
+          if (status === 'SUBSCRIBED') {
+            console.log(`✅ ${selectedType} filter real-time subscription active`);
+          }
+        });
 
       return () => {
+        console.log(`🔌 Unsubscribing from ${selectedType} filter real-time updates`);
         subscription.unsubscribe();
       };
     }
-  }, [selectedType]);
+  }, [selectedType, setRefreshCallback]);
 
   const loadEntries = async (saveHistory = false) => {
     try {
