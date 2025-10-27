@@ -1860,6 +1860,82 @@ export class DatabaseService {
   }
 
   /**
+   * Get admin deductions for a specific entry type
+   */
+  async getAdminDeductionsByType(entryType: 'open' | 'akra' | 'ring' | 'packet'): Promise<any[]> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    return this.withRetry(async () => {
+      const { data, error } = await client
+        .from('admin_deductions')
+        .select(`
+          *,
+          transactions!inner (
+            id,
+            number,
+            entry_type,
+            user_id,
+            app_users (
+              username,
+              full_name
+            )
+          )
+        `)
+        .eq('transactions.entry_type', entryType)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      
+      // Fetch admin user details separately
+      if (data && data.length > 0) {
+        const adminUserIds = [...new Set(data.map((d: any) => d.admin_user_id))];
+        const { data: adminUsers, error: adminError } = await client
+          .from('app_users')
+          .select('id, username, full_name')
+          .in('id', adminUserIds);
+
+        if (!adminError && adminUsers) {
+          // Map admin users to deductions
+          const adminMap = new Map(adminUsers.map((u: any) => [u.id, u]));
+          return data.map((d: any) => ({
+            ...d,
+            admin: adminMap.get(d.admin_user_id) || { username: 'Unknown', full_name: 'Unknown' }
+          }));
+        }
+      }
+      
+      return data || [];
+    });
+  }
+
+  /**
+   * Delete a specific admin deduction (undo deduction)
+   */
+  async deleteAdminDeduction(deductionId: string): Promise<void> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    return this.withRetry(async () => {
+      const { error } = await client
+        .from('admin_deductions')
+        .delete()
+        .eq('id', deductionId);
+
+      if (error) throw error;
+
+      // Clear cache so next load shows updated amounts
+      clearTransactionsCache();
+    });
+  }
+
+  /**
    * Get all admin deductions for specific transactions
    */
   async getAdminDeductions(transactionIds: string[]): Promise<any[]> {
@@ -2000,13 +2076,29 @@ export class DatabaseService {
     const client = supabaseAdmin || supabase;
 
     return this.withRetry(async () => {
-      // First, get count of transactions to be deleted
-      const { count, error: countError } = await client
+      // First, get transaction IDs and count to be deleted
+      const { data: transactionsToDelete, count, error: countError } = await client
         .from('transactions')
-        .select('*', { count: 'exact', head: true })
+        .select('id', { count: 'exact' })
         .eq('entry_type', entryType);
 
       if (countError) throw countError;
+
+      // If there are transactions to delete, also delete their admin deductions
+      if (transactionsToDelete && transactionsToDelete.length > 0) {
+        const transactionIds = transactionsToDelete.map((t: any) => t.id);
+        
+        // Delete admin deductions for these transactions
+        const { error: deductionsError } = await client
+          .from('admin_deductions')
+          .delete()
+          .in('transaction_id', transactionIds);
+
+        // Don't throw on deductions error as they might not exist
+        if (deductionsError) {
+          console.warn('Error deleting admin deductions:', deductionsError);
+        }
+      }
 
       // Delete all transactions of this type
       const { error: deleteError } = await client
@@ -2015,22 +2107,6 @@ export class DatabaseService {
         .eq('entry_type', entryType);
 
       if (deleteError) throw deleteError;
-
-      // Delete all admin deductions for this entry type
-      const { error: deductionsError } = await client
-        .from('admin_deductions')
-        .delete()
-        .in('transaction_id', 
-          client
-            .from('transactions')
-            .select('id')
-            .eq('entry_type', entryType)
-        );
-
-      // Don't throw on deductions error as they might not exist
-      if (deductionsError) {
-        console.warn('Error deleting admin deductions:', deductionsError);
-      }
 
       // Clear cache
       clearTransactionsCache();

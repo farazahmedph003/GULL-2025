@@ -35,7 +35,6 @@ const AdminFilterPage: React.FC = () => {
   
   // Results
   const [calculatedResults, setCalculatedResults] = useState<CalculationResult[]>([]);
-  const [viewMode, setViewMode] = useState<'combined' | 'per-user'>('combined');
   const [showSaveModal, setShowSaveModal] = useState(false);
 
   // Undo/Redo history
@@ -529,33 +528,6 @@ const AdminFilterPage: React.FC = () => {
                 {type.toUpperCase()}
               </button>
             ))}
-          </div>
-
-          {/* View Mode Toggle */}
-          <div className="mt-4 flex items-center gap-4">
-            <span className="text-sm text-gray-600 dark:text-gray-400">View Mode:</span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setViewMode('combined')}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                  viewMode === 'combined'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                }`}
-              >
-                Combined
-              </button>
-              <button
-                onClick={() => setViewMode('per-user')}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                  viewMode === 'per-user'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                }`}
-              >
-                Per-User Breakdown
-              </button>
-            </div>
           </div>
         </div>
 
