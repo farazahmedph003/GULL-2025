@@ -87,12 +87,10 @@ const AdminAkraPage: React.FC = () => {
     // Initial load
     loadEntries();
 
-    // Auto-refresh every 5 seconds
-    console.log('⏰ Setting up auto-refresh every 5 seconds...');
+    // Auto-refresh every 2 seconds
     const autoRefreshInterval = setInterval(() => {
-      console.log('🔄 Auto-refreshing Akra data...');
       loadEntries();
-    }, 5000); // 5 seconds
+    }, 2000); // 2 seconds
 
     // Set up real-time subscription for auto-updates
     if (supabase) {
