@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { db } from '../../services/database';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
@@ -28,14 +28,14 @@ const AdminDashboard: React.FC = () => {
   const { setRefreshCallback } = useAdminRefresh();
   const confirm = useContext(ConfirmationContext);
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     try {
       const data = await db.getAllUsersWithStats();
       setUsers(data);
     } catch (error) {
       console.error('Error loading users:', error);
     }
-  };
+  }, []);
 
   const loadUserStatsForType = async (entryType: EntryType) => {
     try {

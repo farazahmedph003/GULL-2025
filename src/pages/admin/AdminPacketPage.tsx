@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -37,7 +37,7 @@ const AdminPacketPage: React.FC = () => {
   const { showSuccess, showError } = useNotifications();
   const { setRefreshCallback } = useAdminRefresh();
 
-  const loadEntries = async () => {
+  const loadEntries = useCallback(async () => {
     try {
       // Use adminView=true to apply admin deductions
       const data = await db.getAllEntriesByType('packet', true);
@@ -59,7 +59,7 @@ const AdminPacketPage: React.FC = () => {
       console.error('Error loading entries:', error);
       showError('Error', 'Failed to load entries');
     }
-  };
+  }, [showError]);
 
   // Filter entries by search
   const filteredEntries = useMemo(() => {
@@ -74,6 +74,11 @@ const AdminPacketPage: React.FC = () => {
     
     // Initial load
     loadEntries();
+
+    // Auto-refresh every 5 seconds
+    const autoRefreshInterval = setInterval(() => {
+      loadEntries();
+    }, 5000);
 
     // Set up real-time subscription for auto-updates
     if (supabase) {
@@ -100,10 +105,15 @@ const AdminPacketPage: React.FC = () => {
 
       return () => {
         console.log('🔌 Unsubscribing from Packet real-time updates');
+        clearInterval(autoRefreshInterval);
         subscription.unsubscribe();
       };
     }
-  }, []); // Empty dependency array - only run once on mount
+
+    return () => {
+      clearInterval(autoRefreshInterval);
+    };
+  }, [loadEntries, setRefreshCallback]);
 
   const handleDelete = async () => {
     if (!deletingEntry) return;

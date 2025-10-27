@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useSystemSettings } from '../../hooks/useSystemSettings';
@@ -36,7 +36,7 @@ const UserManagement: React.FC = () => {
   const { setRefreshCallback } = useAdminRefresh();
   const confirm = useContext(ConfirmationContext);
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     try {
       const data = await db.getAllUsersWithStats();
       setUsers(data);
@@ -44,7 +44,7 @@ const UserManagement: React.FC = () => {
       console.error('Error loading users:', error);
       showError('Error', 'Failed to load users');
     }
-  };
+  }, [showError]);
 
   useEffect(() => {
     // Register refresh callback for the refresh button

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -37,7 +37,7 @@ const AdminAkraPage: React.FC = () => {
   const { showSuccess, showError } = useNotifications();
   const { setRefreshCallback } = useAdminRefresh();
 
-  const loadEntries = async () => {
+  const loadEntries = useCallback(async () => {
     try {
       // Use adminView=true to apply admin deductions
       const data = await db.getAllEntriesByType('akra', true);
@@ -59,7 +59,7 @@ const AdminAkraPage: React.FC = () => {
       console.error('Error loading entries:', error);
       showError('Error', 'Failed to load entries');
     }
-  };
+  }, [showError]); // Only recreate if showError changes
 
   // Filter entries by search
   const filteredEntries = React.useMemo(() => {
@@ -87,6 +87,13 @@ const AdminAkraPage: React.FC = () => {
     // Initial load
     loadEntries();
 
+    // Auto-refresh every 5 seconds
+    console.log('⏰ Setting up auto-refresh every 5 seconds...');
+    const autoRefreshInterval = setInterval(() => {
+      console.log('🔄 Auto-refreshing Akra data...');
+      loadEntries();
+    }, 5000); // 5 seconds
+
     // Set up real-time subscription for auto-updates
     if (supabase) {
       console.log('🔄 Setting up Akra real-time subscription...');
@@ -113,11 +120,17 @@ const AdminAkraPage: React.FC = () => {
         });
 
       return () => {
-        console.log('🔌 Unsubscribing from Akra real-time updates');
+        console.log('🔌 Cleaning up Akra subscriptions...');
+        clearInterval(autoRefreshInterval);
         subscription.unsubscribe();
       };
     }
-  }, []); // Empty dependency array - only run once on mount
+
+    return () => {
+      console.log('🔌 Cleaning up auto-refresh...');
+      clearInterval(autoRefreshInterval);
+    };
+  }, [loadEntries, setRefreshCallback]); // Include loadEntries in dependencies
 
   const handleDelete = async () => {
     if (!deletingEntry) return;
