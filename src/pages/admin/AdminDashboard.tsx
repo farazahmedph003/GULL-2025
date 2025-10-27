@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { db } from '../../services/database';
+import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import { ConfirmationContext } from '../../App';
@@ -37,7 +38,7 @@ const AdminDashboard: React.FC = () => {
     }
   }, []);
 
-  const loadUserStatsForType = async (entryType: EntryType) => {
+  const loadUserStatsForType = useCallback(async (entryType: EntryType) => {
     try {
       const stats: UserStats[] = [];
       const allEntries: any[] = []; // Collect all entries for global unique calculation
@@ -72,14 +73,74 @@ const AdminDashboard: React.FC = () => {
     } catch (error) {
       console.error('Error loading user stats:', error);
     }
-  };
+  }, [users]);
 
   useEffect(() => {
     // Register refresh callback for the refresh button
     setRefreshCallback(loadUsers);
     
+    // Initial load
     loadUsers();
-  }, []); // Empty dependency array - only run once on mount
+
+    // Auto-refresh every 2 seconds
+    const autoRefreshInterval = setInterval(() => {
+      loadUsers();
+      if (selectedFilter) {
+        loadUserStatsForType(selectedFilter);
+      }
+    }, 2000);
+
+    // Set up real-time subscription for auto-updates
+    if (supabase) {
+      const subscription = supabase
+        .channel('admin-dashboard-realtime')
+        .on('postgres_changes', 
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'transactions'
+          },
+          (payload: any) => {
+            console.log('🔴 Real-time update received for Dashboard (transactions):', payload);
+            loadUsers();
+            if (selectedFilter) {
+              loadUserStatsForType(selectedFilter);
+            }
+          }
+        )
+        .on('postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'app_users'
+          },
+          (payload: any) => {
+            console.log('🔴 Real-time update received for Dashboard (users):', payload);
+            loadUsers();
+            if (selectedFilter) {
+              loadUserStatsForType(selectedFilter);
+            }
+          }
+        )
+        .subscribe((status: string) => {
+          console.log('📡 Dashboard subscription status:', status);
+          if (status === 'SUBSCRIBED') {
+            console.log('✅ Dashboard real-time subscription active');
+          }
+        });
+
+      return () => {
+        console.log('🔌 Cleaning up Dashboard subscriptions...');
+        clearInterval(autoRefreshInterval);
+        subscription.unsubscribe();
+      };
+    }
+
+    return () => {
+      console.log('🔌 Cleaning up auto-refresh...');
+      clearInterval(autoRefreshInterval);
+    };
+  }, [loadUsers, loadUserStatsForType, setRefreshCallback, selectedFilter]);
 
   useEffect(() => {
     if (selectedFilter) {
