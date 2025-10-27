@@ -2058,6 +2058,16 @@ export class DatabaseService {
         console.warn('Error deleting admin deductions:', deductionsError);
       }
 
+      // EXPLICITLY reset total_spent to 0 (even though trigger should do this)
+      const { error: resetSpentError } = await client
+        .from('app_users')
+        .update({ total_spent: 0 })
+        .eq('id', userId);
+
+      if (resetSpentError) {
+        console.warn('Error resetting total_spent:', resetSpentError);
+      }
+
       // Clear cache
       clearTransactionsCache();
 
