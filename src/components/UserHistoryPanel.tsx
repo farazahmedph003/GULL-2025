@@ -28,6 +28,10 @@ interface HistoryItem {
     username?: string;
     email?: string;
   };
+  // Grouped entry fields
+  isGrouped?: boolean;
+  groupedIds?: string[];
+  groupedTransactions?: any[];
 }
 
 interface UserHistoryPanelProps {
@@ -101,8 +105,47 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
       ? transactions 
       : transactions.filter(t => t.entryType === activeTab);
     
+    // Group transactions that were created together (bulk entries)
+    const groupedTransactions: any[] = [];
+    const processedIds = new Set<string>();
+    
+    filteredTransactions.forEach((transaction: any) => {
+      if (processedIds.has(transaction.id)) return;
+      
+      // Find all transactions with same timestamp (within 2 seconds), same amounts, same type
+      const createdTime = new Date(transaction.created_at || transaction.createdAt).getTime();
+      const similarTransactions = filteredTransactions.filter((t: any) => {
+        if (processedIds.has(t.id)) return false;
+        const tTime = new Date(t.created_at || t.createdAt).getTime();
+        const timeDiff = Math.abs(createdTime - tTime);
+        const sameTime = timeDiff < 2000; // Within 2 seconds
+        const sameFirst = (t.first_amount || t.first) === (transaction.first_amount || transaction.first);
+        const sameSecond = (t.second_amount || t.second) === (transaction.second_amount || transaction.second);
+        const sameType = (t.entry_type || t.entryType) === (transaction.entry_type || transaction.entryType);
+        return sameTime && sameFirst && sameSecond && sameType;
+      });
+      
+      // Mark all similar transactions as processed
+      similarTransactions.forEach(t => processedIds.add(t.id));
+      
+      // If multiple transactions, group them
+      if (similarTransactions.length > 1) {
+        const numbers = similarTransactions.map(t => t.number).join(', ');
+        groupedTransactions.push({
+          ...transaction,
+          number: numbers,
+          isEntry: true,
+          isGrouped: true,
+          groupedIds: similarTransactions.map(t => t.id),
+          groupedTransactions: similarTransactions,
+        });
+      } else {
+        groupedTransactions.push({ ...transaction, isEntry: true });
+      }
+    });
+    
     const combined = [
-      ...filteredTransactions.map((t: any) => ({ ...t, isEntry: true })),
+      ...groupedTransactions,
       ...topUps,
       ...adminActions,
     ];
@@ -219,21 +262,30 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
       const firstAmount = getFirstAmount(item);
       const secondAmount = getSecondAmount(item);
       const entryType = getEntryType(item);
+      const isGrouped = item.isGrouped;
+      const groupCount = item.groupedTransactions?.length || 0;
 
       return (
         <div
           key={item.id}
-          className="px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors rounded-lg border-l-4 border-blue-500"
+          className={`px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors rounded-lg ${
+            isGrouped ? 'border-l-4 border-blue-600' : 'border-l-4 border-blue-500'
+          }`}
         >
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <div className="flex items-center gap-3 mb-1">
+              <div className="flex items-center gap-3 mb-1 flex-wrap">
                 <span className="font-bold text-xl text-gray-900 dark:text-gray-100">
                   {item.number}
                 </span>
                 <span className="text-xs text-gray-600 dark:text-gray-400 uppercase tracking-wide bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
                   {entryType}
                 </span>
+                {isGrouped && (
+                  <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold bg-blue-100 dark:bg-blue-900/50 px-2 py-1 rounded">
+                    {groupCount} entries
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-3 text-sm">
                 {firstAmount > 0 && (
@@ -252,43 +304,66 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
               </div>
             </div>
             
-            {/* Edit and Delete Actions */}
-            <div className="flex items-center gap-2 ml-4">
-              {onEdit && (
+            {/* Edit and Delete Actions - Only for single entries */}
+            {!isGrouped && (
+              <div className="flex items-center gap-2 ml-4">
+                {onEdit && (
+                  <button
+                    onClick={() => {
+                      const transaction: Transaction = {
+                        id: item.id,
+                        number: item.number || '',
+                        entryType: (item.entryType || item.entry_type || 'akra') as any,
+                        first: getFirstAmount(item),
+                        second: getSecondAmount(item),
+                        projectId: 'user-scope',
+                        createdAt: getItemDate(item),
+                        updatedAt: getItemDate(item),
+                      };
+                      onEdit(transaction);
+                    }}
+                    className="p-2.5 rounded-lg bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 transition-colors"
+                    title="Edit entry"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                )}
+                {onDelete && (
+                  <button
+                    onClick={() => onDelete(item.id)}
+                    className="p-2.5 rounded-lg bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 transition-colors"
+                    title="Delete entry"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
+            {/* For grouped entries, show delete all button */}
+            {isGrouped && onDelete && (
+              <div className="flex items-center gap-2 ml-4">
                 <button
-                  onClick={() => {
-                    const transaction: Transaction = {
-                      id: item.id,
-                      number: item.number || '',
-                      entryType: (item.entryType || item.entry_type || 'akra') as any,
-                      first: getFirstAmount(item),
-                      second: getSecondAmount(item),
-                      projectId: 'user-scope',
-                      createdAt: getItemDate(item),
-                      updatedAt: getItemDate(item),
-                    };
-                    onEdit(transaction);
+                  onClick={async () => {
+                    if (item.groupedIds && item.groupedIds.length > 0) {
+                      // Delete all transactions in the group
+                      for (const id of item.groupedIds) {
+                        await onDelete(id);
+                      }
+                    }
                   }}
-                  className="p-2.5 rounded-lg bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 transition-colors"
-                  title="Edit entry"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
-              )}
-              {onDelete && (
-                <button
-                  onClick={() => onDelete(item.id)}
                   className="p-2.5 rounded-lg bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 transition-colors"
-                  title="Delete entry"
+                  title={`Delete all ${groupCount} entries`}
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       );
