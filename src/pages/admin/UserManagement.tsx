@@ -53,7 +53,9 @@ const UserManagement: React.FC = () => {
     loadUsers();
 
     // Auto-refresh every 5 seconds
+    console.log('⏰ Setting up auto-refresh every 5 seconds for User Management...');
     const autoRefreshInterval = setInterval(() => {
+      console.log('🔄 Auto-refreshing User Management data...');
       loadUsers();
     }, 5000);
 
@@ -90,9 +92,10 @@ const UserManagement: React.FC = () => {
     }
 
     return () => {
+      console.log('🔌 Cleaning up user management auto-refresh...');
       clearInterval(autoRefreshInterval);
     };
-  }, [loadUsers, setRefreshCallback]); // Dependencies for proper cleanup
+  }, []); // Empty dependency - only run once on mount
 
   const handleCreateUser = async (userData: {
     username: string;
