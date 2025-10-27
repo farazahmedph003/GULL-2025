@@ -21,6 +21,7 @@ export interface Project {
 export interface Transaction {
   id: string;
   projectId?: string; // deprecated in projectless mode
+  userId?: string; // User who created the transaction
   number: string; // '0'-'9' for Open, '00'-'99' for Akra, '000'-'999' for Ring, '0000'-'9999' for Packet
   entryType: EntryType;
   first: number;

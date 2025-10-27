@@ -4,6 +4,7 @@ import { formatCurrency } from '../utils/helpers';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { useNotifications } from '../contexts/NotificationContext';
 import { playSuccessSound } from '../utils/audioFeedback';
+import { useAuth } from '../contexts/AuthContext';
 
 interface StandardEntryProps {
   projectId: string;
@@ -16,6 +17,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
   onSuccess: _onSuccess,
   addTransaction,
 }) => {
+  const { user } = useAuth();
   const { balance, hasSufficientBalance, deductBalance } = useUserBalance();
   const { showSuccess, showError } = useNotifications();
   const numbersInputRef = useRef<HTMLInputElement>(null);
@@ -152,6 +154,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         categorizedNumbers.open.forEach(num => {
           const transaction = {
             projectId,
+            userId: user?.id,
             number: padNumber(num, 'open'),
             entryType: 'open' as const,
             first: firstAmount,
@@ -169,6 +172,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         categorizedNumbers.akra.forEach(num => {
           const transaction = {
             projectId,
+            userId: user?.id,
             number: padNumber(num, 'akra'),
             entryType: 'akra' as const,
             first: firstAmount,
@@ -186,6 +190,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         categorizedNumbers.ring.forEach(num => {
           const transaction = {
             projectId,
+            userId: user?.id,
             number: padNumber(num, 'ring'),
             entryType: 'ring' as const,
             first: firstAmount,
@@ -203,6 +208,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         categorizedNumbers.packet.forEach(num => {
           const transaction = {
             projectId,
+            userId: user?.id,
             number: padNumber(num, 'packet'),
             entryType: 'packet' as const,
             first: firstAmount,
