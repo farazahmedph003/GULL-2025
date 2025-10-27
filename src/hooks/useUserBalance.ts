@@ -28,11 +28,13 @@ export const useUserBalance = () => {
   const [error, setError] = useState<string | null>(null);
   const [spent, setSpent] = useState<number>(0);
 
-  // Fetch user balance
-  const fetchBalance = useCallback(async () => {
-    console.log('fetchBalance called for userId:', effectiveUserId);
+  // Fetch user balance (with optional silent mode)
+  const fetchBalance = useCallback(async (silent: boolean = false) => {
+    console.log('fetchBalance called for userId:', effectiveUserId, 'silent:', silent);
     
-    setLoading(true);
+    if (!silent) {
+      setLoading(true);
+    }
     setError(null);
 
     if (isOfflineMode() || !supabase || !user) {
@@ -54,7 +56,9 @@ export const useUserBalance = () => {
       // Load spent from local storage tracker
       const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
       setSpent(spentMap[effectiveUserId] || 0);
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     } else {
       // Online mode: ALWAYS fetch from database first
       try {
@@ -105,7 +109,9 @@ export const useUserBalance = () => {
         const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
         setSpent(spentMap[effectiveUserId] || 0);
       } finally {
-        setLoading(false);
+        if (!silent) {
+          setLoading(false);
+        }
       }
     }
   }, [user, effectiveUserId]);
@@ -289,9 +295,9 @@ export const useUserBalance = () => {
       // Check if this balance update is for the current user
       const eventUserId = event.detail?.userId;
       
-      // If no userId in event or it matches current user, refresh
+      // If no userId in event or it matches current user, refresh silently
       if (!eventUserId || eventUserId === effectiveUserId) {
-        fetchBalance();
+        fetchBalance(true); // Silent refresh - no loading state
       }
     };
     
@@ -327,6 +333,11 @@ export const useUserBalance = () => {
     };
   }, [user, fetchBalance]);
 
+  // Create a silent refresh function
+  const silentRefresh = useCallback(() => {
+    return fetchBalance(true);
+  }, [fetchBalance]);
+
   return {
     balance,
     loading,
@@ -335,7 +346,7 @@ export const useUserBalance = () => {
     hasSufficientBalance,
     deductBalance,
     addBalance,
-    refresh: fetchBalance,
+    refresh: silentRefresh, // Always use silent refresh to avoid loading animations
   };
 };
 

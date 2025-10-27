@@ -47,7 +47,12 @@ const UserDashboard: React.FC = () => {
     console.log('🔄 Silent refresh: transactions and balance...');
     refreshTransactions();
     refreshBalance();
-  }, [refreshTransactions, refreshBalance]);
+    
+    // Dispatch global event to refresh all balance displays
+    window.dispatchEvent(new CustomEvent('user-balance-updated', { 
+      detail: { userId: user?.id } 
+    }));
+  }, [refreshTransactions, refreshBalance, user?.id]);
 
   // Comprehensive refresh function
   const refresh = useCallback(() => {
@@ -57,12 +62,12 @@ const UserDashboard: React.FC = () => {
     silentRefresh();
   }, [transactions.length, silentRefresh]);
 
-  // Auto-refresh balance and transactions every 15 seconds
+  // Auto-refresh balance and transactions every 5 seconds
   useEffect(() => {
     const autoRefreshInterval = setInterval(() => {
-      console.log('⏰ Auto-refresh triggered (15s)');
+      console.log('⏰ Auto-refresh triggered (5s)');
       silentRefresh();
-    }, 15000); // 15 seconds
+    }, 5000); // 5 seconds
 
     return () => {
       clearInterval(autoRefreshInterval);
