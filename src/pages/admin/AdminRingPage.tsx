@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
-import LoadingSpinner from '../../components/LoadingSpinner';
 import EditTransactionModal from '../../components/EditTransactionModal';
 import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
 
@@ -21,7 +20,6 @@ interface Entry {
 
 const AdminRingPage: React.FC = () => {
   const [entries, setEntries] = useState<Entry[]>([]);
-  const [loading, setLoading] = useState(true);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -39,7 +37,6 @@ const AdminRingPage: React.FC = () => {
 
   const loadEntries = async () => {
     try {
-      setLoading(true);
       // Use adminView=true to apply admin deductions
       const data = await db.getAllEntriesByType('ring', true);
       setEntries(data);
@@ -59,8 +56,6 @@ const AdminRingPage: React.FC = () => {
     } catch (error) {
       console.error('Error loading entries:', error);
       showError('Error', 'Failed to load entries');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -183,14 +178,6 @@ const AdminRingPage: React.FC = () => {
     });
     return groups;
   }, [filteredEntries]);
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner text="Loading ring entries..." />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 pb-20">

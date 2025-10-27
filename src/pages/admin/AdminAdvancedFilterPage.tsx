@@ -5,12 +5,10 @@ import { useNotifications } from '../../contexts/NotificationContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { groupTransactionsByNumber } from '../../utils/transactionHelpers';
 import type { EntryType } from '../../types';
-import LoadingSpinner from '../../components/LoadingSpinner';
 
 const AdminAdvancedFilterPage: React.FC = () => {
   const [selectedType, setSelectedType] = useState<EntryType>('open');
   const [entries, setEntries] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false); // Prevent double actions
   
   // Filter states
@@ -49,7 +47,6 @@ const AdminAdvancedFilterPage: React.FC = () => {
 
   const loadEntries = async (saveHistory = false) => {
     try {
-      setLoading(true);
       // Use adminView=true to see admin-adjusted amounts
       const data = await db.getAllEntriesByType(selectedType, true);
       
@@ -84,8 +81,6 @@ const AdminAdvancedFilterPage: React.FC = () => {
     } catch (error) {
       console.error('Error loading entries:', error);
       showError('Error', 'Failed to load entries');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -638,12 +633,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
           </div>
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <LoadingSpinner text={`Loading ${selectedType} entries...`} />
-          </div>
-        ) : (
-          <>
+        <>
             {/* Two-Panel Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               {/* FIRST Panel */}
@@ -821,7 +811,6 @@ const AdminAdvancedFilterPage: React.FC = () => {
               </div>
             </div>
           </>
-        )}
       </div>
     </div>
   );

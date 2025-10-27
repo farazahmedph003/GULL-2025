@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../services/database';
-import LoadingSpinner from '../../components/LoadingSpinner';
 import { useNotifications } from '../../contexts/NotificationContext';
 import type { EntryType } from '../../types';
 
@@ -21,26 +20,21 @@ const AdminDashboard: React.FC = () => {
   const [users, setUsers] = useState<any[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<EntryType | null>(null);
   const [userStats, setUserStats] = useState<UserStats[]>([]);
-  const [loading, setLoading] = useState(true);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
   const { showSuccess, showError } = useNotifications();
 
   const loadUsers = async () => {
     try {
-      setLoading(true);
       const data = await db.getAllUsersWithStats();
       setUsers(data);
     } catch (error) {
       console.error('Error loading users:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
   const loadUserStatsForType = async (entryType: EntryType) => {
     try {
-      setLoading(true);
       const stats: UserStats[] = [];
       const allEntries: any[] = []; // Collect all entries for global unique calculation
 
@@ -73,8 +67,6 @@ const AdminDashboard: React.FC = () => {
       setUserStats(stats);
     } catch (error) {
       console.error('Error loading user stats:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -182,14 +174,6 @@ const AdminDashboard: React.FC = () => {
       setIsResetting(false);
     }
   };
-
-  if (loading && !selectedFilter) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner text="Loading dashboard..." />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 pb-20">
@@ -341,12 +325,7 @@ const AdminDashboard: React.FC = () => {
               </button>
             </div>
 
-            {loading ? (
-              <div className="flex justify-center py-12">
-                <LoadingSpinner text="Loading stats..." />
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {userStats.map((user) => (
                   <div key={user.id} className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
                     <div className="p-6">
@@ -420,7 +399,6 @@ const AdminDashboard: React.FC = () => {
                   </div>
                 ))}
               </div>
-            )}
           </div>
         )}
 

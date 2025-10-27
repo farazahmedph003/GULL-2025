@@ -5,7 +5,6 @@ import { useNotifications } from '../../contexts/NotificationContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { groupTransactionsByNumber } from '../../utils/transactionHelpers';
 import type { EntryType } from '../../types';
-import LoadingSpinner from '../../components/LoadingSpinner';
 import { exportFilterResultsToPDF } from '../../utils/pdfExport';
 
 type ComparisonType = '>=' | '>' | '<=' | '<' | '==';
@@ -21,7 +20,6 @@ interface CalculationResult {
 const AdminFilterPage: React.FC = () => {
   const [selectedType, setSelectedType] = useState<EntryType>('open');
   const [entries, setEntries] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false); // Prevent double actions
   
   // Filter states
@@ -71,7 +69,6 @@ const AdminFilterPage: React.FC = () => {
 
   const loadEntries = async (saveHistory = false) => {
     try {
-      setLoading(true);
       // Use adminView=true to see admin-adjusted amounts
       const data = await db.getAllEntriesByType(selectedType, true);
       
@@ -107,8 +104,6 @@ const AdminFilterPage: React.FC = () => {
     } catch (error) {
       console.error('Error loading entries:', error);
       showError('Error', 'Failed to load entries');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -538,12 +533,7 @@ const AdminFilterPage: React.FC = () => {
           </div>
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <LoadingSpinner text={`Loading ${selectedType} entries...`} />
-          </div>
-        ) : (
-          <>
+        <>
             {/* Filter Section */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 mb-6">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
@@ -792,7 +782,6 @@ const AdminFilterPage: React.FC = () => {
               </div>
             )}
           </>
-        )}
       </div>
 
       {/* Confirmation Modal */}
