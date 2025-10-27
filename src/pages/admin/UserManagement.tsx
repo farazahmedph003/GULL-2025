@@ -397,26 +397,37 @@ const UserManagement: React.FC = () => {
         {/* Users Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {users.map((user) => (
-            <div key={user.id} className={`rounded-2xl shadow-lg overflow-hidden ${
+            <div key={user.id} className={`rounded-2xl shadow-xl overflow-hidden relative ${
               user.is_partner 
-                ? 'bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 dark:from-amber-900/30 dark:via-orange-900/30 dark:to-yellow-900/30 border-2 border-amber-300 dark:border-amber-600' 
-                : 'bg-white dark:bg-gray-800'
+                ? 'bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 dark:from-amber-900/40 dark:via-yellow-900/40 dark:to-orange-900/40 border-4 border-yellow-400 dark:border-yellow-500 ring-4 ring-yellow-200 dark:ring-yellow-800/50' 
+                : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'
             }`}>
+              {/* Partner Badge Ribbon */}
+              {user.is_partner && (
+                <div className="absolute top-0 right-0 bg-gradient-to-br from-yellow-400 via-amber-500 to-orange-500 text-white px-4 py-1 text-xs font-bold uppercase tracking-wider shadow-lg transform rotate-0 rounded-bl-xl flex items-center gap-1">
+                  <span className="text-sm">⭐</span>
+                  <span>Partner</span>
+                </div>
+              )}
+              
               {/* User Card */}
               <div className="p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                      <h3 className={`text-xl font-bold ${
+                        user.is_partner 
+                          ? 'text-amber-900 dark:text-amber-200' 
+                          : 'text-gray-900 dark:text-white'
+                      }`}>
                         {user.full_name}
                       </h3>
-                      {user.is_partner && (
-                        <span className="px-3 py-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-bold rounded-full flex items-center gap-1 shadow-md">
-                          ⭐ PARTNER
-                        </span>
-                      )}
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">@{user.username}</p>
+                    <p className={`text-sm ${
+                      user.is_partner 
+                        ? 'text-amber-700 dark:text-amber-400' 
+                        : 'text-gray-600 dark:text-gray-400'
+                    }`}>@{user.username}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">{user.email}</p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -443,22 +454,50 @@ const UserManagement: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="space-y-2 mb-4">
+                <div className={`space-y-2 mb-4 ${
+                  user.is_partner 
+                    ? 'bg-amber-100/50 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-300 dark:border-amber-700' 
+                    : ''
+                }`}>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Balance:</span>
-                    <span className="font-bold text-green-600 dark:text-green-400">
+                    <span className={`text-sm ${
+                      user.is_partner 
+                        ? 'text-amber-700 dark:text-amber-400 font-semibold' 
+                        : 'text-gray-600 dark:text-gray-400'
+                    }`}>Balance:</span>
+                    <span className={`font-bold ${
+                      user.is_partner 
+                        ? 'text-green-700 dark:text-green-300 text-lg' 
+                        : 'text-green-600 dark:text-green-400'
+                    }`}>
                       PKR {user.balance.toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Total Spent:</span>
-                    <span className="font-bold text-red-600 dark:text-red-400">
+                    <span className={`text-sm ${
+                      user.is_partner 
+                        ? 'text-amber-700 dark:text-amber-400 font-semibold' 
+                        : 'text-gray-600 dark:text-gray-400'
+                    }`}>Total Spent:</span>
+                    <span className={`font-bold ${
+                      user.is_partner 
+                        ? 'text-red-700 dark:text-red-300 text-lg' 
+                        : 'text-red-600 dark:text-red-400'
+                    }`}>
                       PKR {(user.total_spent || 0).toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Total Entries:</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">
+                    <span className={`text-sm ${
+                      user.is_partner 
+                        ? 'text-amber-700 dark:text-amber-400 font-semibold' 
+                        : 'text-gray-600 dark:text-gray-400'
+                    }`}>Total Entries:</span>
+                    <span className={`font-semibold ${
+                      user.is_partner 
+                        ? 'text-amber-900 dark:text-amber-200 text-lg' 
+                        : 'text-gray-900 dark:text-white'
+                    }`}>
                       {user.entryCount}
                     </span>
                   </div>
