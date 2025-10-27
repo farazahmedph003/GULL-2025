@@ -1302,7 +1302,7 @@ export class DatabaseService {
   /**
    * Get user balance (uses service role to bypass RLS)
    */
-  async getUserBalance(userId: string): Promise<{ data?: { balance: number }, error?: any }> {
+  async getUserBalance(userId: string): Promise<{ data?: { balance: number; total_spent: number }, error?: any }> {
     if (!isSupabaseConfigured() || !supabaseAdmin) {
       console.error('❌ Admin client not available for getUserBalance:', { 
         isSupabaseConfigured: isSupabaseConfigured(), 
@@ -1320,7 +1320,7 @@ export class DatabaseService {
 
       const { data, error } = await supabaseAdmin
         .from('app_users')
-        .select('balance')
+        .select('balance, total_spent')
         .eq('id', userId)
         .single();
 
@@ -1329,7 +1329,7 @@ export class DatabaseService {
         return { error };
       }
 
-      console.log('✅ Balance retrieved from database for user:', userId, 'balance:', data.balance);
+      console.log('✅ Balance retrieved from database for user:', userId, 'balance:', data.balance, 'total_spent:', data.total_spent);
       return { data };
     } catch (err) {
       console.error('❌ Exception getting balance:', err);
@@ -1869,6 +1869,7 @@ export class DatabaseService {
     const client = supabaseAdmin || supabase;
 
     return this.withRetry(async () => {
+      // First, get all deductions with their transaction details (without embedding app_users)
       const { data, error } = await client
         .from('admin_deductions')
         .select(`
@@ -1877,11 +1878,7 @@ export class DatabaseService {
             id,
             number,
             entry_type,
-            user_id,
-            app_users (
-              username,
-              full_name
-            )
+            user_id
           )
         `)
         .eq('transactions.entry_type', entryType)
@@ -1889,25 +1886,39 @@ export class DatabaseService {
 
       if (error) throw error;
       
-      // Fetch admin user details separately
-      if (data && data.length > 0) {
-        const adminUserIds = [...new Set(data.map((d: any) => d.admin_user_id))];
-        const { data: adminUsers, error: adminError } = await client
-          .from('app_users')
-          .select('id, username, full_name')
-          .in('id', adminUserIds);
-
-        if (!adminError && adminUsers) {
-          // Map admin users to deductions
-          const adminMap = new Map(adminUsers.map((u: any) => [u.id, u]));
-          return data.map((d: any) => ({
-            ...d,
-            admin: adminMap.get(d.admin_user_id) || { username: 'Unknown', full_name: 'Unknown' }
-          }));
-        }
+      if (!data || data.length === 0) {
+        return [];
       }
       
-      return data || [];
+      // Get unique user IDs from transactions
+      const transactionUserIds = [...new Set(data.map((d: any) => d.transactions.user_id).filter(Boolean))];
+      
+      // Fetch transaction user details separately
+      const { data: transactionUsers } = await client
+        .from('app_users')
+        .select('id, username, full_name')
+        .in('id', transactionUserIds);
+
+      // Fetch admin user details separately
+      const adminUserIds = [...new Set(data.map((d: any) => d.admin_user_id))];
+      const { data: adminUsers } = await client
+        .from('app_users')
+        .select('id, username, full_name')
+        .in('id', adminUserIds);
+
+      // Create maps for quick lookup
+      const transactionUserMap = new Map((transactionUsers || []).map((u: any) => [u.id, u]));
+      const adminMap = new Map((adminUsers || []).map((u: any) => [u.id, u]));
+      
+      // Combine all data
+      return data.map((d: any) => ({
+        ...d,
+        transactions: {
+          ...d.transactions,
+          app_users: transactionUserMap.get(d.transactions.user_id) || { username: 'Unknown', full_name: 'Unknown' }
+        },
+        admin: adminMap.get(d.admin_user_id) || { username: 'Unknown', full_name: 'Unknown' }
+      }));
     });
   }
 

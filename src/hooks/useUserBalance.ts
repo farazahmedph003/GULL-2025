@@ -69,18 +69,21 @@ export const useUserBalance = () => {
         }
 
         const newBalance = data?.balance || 0; // Default to 0 for new users - admin must top up
-        console.log('✅ Balance fetched from database:', newBalance);
+        const newSpent = data?.total_spent || 0; // Get total_spent from database
+        console.log('✅ Balance fetched from database:', newBalance, 'spent:', newSpent);
         
         setBalance(newBalance);
+        setSpent(newSpent);
         
         // Update localStorage as cache (but don't rely on it)
         const localBalances = JSON.parse(localStorage.getItem('gull_user_balances') || '{}');
         localBalances[effectiveUserId] = newBalance;
         localStorage.setItem('gull_user_balances', JSON.stringify(localBalances));
         
-        // Load spent from local storage tracker (this is just for UI display)
+        // Also cache spent amount
         const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
-        setSpent(spentMap[effectiveUserId] || 0);
+        spentMap[effectiveUserId] = newSpent;
+        localStorage.setItem('gull_user_spent', JSON.stringify(spentMap));
         
       } catch (err) {
         console.error('❌ Error fetching balance from database:', err);
@@ -305,10 +308,14 @@ export const useUserBalance = () => {
     const unsubscribe = db.subscribeToUserBalance(user.id, (payload) => {
       console.log('Realtime balance update received:', payload);
       
-      // Extract new balance from the payload
+      // Extract new balance and spent from the payload
       const event = payload as any;
       if (event?.new?.balance !== undefined) {
         setBalance(event.new.balance);
+        // Also update spent if available in the payload
+        if (event?.new?.total_spent !== undefined) {
+          setSpent(event.new.total_spent);
+        }
       } else {
         // Fallback: refresh balance from database
         fetchBalance();

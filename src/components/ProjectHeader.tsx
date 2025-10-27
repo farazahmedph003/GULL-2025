@@ -91,11 +91,15 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
                 </div>
               )}
 
-              {/* Refresh button only for admin */}
-              {isAdmin && variant === 'admin' && onRefresh && (
+              {/* Refresh button for both admin and user */}
+              {onRefresh && (
                 <button
                   onClick={onRefresh}
-                  className="p-2 sm:p-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 min-h-[48px] min-w-[48px] flex items-center justify-center"
+                  className={`p-2 sm:p-3 ${
+                    variant === 'admin' 
+                      ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700' 
+                      : 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700'
+                  } text-white rounded-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 min-h-[48px] min-w-[48px] flex items-center justify-center`}
                   title="Refresh"
                   aria-label="Refresh"
                 >
