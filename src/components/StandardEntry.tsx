@@ -144,63 +144,75 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         }
       }
 
-      // Create transactions for each entry type that has numbers
+      // Create SEPARATE transactions for EACH number
       const transactionsToAdd: Omit<Transaction, 'id'>[] = [];
       
+      // Create separate transaction for each OPEN number
       if (categorizedNumbers.open.length > 0) {
-        const transaction = {
-          projectId,
-          number: categorizedNumbers.open.map(n => padNumber(n, 'open')).join(', '),
-          entryType: 'open' as const,
-          first: firstAmount,
-          second: secondAmount,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        transactionsToAdd.push(transaction);
-        console.log('🔍 Debug - Added OPEN transaction:', transaction);
+        categorizedNumbers.open.forEach(num => {
+          const transaction = {
+            projectId,
+            number: padNumber(num, 'open'),
+            entryType: 'open' as const,
+            first: firstAmount,
+            second: secondAmount,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          transactionsToAdd.push(transaction);
+          console.log('🔍 Debug - Added OPEN transaction:', transaction);
+        });
       }
       
+      // Create separate transaction for each AKRA number
       if (categorizedNumbers.akra.length > 0) {
-        const transaction = {
-          projectId,
-          number: categorizedNumbers.akra.map(n => padNumber(n, 'akra')).join(', '),
-          entryType: 'akra' as const,
-          first: firstAmount,
-          second: secondAmount,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        transactionsToAdd.push(transaction);
-        console.log('🔍 Debug - Added AKRA transaction:', transaction);
+        categorizedNumbers.akra.forEach(num => {
+          const transaction = {
+            projectId,
+            number: padNumber(num, 'akra'),
+            entryType: 'akra' as const,
+            first: firstAmount,
+            second: secondAmount,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          transactionsToAdd.push(transaction);
+          console.log('🔍 Debug - Added AKRA transaction:', transaction);
+        });
       }
       
+      // Create separate transaction for each RING number
       if (categorizedNumbers.ring.length > 0) {
-        const transaction = {
-          projectId,
-          number: categorizedNumbers.ring.map(n => padNumber(n, 'ring')).join(', '),
-          entryType: 'ring' as const,
-          first: firstAmount,
-          second: secondAmount,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        transactionsToAdd.push(transaction);
-        console.log('🔍 Debug - Added RING transaction:', transaction);
+        categorizedNumbers.ring.forEach(num => {
+          const transaction = {
+            projectId,
+            number: padNumber(num, 'ring'),
+            entryType: 'ring' as const,
+            first: firstAmount,
+            second: secondAmount,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          transactionsToAdd.push(transaction);
+          console.log('🔍 Debug - Added RING transaction:', transaction);
+        });
       }
       
+      // Create separate transaction for each PACKET number
       if (categorizedNumbers.packet.length > 0) {
-        const transaction = {
-          projectId,
-          number: categorizedNumbers.packet.map(n => padNumber(n, 'packet')).join(', '),
-          entryType: 'packet' as const,
-          first: firstAmount,
-          second: secondAmount,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        transactionsToAdd.push(transaction);
-        console.log('🔍 Debug - Added PACKET transaction:', transaction);
+        categorizedNumbers.packet.forEach(num => {
+          const transaction = {
+            projectId,
+            number: padNumber(num, 'packet'),
+            entryType: 'packet' as const,
+            first: firstAmount,
+            second: secondAmount,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          transactionsToAdd.push(transaction);
+          console.log('🔍 Debug - Added PACKET transaction:', transaction);
+        });
       }
       
       console.log('🔍 Debug - Total transactions to add:', transactionsToAdd.length);
