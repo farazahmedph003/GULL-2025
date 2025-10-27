@@ -111,9 +111,15 @@ const UserManagement: React.FC = () => {
   }) => {
     try {
       // Check if username already exists
-      const existingUser = users.find(u => u.username.toLowerCase() === userData.username.toLowerCase());
-      if (existingUser) {
+      const existingUsername = users.find(u => u.username.toLowerCase() === userData.username.toLowerCase());
+      if (existingUsername) {
         throw new Error(`Username "${userData.username}" is already taken. Please choose a different username.`);
+      }
+      
+      // Check if full name already exists
+      const existingFullName = users.find(u => u.full_name.toLowerCase() === userData.fullName.toLowerCase());
+      if (existingFullName) {
+        throw new Error(`Full name "${userData.fullName}" is already taken. Please choose a different name.`);
       }
       
       await db.createUser(userData);

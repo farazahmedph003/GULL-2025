@@ -1168,6 +1168,7 @@ export class DatabaseService {
       const passwordHash = await bcrypt.hash(userData.password, 10);
 
       // Step 3: Create app_users record with matching ID
+      // Note: is_partner column removed temporarily - run ADD_PARTNER_AND_UNIQUE_NAME.sql to enable
       const { data, error } = await supabaseAdmin
         .from('app_users')
         .insert({
@@ -1179,7 +1180,6 @@ export class DatabaseService {
           role: 'user',
           is_active: true,
           balance: userData.balance || 0,
-          is_partner: userData.isPartner || false,
         })
         .select()
         .single();
@@ -1460,7 +1460,7 @@ export class DatabaseService {
         await client
           .from('balance_history')
           .insert({
-            user_id: userId,
+            app_user_id: userId,
             amount: amount,
             type: 'top_up',
             balance_after: newBalance,
@@ -1699,20 +1699,19 @@ export class DatabaseService {
 
       if (entriesError) throw entriesError;
 
-      // Try to get balance history
-      let topUps: any[] = [];
+      // Try to get balance history (both top-ups and withdrawals)
+      let balanceHistoryItems: any[] = [];
       try {
         const { data: balanceHistory, error: balanceError } = await client
           .from('balance_history')
           .select('*')
-          .eq('user_id', userId) // Use user_id for app_users
-          .eq('type', 'top_up')
+          .eq('app_user_id', userId)
           .order('created_at', { ascending: false });
 
         if (!balanceError && balanceHistory) {
-          topUps = balanceHistory.map((item: any) => ({
+          balanceHistoryItems = balanceHistory.map((item: any) => ({
             ...item,
-            isTopUp: true,
+            isTopUp: true, // Keep this for compatibility with existing UI
           }));
         }
       } catch (err) {
@@ -1741,7 +1740,7 @@ export class DatabaseService {
       // Combine and sort by date
       const combined = [
         ...entries.map((e: any) => ({ ...e, isEntry: true })),
-        ...topUps,
+        ...balanceHistoryItems,
         ...adminActions,
       ];
 
@@ -2015,6 +2014,22 @@ export class DatabaseService {
           .eq('id', userId);
 
         if (error) throw error;
+
+        // Also delete from Supabase auth if using admin client
+        if (supabaseAdmin) {
+          try {
+            const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+            if (authError) {
+              console.warn('Failed to delete auth user:', authError);
+              // Don't throw - app_users deletion already succeeded
+            } else {
+              console.log('✅ Successfully deleted user from Supabase auth');
+            }
+          } catch (err) {
+            console.warn('Error deleting auth user:', err);
+            // Don't throw - app_users deletion already succeeded
+          }
+        }
       } else {
         // Soft delete - set inactive and deleted_at timestamp
         const { error } = await client
@@ -2196,7 +2211,7 @@ export class DatabaseService {
         await client
           .from('balance_history')
           .insert({
-            user_id: userId,
+            app_user_id: userId,
             amount: -amount, // Negative to indicate withdrawal
             type: 'withdrawal',
             balance_after: newBalance,
