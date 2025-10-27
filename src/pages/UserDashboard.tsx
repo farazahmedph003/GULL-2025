@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import ProjectHeader from '../components/ProjectHeader';
 import StandardEntry from '../components/StandardEntry';
 import IntelligentEntry from '../components/IntelligentEntry';
@@ -12,7 +12,6 @@ import { useNotifications } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDate } from '../utils/helpers';
 import { playReloadSound } from '../utils/audioFeedback';
-import { importFromCSV } from '../utils/importExport';
 import { exportUserTransactionsToPDF } from '../utils/pdfExport';
 import type { Project, EntryType, Transaction } from '../types';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
@@ -28,7 +27,6 @@ const UserDashboard: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const { showSuccess, showError } = useNotifications();
   const { user } = useAuth();
 
@@ -44,20 +42,32 @@ const UserDashboard: React.FC = () => {
   const { refresh: refreshBalance } = useUserBalance();
   const { entriesEnabled, refresh: refreshSettings } = useSystemSettings();
   
+  // Silent refresh without sound for background updates
+  const silentRefresh = useCallback(() => {
+    console.log('🔄 Silent refresh: transactions and balance...');
+    refreshTransactions();
+    refreshBalance();
+  }, [refreshTransactions, refreshBalance]);
+
   // Comprehensive refresh function
-  const refresh = () => {
+  const refresh = useCallback(() => {
     console.log('🔄 Refreshing transactions and balance...');
     console.log('📊 Current transactions count:', transactions.length);
     playReloadSound();
-    refreshTransactions();
-    refreshBalance();
-  };
-  
-  // Silent refresh without sound for background updates
-  const silentRefresh = () => {
-    refreshTransactions();
-    refreshBalance();
-  };
+    silentRefresh();
+  }, [transactions.length, silentRefresh]);
+
+  // Auto-refresh balance and transactions every 15 seconds
+  useEffect(() => {
+    const autoRefreshInterval = setInterval(() => {
+      console.log('⏰ Auto-refresh triggered (15s)');
+      silentRefresh();
+    }, 15000); // 15 seconds
+
+    return () => {
+      clearInterval(autoRefreshInterval);
+    };
+  }, [silentRefresh]);
 
   // const statistics = getStatistics();
 
@@ -84,7 +94,14 @@ const UserDashboard: React.FC = () => {
 
   // Projectless: set a virtual project for UI titles only
   useEffect(() => {
-    setProject({ id: 'virtual', name: 'User Dashboard', date: new Date().toISOString(), entryTypes: ['open','akra','ring','packet'], createdAt: '', updatedAt: '' });
+    // Format today's date as "MMM DD, YYYY" (e.g., "Oct 27, 2025")
+    const today = new Date();
+    const formattedDate = today.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+    setProject({ id: 'virtual', name: formattedDate, date: new Date().toISOString(), entryTypes: ['open','akra','ring','packet'], createdAt: '', updatedAt: '' });
   }, []);
 
   // Real-time subscriptions for instant updates
@@ -145,122 +162,13 @@ const UserDashboard: React.FC = () => {
     }
   };
 
-  // Import handlers
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      if (file.name.endsWith('.json')) {
-        const text = await file.text();
-        const jsonData = JSON.parse(text);
-        
-        // Check if it's an aggregated export (has 'data' array) or regular transaction export (has 'transactions' array)
-        if (jsonData.data && Array.isArray(jsonData.data)) {
-          // Aggregated JSON format
-          const entryType = jsonData.entryType || 'akra';
-          let importedCount = 0;
-          
-          for (const item of jsonData.data) {
-            if (item.first > 0 || item.second > 0) {
-              await addTransaction({
-                number: item.number,
-                entryType: entryType,
-                first: item.first || 0,
-                second: item.second || 0,
-                projectId: 'user-scope',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              });
-              importedCount++;
-            }
-          }
-          
-          await showSuccess('Import Successful', `Imported ${importedCount} aggregated numbers from JSON`);
-          refresh();
-        } else if (jsonData.transactions && Array.isArray(jsonData.transactions)) {
-          // Regular transaction format
-          for (const transaction of jsonData.transactions) {
-            await addTransaction({
-              ...transaction,
-              projectId: 'user-scope',
-            });
-          }
-          await showSuccess('Import Successful', `Imported ${jsonData.transactions.length} transactions from JSON`);
-          refresh();
-        } else {
-          showError('Invalid Format', 'JSON file format not recognized');
-        }
-      } else if (file.name.endsWith('.csv')) {
-        const text = await file.text();
-        const lines = text.split('\n').filter(line => line.trim());
-        
-        // Check if it's aggregated CSV (has headers: Number, Entry Type, First Amount, etc.)
-        if (lines[0].includes('Entry Type') && lines[0].includes('First Amount')) {
-          // Aggregated CSV format from Excel export
-          let importedCount = 0;
-          
-          for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line || line.startsWith('TOTAL')) break; // Skip TOTAL row
-            
-            const parts = line.split(',');
-            if (parts.length >= 4) {
-              const number = parts[0].trim();
-              const entryType = parts[1].trim().toLowerCase();
-              const first = parseFloat(parts[2]) || 0;
-              const second = parseFloat(parts[3]) || 0;
-              
-              if (first > 0 || second > 0) {
-                await addTransaction({
-                  number,
-                  entryType: entryType as any,
-                  first,
-                  second,
-                  projectId: 'user-scope',
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                });
-                importedCount++;
-              }
-            }
-          }
-          
-          await showSuccess('Import Successful', `Imported ${importedCount} numbers from Excel CSV`);
-          refresh();
-        } else {
-          // Regular CSV format
-          const importedTransactions = await importFromCSV(file, 'user-scope');
-          for (const transaction of importedTransactions) {
-            await addTransaction(transaction);
-          }
-          await showSuccess('Import Successful', `Imported ${importedTransactions.length} transactions from CSV`);
-          refresh();
-        }
-      } else {
-        showError('Invalid File', 'Please select a JSON or CSV file');
-      }
-    } catch (error) {
-      console.error('Import error:', error);
-      showError('Import Failed', 'Failed to import transactions. Please check the file format.');
-    }
-
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
 
   const tabs = [
     { id: 'all' as TabType, label: 'ALL', description: 'All entries' },
-    { id: 'open' as TabType, label: 'OPEN', description: 'Open entries' },
-    { id: 'akra' as TabType, label: 'AKRA', description: '2-digit entries' },
-    { id: 'ring' as TabType, label: 'RING', description: '3-digit entries' },
-    { id: 'packet' as TabType, label: 'PACKET', description: 'Packet entries' },
+    { id: 'open' as TabType, label: '0', description: 'Open entries' },
+    { id: 'akra' as TabType, label: '00', description: '2-digit entries' },
+    { id: 'ring' as TabType, label: '000', description: '3-digit entries' },
+    { id: 'packet' as TabType, label: '0000', description: 'Packet entries' },
   ];
 
   if (!project) {
@@ -286,9 +194,6 @@ const UserDashboard: React.FC = () => {
           
           {/* Page Header */}
           <div className="mb-6 sm:mb-8">
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mb-2">
-              📊 {project.name}
-            </h1>
             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">Track your entries with real-time calculations</p>
           </div>
 
@@ -334,6 +239,7 @@ const UserDashboard: React.FC = () => {
                     setDeletingTransaction(transaction);
                   }
                 }}
+                onExportPDF={handleExportPDF}
               />
 
               {/* Right Panel - Entry Panel (moved from bottom) */}
@@ -343,29 +249,7 @@ const UserDashboard: React.FC = () => {
                     <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
                       Add Entry
                     </h3>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleImportClick}
-                        className="px-3 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors text-sm flex items-center gap-1"
-                      >
-                        📥 Import
-                      </button>
-                      <button
-                        onClick={handleExportPDF}
-                        className="px-3 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-lg font-semibold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors text-sm flex items-center gap-1"
-                      >
-                        📄 Export
-                      </button>
-                    </div>
                   </div>
-                  {/* Hidden file input for imports */}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".json,.csv"
-                    onChange={handleFileImport}
-                    className="hidden"
-                  />
                   <div>
                     {!entriesEnabled ? (
                       <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg text-yellow-800 dark:text-yellow-200">

@@ -3,7 +3,7 @@ import autoTable from 'jspdf-autotable';
 import type { Transaction } from '../types';
 
 /**
- * Export user transactions to PDF in table format
+ * Export user transactions to PDF in table format (aggregated by unique numbers)
  */
 export const exportUserTransactionsToPDF = async (
   transactions: Transaction[],
@@ -11,27 +11,59 @@ export const exportUserTransactionsToPDF = async (
 ): Promise<void> => {
   const doc = new jsPDF();
   
-  // Add title
+  // Add title only (removed date)
   doc.setFontSize(18);
   doc.text(projectName, 14, 20);
   
-  // Add export date
-  doc.setFontSize(10);
-  doc.text(`Export Date: ${new Date().toLocaleDateString()}`, 14, 28);
+  // Group transactions by number and entry type, then aggregate
+  const aggregatedMap = new Map<string, {
+    number: string;
+    entryType: string;
+    first: number;
+    second: number;
+  }>();
+  
+  transactions.forEach(t => {
+    const key = `${t.number}-${t.entryType}`;
+    const existing = aggregatedMap.get(key);
+    
+    if (existing) {
+      existing.first += t.first;
+      existing.second += t.second;
+    } else {
+      aggregatedMap.set(key, {
+        number: t.number,
+        entryType: t.entryType,
+        first: t.first,
+        second: t.second,
+      });
+    }
+  });
+  
+  // Convert to array and sort by number (numeric sort)
+  const aggregated = Array.from(aggregatedMap.values()).sort((a, b) => {
+    // Sort numerically
+    const numA = parseInt(a.number);
+    const numB = parseInt(b.number);
+    if (!isNaN(numA) && !isNaN(numB)) {
+      return numA - numB;
+    }
+    // Fallback to string sort
+    return a.number.localeCompare(b.number);
+  });
   
   // Prepare table data
-  const tableData = transactions.map(t => [
-    t.number,
-    t.entryType.toUpperCase(),
-    t.first.toLocaleString(),
-    t.second.toLocaleString(),
-    (t.first + t.second).toLocaleString(),
-    new Date(t.createdAt).toLocaleDateString(),
+  const tableData = aggregated.map(item => [
+    item.number,
+    item.entryType.toUpperCase(),
+    item.first.toLocaleString(),
+    item.second.toLocaleString(),
+    (item.first + item.second).toLocaleString(),
   ]);
   
   // Calculate totals
-  const totalFirst = transactions.reduce((sum, t) => sum + t.first, 0);
-  const totalSecond = transactions.reduce((sum, t) => sum + t.second, 0);
+  const totalFirst = aggregated.reduce((sum, item) => sum + item.first, 0);
+  const totalSecond = aggregated.reduce((sum, item) => sum + item.second, 0);
   const totalAmount = totalFirst + totalSecond;
   
   // Add totals row
@@ -41,13 +73,12 @@ export const exportUserTransactionsToPDF = async (
     totalFirst.toLocaleString(),
     totalSecond.toLocaleString(),
     totalAmount.toLocaleString(),
-    '',
   ]);
   
   // Generate table
   autoTable(doc, {
-    startY: 35,
-    head: [['Number', 'Type', 'First', 'Second', 'Total', 'Date']],
+    startY: 30,
+    head: [['Number', 'Type', 'First', 'Second', 'Total']],
     body: tableData,
     theme: 'grid',
     headStyles: {
