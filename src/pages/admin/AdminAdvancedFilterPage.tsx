@@ -33,6 +33,11 @@ const AdminAdvancedFilterPage: React.FC = () => {
     
     loadEntries(true); // Save initial state to history
 
+    // Auto-refresh every 5 seconds
+    const autoRefreshInterval = setInterval(() => {
+      loadEntries(false);
+    }, 5000);
+
     // Set up real-time subscription for auto-updates
     if (supabase) {
       const subscription = supabase
@@ -58,9 +63,14 @@ const AdminAdvancedFilterPage: React.FC = () => {
 
       return () => {
         console.log(`🔌 Unsubscribing from ${selectedType} advanced filter real-time updates`);
+        clearInterval(autoRefreshInterval);
         subscription.unsubscribe();
       };
     }
+
+    return () => {
+      clearInterval(autoRefreshInterval);
+    };
   }, [selectedType]); // Only re-run when selectedType changes
 
   const loadEntries = async (saveHistory = false) => {

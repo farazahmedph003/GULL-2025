@@ -52,6 +52,11 @@ const UserManagement: React.FC = () => {
     
     loadUsers();
 
+    // Auto-refresh every 5 seconds
+    const autoRefreshInterval = setInterval(() => {
+      loadUsers();
+    }, 5000);
+
     // Set up real-time subscription for auto-updates
     if (supabase) {
       const subscription = supabase
@@ -79,10 +84,15 @@ const UserManagement: React.FC = () => {
 
       return () => {
         console.log('🔌 Unsubscribing from user management real-time updates');
+        clearInterval(autoRefreshInterval);
         subscription.unsubscribe();
       };
     }
-  }, []); // Empty dependency array - only run once on mount
+
+    return () => {
+      clearInterval(autoRefreshInterval);
+    };
+  }, [loadUsers, setRefreshCallback]); // Dependencies for proper cleanup
 
   const handleCreateUser = async (userData: {
     username: string;
@@ -183,8 +193,8 @@ const UserManagement: React.FC = () => {
     if (!result) return;
 
     try {
-      await db.deleteUser(user.id, false); // Soft delete
-      await showSuccess('Success', `User ${user.username} has been deleted`);
+      await db.deleteUser(user.id, true); // Hard delete - completely remove from database
+      await showSuccess('Success', `User ${user.username} has been permanently deleted`);
       loadUsers();
     } catch (error) {
       console.error('Error deleting user:', error);

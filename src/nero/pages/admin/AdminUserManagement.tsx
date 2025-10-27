@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { mockUsers, getUserProjects } from '../../utils/mockData';
 import { useNeroAuth } from '../../contexts/NeroAuthContext';
+import { ConfirmationContext } from '../../../App';
 import type { NeroUser } from '../../types';
 
 const AdminUserManagement: React.FC = () => {
   const { impersonateUser } = useNeroAuth();
   const navigate = useNavigate();
+  const confirm = useContext(ConfirmationContext);
   const [users] = useState<NeroUser[]>(mockUsers);
   const [searchTerm, setSearchTerm] = useState('');
   const [showTopUpModal, setShowTopUpModal] = useState(false);
@@ -28,7 +30,7 @@ const AdminUserManagement: React.FC = () => {
 
   const confirmTopUp = () => {
     if (selectedUser && topUpAmount) {
-      alert(`✅ Successfully topped up PKR ${topUpAmount} to ${selectedUser.displayName}'s account!`);
+      console.log(`✅ Successfully topped up PKR ${topUpAmount} to ${selectedUser.displayName}'s account!`);
       setShowTopUpModal(false);
       setSelectedUser(null);
       setTopUpAmount('');
@@ -41,31 +43,52 @@ const AdminUserManagement: React.FC = () => {
   };
 
   const handleImpersonate = async (user: NeroUser) => {
-    if (confirm(`Impersonate ${user.displayName}? You'll be able to view their projects and make changes.`)) {
-      try {
-        setImpersonating(true);
-        await impersonateUser(user.id);
-        // Navigate to the impersonated projects view
-        navigate(`/nero/admin/impersonate/${user.id}`);
-      } catch (error) {
-        console.error('Failed to impersonate user:', error);
-        alert('Failed to impersonate user. Please try again.');
-      } finally {
-        setImpersonating(false);
-      }
+    if (!confirm) return;
+    
+    const result = await confirm(
+      `Impersonate ${user.displayName}? You'll be able to view their projects and make changes.`,
+      { type: 'warning', title: 'Impersonate User' }
+    );
+    
+    if (!result) return;
+
+    try {
+      setImpersonating(true);
+      await impersonateUser(user.id);
+      // Navigate to the impersonated projects view
+      navigate(`/nero/admin/impersonate/${user.id}`);
+    } catch (error) {
+      console.error('Failed to impersonate user:', error);
+      // Error handling - user will see this in console
+    } finally {
+      setImpersonating(false);
     }
   };
 
-  const handleDeactivate = (user: NeroUser) => {
-    if (confirm(`Deactivate ${user.displayName}'s account?`)) {
-      alert(`✅ User ${user.displayName} has been deactivated.`);
-    }
+  const handleDeactivate = async (user: NeroUser) => {
+    if (!confirm) return;
+    
+    const result = await confirm(
+      `Deactivate ${user.displayName}'s account?`,
+      { type: 'warning', title: 'Deactivate User' }
+    );
+    
+    if (!result) return;
+    
+    console.log(`✅ User ${user.displayName} has been deactivated.`);
   };
 
-  const handleDelete = (user: NeroUser) => {
-    if (confirm(`⚠️ Delete ${user.displayName}'s account? This action cannot be undone!`)) {
-      alert(`❌ User ${user.displayName} has been deleted.`);
-    }
+  const handleDelete = async (user: NeroUser) => {
+    if (!confirm) return;
+    
+    const result = await confirm(
+      `⚠️ Delete ${user.displayName}'s account? This action cannot be undone!`,
+      { type: 'danger', title: 'Delete User' }
+    );
+    
+    if (!result) return;
+    
+    console.log(`❌ User ${user.displayName} has been deleted.`);
   };
 
   return (

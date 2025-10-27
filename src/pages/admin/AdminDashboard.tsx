@@ -23,8 +23,6 @@ const AdminDashboard: React.FC = () => {
   const [users, setUsers] = useState<any[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<EntryType | null>(null);
   const [userStats, setUserStats] = useState<UserStats[]>([]);
-  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
-  const [isResetting, setIsResetting] = useState(false);
   const { showSuccess, showError } = useNotifications();
   const { setRefreshCallback } = useAdminRefresh();
   const confirm = useContext(ConfirmationContext);
@@ -82,13 +80,13 @@ const AdminDashboard: React.FC = () => {
     // Initial load
     loadUsers();
 
-    // Auto-refresh every 2 seconds
+    // Auto-refresh every 5 seconds
     const autoRefreshInterval = setInterval(() => {
       loadUsers();
       if (selectedFilter) {
         loadUserStatsForType(selectedFilter);
       }
-    }, 2000);
+    }, 5000);
 
     // Set up real-time subscription for auto-updates
     if (supabase) {
@@ -208,45 +206,6 @@ const AdminDashboard: React.FC = () => {
     secondUnique: userStats.reduce((sum, u) => sum + u.secondUnique, 0),
   };
 
-  const handleResetAllData = async () => {
-    if (!confirm) return;
-    
-    const result = await confirm(
-      'Are you sure you want to reset ALL user data? This will delete all transactions, reset all balances to 0, and reset spent to 0. This action cannot be undone!',
-      { type: 'danger', title: 'Reset All Data' }
-    );
-    
-    if (!result) return;
-
-    try {
-      setIsResetting(true);
-      
-      // Reset all user balances to 0
-      for (const user of users) {
-        await db.updateUserBalance(user.id, 0);
-      }
-      
-      // Delete all transactions
-      await db.deleteAllTransactions();
-      
-      // Reset spent to 0 for all users in localStorage
-      localStorage.setItem('gull_user_spent', JSON.stringify({}));
-      console.log('✅ Spent reset to 0 for all users');
-      
-      // Reload data
-      await loadUsers();
-      if (selectedFilter) {
-        await loadUserStatsForType(selectedFilter);
-      }
-      
-      showSuccess('Success', 'All user data has been reset successfully (balance, transactions, and spent)');
-    } catch (error) {
-      console.error('Reset error:', error);
-      showError('Error', 'Failed to reset user data');
-    } finally {
-      setIsResetting(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 pb-20">
@@ -372,31 +331,6 @@ const AdminDashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Reset Button */}
-            <div className="flex justify-end mb-8">
-              <button
-                onClick={handleResetAllData}
-                disabled={isResetting}
-                className="px-6 py-3 bg-red-500 hover:bg-red-600 disabled:bg-red-400 text-white rounded-lg font-semibold transition-all flex items-center gap-2"
-              >
-                {isResetting ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Resetting...
-                  </>
-                ) : (
-                  <>
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    Reset All Data
-                  </>
-                )}
-              </button>
-            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {userStats.map((user) => (
@@ -455,20 +389,36 @@ const AdminDashboard: React.FC = () => {
                       </div>
 
                       <button
-                        onClick={() => setExpandedUserId(expandedUserId === user.id ? null : user.id)}
-                        className="w-full px-4 py-2 bg-gradient-to-r from-teal-500 to-teal-600 text-white rounded-xl font-semibold hover:from-teal-600 hover:to-teal-700 transition-all"
+                        onClick={async () => {
+                          if (!confirm) return;
+                          
+                          const result = await confirm(
+                            `Are you sure you want to RESET ALL ENTRIES for "${user.full_name}" (@${user.username})?\n\nThis will permanently delete ALL transactions for this user.\n\nThis action CANNOT be undone!`,
+                            { type: 'danger', title: '⚠️ Reset User Entries' }
+                          );
+                          
+                          if (!result) return;
+
+                          try {
+                            const resetResult = await db.resetUserHistory(user.id);
+                            await showSuccess(
+                              'Entries Reset',
+                              `Successfully deleted ${resetResult.deletedCount} transaction(s) for ${user.username}`
+                            );
+                            loadUsers();
+                            if (selectedFilter) {
+                              loadUserStatsForType(selectedFilter);
+                            }
+                          } catch (error) {
+                            console.error('Error resetting user entries:', error);
+                            showError('Error', 'Failed to reset user entries');
+                          }
+                        }}
+                        className="w-full px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl font-semibold hover:from-red-600 hover:to-red-700 transition-all"
                       >
-                        {expandedUserId === user.id ? 'Hide Details' : 'View Details'}
+                        Reset Entries
                       </button>
                     </div>
-
-                    {expandedUserId === user.id && (
-                      <div className="border-t border-gray-200 dark:border-gray-700 p-6 bg-gray-50 dark:bg-gray-900/50">
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          Detailed statistics and actions coming soon...
-                        </p>
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>

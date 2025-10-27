@@ -75,10 +75,10 @@ const AdminPacketPage: React.FC = () => {
     // Initial load
     loadEntries();
 
-    // Auto-refresh every 2 seconds
+    // Auto-refresh every 5 seconds
     const autoRefreshInterval = setInterval(() => {
       loadEntries();
-    }, 2000);
+    }, 5000);
 
     // Set up real-time subscription for auto-updates
     if (supabase) {
