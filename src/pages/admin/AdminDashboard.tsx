@@ -81,7 +81,9 @@ const AdminDashboard: React.FC = () => {
     loadUsers();
 
     // Auto-refresh every 5 seconds
+    console.log('⏰ Setting up auto-refresh every 5 seconds for Admin Dashboard...');
     const autoRefreshInterval = setInterval(() => {
+      console.log('🔄 Auto-refreshing Admin Dashboard data...');
       loadUsers();
       if (selectedFilter) {
         loadUserStatsForType(selectedFilter);
@@ -138,7 +140,7 @@ const AdminDashboard: React.FC = () => {
       console.log('🔌 Cleaning up auto-refresh...');
       clearInterval(autoRefreshInterval);
     };
-  }, [loadUsers, loadUserStatsForType, setRefreshCallback, selectedFilter]);
+  }, []); // Empty dependency - only run once on mount
 
   useEffect(() => {
     if (selectedFilter) {

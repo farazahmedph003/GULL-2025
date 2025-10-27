@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
+import { ConfirmationContext } from '../../App';
 import EditTransactionModal from '../../components/EditTransactionModal';
 import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
 
@@ -36,6 +37,7 @@ const AdminPacketPage: React.FC = () => {
 
   const { showSuccess, showError } = useNotifications();
   const { setRefreshCallback } = useAdminRefresh();
+  const confirm = useContext(ConfirmationContext);
 
   const loadEntries = useCallback(async () => {
     try {
@@ -141,6 +143,26 @@ const AdminPacketPage: React.FC = () => {
       showError('Error', 'Failed to delete entry');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleResetAll = async () => {
+    if (!confirm) return;
+
+    const result = await confirm(
+      `Are you sure you want to DELETE ALL PACKET ENTRIES?\n\nThis will permanently delete ${stats.totalEntries} entries across all users.\n\nThis action CANNOT be undone!`,
+      { type: 'danger', title: '🚨 Reset All Packet Entries' }
+    );
+
+    if (!result) return;
+
+    try {
+      await db.deleteAllEntriesByType('packet');
+      await showSuccess('Success', `All ${stats.totalEntries} Packet entries have been deleted`);
+      loadEntries();
+    } catch (error) {
+      console.error('Reset error:', error);
+      showError('Error', 'Failed to reset Packet entries');
     }
   };
 
@@ -258,6 +280,20 @@ const AdminPacketPage: React.FC = () => {
                 placeholder="e.g., 1234, 5678..."
                 className="w-full sm:w-64 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
+            </div>
+
+            {/* Reset All Button */}
+            <div className="w-full sm:w-auto">
+              <label className="block text-sm font-medium text-transparent mb-2">.</label>
+              <button
+                onClick={handleResetAll}
+                className="w-full sm:w-auto px-6 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-lg font-semibold shadow-lg transition-all flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Reset All
+              </button>
             </div>
           </div>
         </div>

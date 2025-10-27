@@ -1990,6 +1990,56 @@ export class DatabaseService {
   }
 
   /**
+   * Delete all entries of a specific type (open, akra, ring, packet)
+   */
+  async deleteAllEntriesByType(entryType: 'open' | 'akra' | 'ring' | 'packet'): Promise<{ deletedCount: number }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    return this.withRetry(async () => {
+      // First, get count of transactions to be deleted
+      const { count, error: countError } = await client
+        .from('transactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('entry_type', entryType);
+
+      if (countError) throw countError;
+
+      // Delete all transactions of this type
+      const { error: deleteError } = await client
+        .from('transactions')
+        .delete()
+        .eq('entry_type', entryType);
+
+      if (deleteError) throw deleteError;
+
+      // Delete all admin deductions for this entry type
+      const { error: deductionsError } = await client
+        .from('admin_deductions')
+        .delete()
+        .in('transaction_id', 
+          client
+            .from('transactions')
+            .select('id')
+            .eq('entry_type', entryType)
+        );
+
+      // Don't throw on deductions error as they might not exist
+      if (deductionsError) {
+        console.warn('Error deleting admin deductions:', deductionsError);
+      }
+
+      // Clear cache
+      clearTransactionsCache();
+
+      return { deletedCount: count || 0 };
+    });
+  }
+
+  /**
    * Withdraw from user balance (opposite of top-up)
    */
   async withdrawUserBalance(userId: string, amount: number): Promise<void> {
