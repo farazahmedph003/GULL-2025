@@ -79,7 +79,7 @@ const AdminDashboard: React.FC = () => {
     setRefreshCallback(loadUsers);
     
     loadUsers();
-  }, [setRefreshCallback]);
+  }, []); // Empty dependency array - only run once on mount
 
   useEffect(() => {
     if (selectedFilter) {

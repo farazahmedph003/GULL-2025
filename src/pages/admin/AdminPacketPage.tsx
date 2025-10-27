@@ -103,7 +103,7 @@ const AdminPacketPage: React.FC = () => {
         subscription.unsubscribe();
       };
     }
-  }, [setRefreshCallback]);
+  }, []); // Empty dependency array - only run once on mount
 
   const handleDelete = async () => {
     if (!deletingEntry) return;

@@ -61,7 +61,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
         subscription.unsubscribe();
       };
     }
-  }, [selectedType, setRefreshCallback]);
+  }, [selectedType]); // Only re-run when selectedType changes
 
   const loadEntries = async (saveHistory = false) => {
     try {

@@ -89,6 +89,7 @@ const AdminAkraPage: React.FC = () => {
 
     // Set up real-time subscription for auto-updates
     if (supabase) {
+      console.log('🔄 Setting up Akra real-time subscription...');
       const subscription = supabase
         .channel('akra-entries-realtime')
         .on('postgres_changes', 
@@ -116,7 +117,7 @@ const AdminAkraPage: React.FC = () => {
         subscription.unsubscribe();
       };
     }
-  }, [setRefreshCallback]);
+  }, []); // Empty dependency array - only run once on mount
 
   const handleDelete = async () => {
     if (!deletingEntry) return;

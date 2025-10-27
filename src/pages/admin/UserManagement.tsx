@@ -82,7 +82,7 @@ const UserManagement: React.FC = () => {
         subscription.unsubscribe();
       };
     }
-  }, [setRefreshCallback]);
+  }, []); // Empty dependency array - only run once on mount
 
   const handleCreateUser = async (userData: {
     username: string;
