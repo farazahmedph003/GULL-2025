@@ -408,12 +408,12 @@ const AdminAdvancedFilterPage: React.FC = () => {
               remainingToDeduct -= deductAmount;
               
               // Save admin deduction (admin-only, doesn't modify user data)
-              await db.saveAdminDeduction(
-                entry.id,
-                user.id,
-                deductAmount,
-                0, // Only deducting first
-                'advanced_filter_first',
+      await db.saveAdminDeduction(
+        entry.id,
+        user?.id || 'unknown',
+        deductAmount,
+        0, // Only deducting first
+        'advanced_filter_first',
                 {
                   entryType: selectedType,
                   searchQuery: firstNumbers,
@@ -520,12 +520,12 @@ const AdminAdvancedFilterPage: React.FC = () => {
               remainingToDeduct -= deductAmount;
               
               // Save admin deduction (admin-only, doesn't modify user data)
-              await db.saveAdminDeduction(
-                entry.id,
-                user.id,
-                0, // Only deducting second
-                deductAmount,
-                'advanced_filter_second',
+      await db.saveAdminDeduction(
+        entry.id,
+        user?.id || 'unknown',
+        0, // Only deducting second
+        deductAmount,
+        'advanced_filter_second',
                 {
                   entryType: selectedType,
                   searchQuery: secondNumbers,

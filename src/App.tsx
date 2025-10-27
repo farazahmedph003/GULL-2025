@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AppearanceProvider } from './contexts/AppearanceContext';
@@ -13,23 +13,25 @@ import NotificationBanner from './components/NotificationBanner';
 import { useNotifications } from './contexts/NotificationContext';
 import { useConfirmation } from './hooks/useConfirmation.tsx';
 import { initializeCustomPopups } from './utils/customPopups';
-import Welcome from './pages/Welcome';
-import Profile from './pages/Profile';
-import Settings from './pages/Settings';
-import UserDashboard from './pages/UserDashboard';
 import LoadingSpinner from './components/LoadingSpinner';
 import AdminRoute from './components/AdminRoute';
 import AdminLayout from './components/AdminLayout';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import UserManagement from './pages/admin/UserManagement';
-import AdminOpenPage from './pages/admin/AdminOpenPage';
-import AdminAkraPage from './pages/admin/AdminAkraPage';
-import AdminRingPage from './pages/admin/AdminRingPage';
-import AdminPacketPage from './pages/admin/AdminPacketPage';
-import AdminFilterPage from './pages/admin/AdminFilterPage';
-import AdminAdvancedFilterPage from './pages/admin/AdminAdvancedFilterPage';
-import TestAdminFeatures from './pages/admin/TestAdminFeatures';
-import NotFound from './pages/NotFound';
+
+// Lazy load pages for better performance
+const Welcome = lazy(() => import('./pages/Welcome'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Settings = lazy(() => import('./pages/Settings'));
+const UserDashboard = lazy(() => import('./pages/UserDashboard'));
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const UserManagement = lazy(() => import('./pages/admin/UserManagement'));
+const AdminOpenPage = lazy(() => import('./pages/admin/AdminOpenPage'));
+const AdminAkraPage = lazy(() => import('./pages/admin/AdminAkraPage'));
+const AdminRingPage = lazy(() => import('./pages/admin/AdminRingPage'));
+const AdminPacketPage = lazy(() => import('./pages/admin/AdminPacketPage'));
+const AdminFilterPage = lazy(() => import('./pages/admin/AdminFilterPage'));
+const AdminAdvancedFilterPage = lazy(() => import('./pages/admin/AdminAdvancedFilterPage'));
+const TestAdminFeatures = lazy(() => import('./pages/admin/TestAdminFeatures'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 
 // Component that renders notifications and initializes custom popups
 const AppWithNotifications: React.FC = () => {
@@ -66,6 +68,11 @@ const AppWithNotifications: React.FC = () => {
   return (
       <>
         <NotificationBanner />
+        <Suspense fallback={
+          <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+            <LoadingSpinner size="lg" text="Loading..." />
+          </div>
+        }>
         <Routes>
               {/* Public routes */}
               <Route path="/welcome" element={<Welcome />} />
@@ -136,6 +143,7 @@ const AppWithNotifications: React.FC = () => {
               <Route path="/404" element={<NotFound />} />
               <Route path="*" element={<Navigate to="/404" replace />} />
             </Routes>
+        </Suspense>
       <NotificationContainer 
         notifications={notifications} 
         onClose={removeNotification} 

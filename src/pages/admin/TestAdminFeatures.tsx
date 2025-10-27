@@ -15,7 +15,7 @@ import { useNotifications } from '../../contexts/NotificationContext';
 
 const TestAdminFeatures: React.FC = () => {
   const { user } = useAuth();
-  const { showSuccess, showError, showInfo } = useNotifications();
+  const { showSuccess, showError } = useNotifications();
 
   const [testTransactionId, setTestTransactionId] = useState('');
   const [testUserId, setTestUserId] = useState('');
@@ -320,9 +320,9 @@ const TestAdminFeatures: React.FC = () => {
                   <span className="font-semibold text-gray-900 dark:text-white">{user?.username || '-'}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Is Admin:</span>
-                  <span className={`font-semibold ${user?.is_admin ? 'text-green-600' : 'text-red-600'}`}>
-                    {user?.is_admin ? '✅ YES' : '❌ NO'}
+                  <span className="text-gray-600 dark:text-gray-400">Role:</span>
+                  <span className={`font-semibold ${user?.role === 'admin' ? 'text-green-600' : 'text-blue-600'}`}>
+                    {user?.role === 'admin' ? '✅ ADMIN' : user?.role?.toUpperCase() || 'USER'}
                   </span>
                 </div>
               </div>

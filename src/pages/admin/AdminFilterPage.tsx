@@ -398,12 +398,12 @@ const AdminFilterPage: React.FC = () => {
               
               console.log(`   ✅ Saving admin deduction for entry ${entry.id}: F ${deductedFirst}, S ${deductedSecond}`);
               
-              await db.saveAdminDeduction(
-                entry.id,
-                user.id,
-                deductedFirst,
-                deductedSecond,
-                'filter_save',
+        await db.saveAdminDeduction(
+          entry.id,
+          user?.id || 'unknown',
+          deductedFirst,
+          deductedSecond,
+          'filter_save',
                 {
                   entryType: selectedType,
                   numberFiltered: result.number,

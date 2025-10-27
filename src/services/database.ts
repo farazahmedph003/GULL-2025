@@ -1,5 +1,5 @@
 import { supabase, supabaseAdmin, isSupabaseConfigured, isSupabaseConnected } from '../lib/supabase';
-import { cacheUsers, getUsersWithStatsFromCache, cacheTransactions, getEntriesByTypeFromCache, clearTransactionsCache } from './localDb';
+import { cacheUsers, getUsersWithStatsFromCache, getEntriesByTypeFromCache, clearTransactionsCache } from './localDb';
 import type { Project, Transaction, FilterPreset, ActionHistory, EntryType } from '../types';
 
 // Get service key from environment
@@ -1574,7 +1574,7 @@ export class DatabaseService {
             const { data: deductions, error: dedError } = await client
               .from('admin_deductions')
               .select('transaction_id, deducted_first, deducted_second')
-              .in('transaction_id', transactions.map(t => t.id));
+              .in('transaction_id', transactions.map((t: any) => t.id));
             
             if (!dedError && deductions) {
               // Sum up all deductions per transaction
