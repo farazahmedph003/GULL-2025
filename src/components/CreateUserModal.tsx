@@ -10,6 +10,7 @@ interface CreateUserModalProps {
     fullName: string;
     email: string;
     balance?: number;
+    isPartner?: boolean;
   }) => Promise<void>;
 }
 
@@ -19,6 +20,7 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClose, onSu
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [balance, setBalance] = useState('0');
+  const [isPartner, setIsPartner] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -34,6 +36,7 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClose, onSu
         fullName,
         email,
         balance: parseFloat(balance) || 0,
+        isPartner,
       });
 
       // Reset form
@@ -42,6 +45,7 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClose, onSu
       setFullName('');
       setEmail('');
       setBalance('0');
+      setIsPartner(false);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create user');
@@ -149,6 +153,21 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClose, onSu
               min="0"
               step="1"
             />
+          </div>
+
+          <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-2 border-amber-200 dark:border-amber-700 rounded-xl">
+            <input
+              type="checkbox"
+              id="isPartner"
+              checked={isPartner}
+              onChange={(e) => setIsPartner(e.target.checked)}
+              className="w-5 h-5 text-amber-600 border-gray-300 rounded focus:ring-2 focus:ring-amber-500"
+              disabled={loading}
+            />
+            <label htmlFor="isPartner" className="flex items-center gap-2 cursor-pointer select-none">
+              <span className="text-lg">⭐</span>
+              <span className="font-semibold text-gray-900 dark:text-gray-100">Mark as Partner</span>
+            </label>
           </div>
 
           {error && (

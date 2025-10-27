@@ -19,12 +19,15 @@ interface UserData {
   total_spent: number;
   entryCount: number;
   is_active: boolean;
+  is_partner?: boolean;
 }
 
 const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<UserData[]>([]);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [historyData, setHistoryData] = useState<any[]>([]);
+  const [historyTab, setHistoryTab] = useState<'entries' | 'balance'>('entries');
+  const [balanceHistory, setBalanceHistory] = useState<any[]>([]);
 
   // Modals
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
@@ -104,10 +107,17 @@ const UserManagement: React.FC = () => {
     fullName: string;
     email: string;
     balance?: number;
+    isPartner?: boolean;
   }) => {
     try {
+      // Check if username already exists
+      const existingUser = users.find(u => u.username.toLowerCase() === userData.username.toLowerCase());
+      if (existingUser) {
+        throw new Error(`Username "${userData.username}" is already taken. Please choose a different username.`);
+      }
+      
       await db.createUser(userData);
-      await showSuccess('Success', `User ${userData.username} created successfully`);
+      await showSuccess('Success', `User ${userData.username} created successfully${userData.isPartner ? ' as Partner' : ''}`);
       loadUsers();
     } catch (error) {
       throw error;
@@ -161,13 +171,21 @@ const UserManagement: React.FC = () => {
     if (expandedUserId === user.id) {
       setExpandedUserId(null);
       setHistoryData([]);
+      setBalanceHistory([]);
+      setHistoryTab('entries');
       return;
     }
 
     setExpandedUserId(user.id);
+    setHistoryTab('entries');
     try {
       const history = await db.getUserHistory(user.id);
-      setHistoryData(history);
+      // Separate entries from balance history
+      const entries = history.filter((item: any) => !item.isTopUp);
+      const balanceHist = history.filter((item: any) => item.isTopUp);
+      
+      setHistoryData(entries);
+      setBalanceHistory(balanceHist);
     } catch (error) {
       console.error('Error loading history:', error);
       showError('Error', 'Failed to load user history');
@@ -373,14 +391,25 @@ const UserManagement: React.FC = () => {
         {/* Users Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {users.map((user) => (
-            <div key={user.id} className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
+            <div key={user.id} className={`rounded-2xl shadow-lg overflow-hidden ${
+              user.is_partner 
+                ? 'bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 dark:from-amber-900/30 dark:via-orange-900/30 dark:to-yellow-900/30 border-2 border-amber-300 dark:border-amber-600' 
+                : 'bg-white dark:bg-gray-800'
+            }`}>
               {/* User Card */}
               <div className="p-6">
                 <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                      {user.full_name}
-                    </h3>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                        {user.full_name}
+                      </h3>
+                      {user.is_partner && (
+                        <span className="px-3 py-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-bold rounded-full flex items-center gap-1 shadow-md">
+                          ⭐ PARTNER
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-gray-600 dark:text-gray-400">@{user.username}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">{user.email}</p>
                   </div>
@@ -479,23 +508,42 @@ const UserManagement: React.FC = () => {
               {/* Expanded History Section */}
               {expandedUserId === user.id && (
                 <div className="border-t border-gray-200 dark:border-gray-700 p-6 bg-gray-50 dark:bg-gray-900/50">
-                  <h4 className="font-bold text-gray-900 dark:text-white mb-4">User History</h4>
-                  {historyData.length === 0 ? (
-                    <p className="text-gray-500 dark:text-gray-400 text-sm">No history found</p>
-                  ) : (
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {historyData.map((item, idx) => (
-                        <div key={idx} className="p-3 bg-white dark:bg-gray-800 rounded-lg text-sm">
-                          {item.isTopUp ? (
-                            <div className="flex justify-between items-center">
-                              <span className="text-green-600 dark:text-green-400 font-semibold">
-                                💰 Top Up
-                              </span>
-                              <span className="text-green-600 dark:text-green-400 font-bold">
-                                +PKR {item.amount.toLocaleString()}
-                              </span>
-                            </div>
-                          ) : (
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-bold text-gray-900 dark:text-white">User History</h4>
+                    
+                    {/* Tabs */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setHistoryTab('entries')}
+                        className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all ${
+                          historyTab === 'entries'
+                            ? 'bg-purple-600 text-white shadow-lg'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-purple-100 dark:hover:bg-purple-900/30'
+                        }`}
+                      >
+                        📝 Entries
+                      </button>
+                      <button
+                        onClick={() => setHistoryTab('balance')}
+                        className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all ${
+                          historyTab === 'balance'
+                            ? 'bg-green-600 text-white shadow-lg'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-green-100 dark:hover:bg-green-900/30'
+                        }`}
+                      >
+                        💰 Balance History
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Entries Tab */}
+                  {historyTab === 'entries' && (
+                    historyData.length === 0 ? (
+                      <p className="text-gray-500 dark:text-gray-400 text-sm">No entries found</p>
+                    ) : (
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {historyData.map((item, idx) => (
+                          <div key={idx} className="p-3 bg-white dark:bg-gray-800 rounded-lg text-sm">
                             <div className="space-y-1">
                               <div className="flex justify-between items-start">
                                 <div className="flex items-center gap-2">
@@ -528,10 +576,45 @@ const UserManagement: React.FC = () => {
                                 {new Date(item.created_at).toLocaleString()}
                               </div>
                             </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
+
+                  {/* Balance History Tab */}
+                  {historyTab === 'balance' && (
+                    balanceHistory.length === 0 ? (
+                      <p className="text-gray-500 dark:text-gray-400 text-sm">No balance history found</p>
+                    ) : (
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {balanceHistory.map((item, idx) => (
+                          <div key={idx} className="p-3 bg-white dark:bg-gray-800 rounded-lg text-sm">
+                            <div className="flex justify-between items-center">
+                              <div className="flex items-center gap-2">
+                                <span className={`font-semibold ${
+                                  item.amount > 0 
+                                    ? 'text-green-600 dark:text-green-400' 
+                                    : 'text-red-600 dark:text-red-400'
+                                }`}>
+                                  {item.amount > 0 ? '💰 Deposit' : '💸 Withdraw'}
+                                </span>
+                                <span className="text-xs text-gray-500 dark:text-gray-500">
+                                  {new Date(item.created_at).toLocaleString()}
+                                </span>
+                              </div>
+                              <span className={`font-bold ${
+                                item.amount > 0 
+                                  ? 'text-green-600 dark:text-green-400' 
+                                  : 'text-red-600 dark:text-red-400'
+                              }`}>
+                                {item.amount > 0 ? '+' : ''}PKR {Math.abs(item.amount).toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
                   )}
                 </div>
               )}

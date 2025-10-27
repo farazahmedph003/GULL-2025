@@ -23,6 +23,9 @@ const AdminDashboard: React.FC = () => {
   const [users, setUsers] = useState<any[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<EntryType | null>(null);
   const [userStats, setUserStats] = useState<UserStats[]>([]);
+  const [systemFirstPkr, setSystemFirstPkr] = useState<number>(0);
+  const [systemSecondPkr, setSystemSecondPkr] = useState<number>(0);
+  const [systemTotalPkr, setSystemTotalPkr] = useState<number>(0);
   const { showSuccess, showError } = useNotifications();
   const { setRefreshCallback } = useAdminRefresh();
   const confirm = useContext(ConfirmationContext);
@@ -35,6 +38,28 @@ const AdminDashboard: React.FC = () => {
       console.error('Error loading users:', error);
     }
   }, []);
+
+  const calculateSystemTotals = useCallback(async () => {
+    try {
+      let totalFirst = 0;
+      let totalSecond = 0;
+      
+      // Calculate across all entry types for all users
+      for (const user of users) {
+        for (const entryType of ['open', 'akra', 'ring', 'packet'] as EntryType[]) {
+          const entries = await db.getUserEntries(user.id, entryType);
+          totalFirst += entries.reduce((sum, e) => sum + (e.first_amount || 0), 0);
+          totalSecond += entries.reduce((sum, e) => sum + (e.second_amount || 0), 0);
+        }
+      }
+      
+      setSystemFirstPkr(totalFirst);
+      setSystemSecondPkr(totalSecond);
+      setSystemTotalPkr(totalFirst + totalSecond);
+    } catch (error) {
+      console.error('Error calculating system totals:', error);
+    }
+  }, [users]);
 
   const loadUserStatsForType = useCallback(async (entryType: EntryType) => {
     try {
@@ -75,7 +100,10 @@ const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     // Register refresh callback for the refresh button
-    setRefreshCallback(loadUsers);
+    setRefreshCallback(() => {
+      loadUsers();
+      calculateSystemTotals();
+    });
     
     // Initial load
     loadUsers();
@@ -148,17 +176,20 @@ const AdminDashboard: React.FC = () => {
     }
   }, [selectedFilter, users]);
 
-  const systemTotalPkr = userStats.reduce((sum, u) => sum + u.totalPkr, 0);
-  
+  // Calculate system totals whenever users change
+  useEffect(() => {
+    if (users.length > 0) {
+      calculateSystemTotals();
+    }
+  }, [users, calculateSystemTotals]);
+
   // Calculate GLOBAL unique numbers across all users (not sum of individual user uniques)
-  const [globalUniqueNumbers, setGlobalUniqueNumbers] = useState<number>(0);
   const [globalFirstUnique, setGlobalFirstUnique] = useState<number>(0);
   const [globalSecondUnique, setGlobalSecondUnique] = useState<number>(0);
   
   useEffect(() => {
     const calculateGlobalUnique = async () => {
       if (!selectedFilter) {
-        setGlobalUniqueNumbers(0);
         setGlobalFirstUnique(0);
         setGlobalSecondUnique(0);
         return;
@@ -166,14 +197,12 @@ const AdminDashboard: React.FC = () => {
       
       try {
         // Get all entries for this type across all users
-        const allNumbers = new Set<string>();
         const firstNumbers = new Set<string>();
         const secondNumbers = new Set<string>();
         
         for (const user of users) {
           const entries = await db.getUserEntries(user.id, selectedFilter);
           entries.forEach(e => {
-            allNumbers.add(e.number);
             // Only add to firstNumbers if first_amount > 0
             if (e.first_amount > 0) {
               firstNumbers.add(e.number);
@@ -185,7 +214,6 @@ const AdminDashboard: React.FC = () => {
           });
         }
         
-        setGlobalUniqueNumbers(allNumbers.size);
         setGlobalFirstUnique(firstNumbers.size);
         setGlobalSecondUnique(secondNumbers.size);
       } catch (error) {
@@ -195,8 +223,6 @@ const AdminDashboard: React.FC = () => {
     
     calculateGlobalUnique();
   }, [selectedFilter, users, userStats]);
-  
-  const activeUsers = users.filter(u => u.is_active).length;
 
   // Combined stats for all users
   const combinedStats = {
@@ -225,6 +251,7 @@ const AdminDashboard: React.FC = () => {
           <button
             onClick={() => {
               loadUsers();
+              calculateSystemTotals();
               if (selectedFilter) {
                 loadUserStatsForType(selectedFilter);
               }
@@ -240,22 +267,22 @@ const AdminDashboard: React.FC = () => {
 
         {/* System Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-gradient-to-br from-teal-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg">
-            <h3 className="text-lg font-semibold mb-2">Total PKR</h3>
-            <p className="text-3xl font-bold">{systemTotalPkr.toLocaleString()}</p>
-            <p className="text-teal-100 text-sm mt-2">Across all users</p>
+          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-6 text-white shadow-lg">
+            <h3 className="text-lg font-semibold mb-2">First PKR</h3>
+            <p className="text-3xl font-bold">{systemFirstPkr.toLocaleString()}</p>
+            <p className="text-emerald-100 text-sm mt-2">All types (Open, Akra, Ring, Packet)</p>
           </div>
 
-          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-6 text-white shadow-lg">
-            <h3 className="text-lg font-semibold mb-2">Unique Numbers</h3>
-            <p className="text-3xl font-bold">{globalUniqueNumbers}</p>
-            <p className="text-orange-100 text-sm mt-2">Total unique entries</p>
+          <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl p-6 text-white shadow-lg">
+            <h3 className="text-lg font-semibold mb-2">Second PKR</h3>
+            <p className="text-3xl font-bold">{systemSecondPkr.toLocaleString()}</p>
+            <p className="text-amber-100 text-sm mt-2">All types (Open, Akra, Ring, Packet)</p>
           </div>
 
           <div className="bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-2xl p-6 text-white shadow-lg">
-            <h3 className="text-lg font-semibold mb-2">Active Users</h3>
-            <p className="text-3xl font-bold">{activeUsers}</p>
-            <p className="text-cyan-100 text-sm mt-2">Out of {users.length} total</p>
+            <h3 className="text-lg font-semibold mb-2">Total PKR</h3>
+            <p className="text-3xl font-bold">{systemTotalPkr.toLocaleString()}</p>
+            <p className="text-cyan-100 text-sm mt-2">First + Second (All users)</p>
           </div>
         </div>
 

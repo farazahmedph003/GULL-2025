@@ -1126,6 +1126,7 @@ export class DatabaseService {
     fullName: string;
     email: string;
     balance?: number;
+    isPartner?: boolean;
   }): Promise<any> {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Database not available');
@@ -1178,6 +1179,7 @@ export class DatabaseService {
           role: 'user',
           is_active: true,
           balance: userData.balance || 0,
+          is_partner: userData.isPartner || false,
         })
         .select()
         .single();
