@@ -10,6 +10,7 @@ export interface NeroUser {
   spendingLimit: number;
   isOnline: boolean;
   status: UserStatus;
+  isPartner?: boolean;
   avatar?: string;
   phone?: string;
   lastLoginAt: string;

@@ -25,6 +25,7 @@ export const mockUsers: NeroUser[] = [
     spendingLimit: 10000,
     isOnline: true,
     status: 'active',
+    isPartner: true,
     phone: '+92 301 1234567',
     lastLoginAt: new Date(Date.now() - 3600000).toISOString(),
     createdAt: '2024-02-15T00:00:00Z',

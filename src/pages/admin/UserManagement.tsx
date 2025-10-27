@@ -81,6 +81,21 @@ const UserManagement: React.FC = () => {
             loadUsers();
           }
         )
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'balance_history' },
+          (payload: any) => {
+            console.log('🔴 Real-time update received for balance_history:', payload);
+            loadUsers();
+            // Refresh balance history if a user's history is currently expanded
+            const currentExpandedUserId = expandedUserId;
+            if (currentExpandedUserId) {
+              db.getUserHistory(currentExpandedUserId).then(history => {
+                const balanceHist = history.filter((item: any) => item.isTopUp);
+                setBalanceHistory(balanceHist);
+              }).catch(err => console.error('Error reloading balance history:', err));
+            }
+          }
+        )
         .subscribe((status: string) => {
           console.log('📡 User management subscription status:', status);
           if (status === 'SUBSCRIBED') {
@@ -142,8 +157,34 @@ const UserManagement: React.FC = () => {
         await showSuccess('Success', `Added PKR ${amount.toLocaleString()} to ${selectedUser.username}'s balance`);
       }
       loadUsers();
+      
+      // Refresh balance history if this user's history is currently expanded
+      if (expandedUserId === selectedUser.id) {
+        await reloadBalanceHistory(selectedUser.id);
+      }
     } catch (error) {
       throw error;
+    }
+  };
+
+  // Helper function to reload balance history for a specific user
+  const reloadBalanceHistory = async (userId: string) => {
+    try {
+      const history = await db.getUserHistory(userId);
+      const balanceHist = history.filter((item: any) => item.isTopUp);
+      setBalanceHistory(balanceHist);
+    } catch (error) {
+      console.error('Error reloading balance history:', error);
+    }
+  };
+
+  // Handle tab switching with refresh
+  const handleTabSwitch = async (tab: 'entries' | 'balance') => {
+    setHistoryTab(tab);
+    
+    // Refresh balance history when switching to balance tab
+    if (tab === 'balance' && expandedUserId) {
+      await reloadBalanceHistory(expandedUserId);
     }
   };
 
@@ -152,12 +193,16 @@ const UserManagement: React.FC = () => {
     username?: string;
     email?: string;
     password?: string;
+    isPartner?: boolean;
   }) => {
     if (!selectedUser) return;
 
     try {
       await db.updateUser(selectedUser.id, updates);
-      await showSuccess('Success', 'User updated successfully');
+      const partnerMessage = updates.isPartner !== undefined 
+        ? (updates.isPartner ? ' (now a Partner)' : ' (Partner status removed)')
+        : '';
+      await showSuccess('Success', `User updated successfully${partnerMessage}`);
       loadUsers();
     } catch (error) {
       throw error;
@@ -557,9 +602,9 @@ const UserManagement: React.FC = () => {
                     <h4 className="font-bold text-gray-900 dark:text-white">User History</h4>
                     
                     {/* Tabs */}
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
                       <button
-                        onClick={() => setHistoryTab('entries')}
+                        onClick={() => handleTabSwitch('entries')}
                         className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all ${
                           historyTab === 'entries'
                             ? 'bg-purple-600 text-white shadow-lg'
@@ -569,7 +614,7 @@ const UserManagement: React.FC = () => {
                         📝 Entries
                       </button>
                       <button
-                        onClick={() => setHistoryTab('balance')}
+                        onClick={() => handleTabSwitch('balance')}
                         className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all ${
                           historyTab === 'balance'
                             ? 'bg-green-600 text-white shadow-lg'
@@ -578,6 +623,17 @@ const UserManagement: React.FC = () => {
                       >
                         💰 Balance History
                       </button>
+                      {historyTab === 'balance' && (
+                        <button
+                          onClick={() => expandedUserId && reloadBalanceHistory(expandedUserId)}
+                          className="p-2 rounded-lg bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          title="Refresh balance history"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -707,6 +763,7 @@ const UserManagement: React.FC = () => {
               username: selectedUser.username,
               fullName: selectedUser.full_name,
               email: selectedUser.email,
+              isPartner: selectedUser.is_partner,
             }}
             onSubmit={handleEditUser}
           />

@@ -1,21 +1,64 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { mockUsers, getUserProjects } from '../../utils/mockData';
+import { getUserProjects } from '../../utils/mockData';
 import { useNeroAuth } from '../../contexts/NeroAuthContext';
 import { ConfirmationContext } from '../../../App';
 import type { NeroUser } from '../../types';
+import { db } from '../../../services/database';
 
 const AdminUserManagement: React.FC = () => {
   const { impersonateUser } = useNeroAuth();
   const navigate = useNavigate();
   const confirm = useContext(ConfirmationContext);
-  const [users] = useState<NeroUser[]>(mockUsers);
+  const [users, setUsers] = useState<NeroUser[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showTopUpModal, setShowTopUpModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<NeroUser | null>(null);
   const [topUpAmount, setTopUpAmount] = useState('');
   const [showUserDetails, setShowUserDetails] = useState(false);
   const [impersonating, setImpersonating] = useState(false);
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [newUser, setNewUser] = useState({
+    displayName: '',
+    email: '',
+    phone: '',
+    password: '',
+    username: '',
+    balance: '0',
+    spendingLimit: '10000',
+    isPartner: false,
+  });
+
+  // Load real users from database
+  const loadUsers = useCallback(async () => {
+    try {
+      const data = await db.getAllUsersWithStats();
+      // Convert to NeroUser format
+      const neroUsers: NeroUser[] = data.map(user => ({
+        id: user.id,
+        email: user.email,
+        displayName: user.full_name,
+        role: 'user',
+        balance: user.balance,
+        spendingLimit: 50000, // Default
+        isOnline: false,
+        status: user.is_active ? 'active' : 'inactive',
+        isPartner: user.is_partner,
+        phone: user.username,
+        lastLoginAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
+      setUsers(neroUsers);
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
 
   const filteredUsers = users.filter((user) =>
     user.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -91,6 +134,54 @@ const AdminUserManagement: React.FC = () => {
     console.log(`❌ User ${user.displayName} has been deleted.`);
   };
 
+  const handleCreateUser = async () => {
+    // Validate form
+    if (!newUser.displayName || !newUser.email || !newUser.password || !newUser.username) {
+      alert('Please fill in all required fields (Name, Email, Username, Password)');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Create user in database
+      await db.createUser({
+        username: newUser.username,
+        password: newUser.password,
+        fullName: newUser.displayName,
+        email: newUser.email,
+        balance: parseInt(newUser.balance) || 0,
+        isPartner: newUser.isPartner,
+      });
+
+      // Show success message
+      console.log(`✅ User ${newUser.displayName} created successfully!`, {
+        isPartner: newUser.isPartner ? '🤝 Partner Account' : '👤 Regular User'
+      });
+      alert(`✅ User ${newUser.displayName} created successfully${newUser.isPartner ? ' as Partner!' : '!'}`);
+
+      // Reload users
+      await loadUsers();
+
+      // Reset form and close modal
+      setNewUser({
+        displayName: '',
+        email: '',
+        phone: '',
+        username: '',
+        password: '',
+        balance: '0',
+        spendingLimit: '10000',
+        isPartner: false,
+      });
+      setShowCreateUserModal(false);
+    } catch (error) {
+      console.error('Error creating user:', error);
+      alert(`❌ Failed to create user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -100,7 +191,7 @@ const AdminUserManagement: React.FC = () => {
             Manage all users, balances, and permissions
           </p>
         </div>
-        <button className="nero-btn-primary">
+        <button onClick={() => setShowCreateUserModal(true)} className="nero-btn-primary">
           <svg className="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
@@ -183,9 +274,14 @@ const AdminUserManagement: React.FC = () => {
                         <div>
                           <p className="font-semibold text-gray-900 dark:text-white">{user.displayName}</p>
                           <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
-                          {user.role === 'admin' && (
-                            <span className="nero-badge nero-badge-info text-xs mt-1">Admin</span>
-                          )}
+                          <div className="flex gap-1 mt-1">
+                            {user.role === 'admin' && (
+                              <span className="nero-badge nero-badge-info text-xs">Admin</span>
+                            )}
+                            {user.isPartner && (
+                              <span className="nero-badge nero-badge-warning text-xs">🤝 Partner</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -334,6 +430,150 @@ const AdminUserManagement: React.FC = () => {
         </div>
       )}
 
+      {/* Create User Modal */}
+      {showCreateUserModal && (
+        <div className="nero-modal-overlay" onClick={() => setShowCreateUserModal(false)}>
+          <div className="nero-card max-w-lg w-full animate-slide-in overflow-y-auto max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Create New User</h2>
+              <button
+                onClick={() => setShowCreateUserModal(false)}
+                className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Display Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newUser.displayName}
+                  onChange={(e) => setNewUser({ ...newUser, displayName: e.target.value })}
+                  placeholder="Enter full name..."
+                  className="nero-input"
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Username <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newUser.username}
+                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value.toLowerCase().replace(/\s/g, '') })}
+                  placeholder="Enter username (no spaces)..."
+                  className="nero-input"
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Email <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={newUser.email}
+                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                  placeholder="Enter email address..."
+                  className="nero-input"
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  Password <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  placeholder="Enter password (min 6 chars)..."
+                  className="nero-input"
+                  disabled={loading}
+                  minLength={6}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    Initial Balance (PKR)
+                  </label>
+                  <input
+                    type="number"
+                    value={newUser.balance}
+                    onChange={(e) => setNewUser({ ...newUser, balance: e.target.value })}
+                    placeholder="0"
+                    className="nero-input"
+                    min="0"
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+
+              {/* Partner Checkbox */}
+              <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newUser.isPartner}
+                    onChange={(e) => setNewUser({ ...newUser, isPartner: e.target.checked })}
+                    className="w-5 h-5 text-yellow-600 bg-gray-100 border-gray-300 rounded focus:ring-yellow-500 dark:focus:ring-yellow-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                    disabled={loading}
+                  />
+                  <div className="flex-1">
+                    <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                      🤝 Mark as Partner
+                    </span>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                      Partner accounts get special privileges and are displayed with a partner badge
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {newUser.isPartner && (
+                <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                  <p className="text-sm text-green-800 dark:text-green-200 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    This user will be created as a Partner account
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button 
+                onClick={handleCreateUser} 
+                className="flex-1 nero-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading}
+              >
+                {loading ? '⏳ Creating...' : 'Create User'}
+              </button>
+              <button 
+                onClick={() => setShowCreateUserModal(false)} 
+                className="flex-1 nero-btn-secondary"
+                disabled={loading}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* User Details Modal */}
       {showUserDetails && selectedUser && (
         <div className="nero-modal-overlay" onClick={() => setShowUserDetails(false)}>
@@ -360,6 +600,14 @@ const AdminUserManagement: React.FC = () => {
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white">{selectedUser.displayName}</h3>
                   <p className="text-gray-600 dark:text-gray-400">{selectedUser.email}</p>
                   <p className="text-sm text-gray-500 dark:text-gray-500">{selectedUser.phone}</p>
+                  <div className="flex gap-2 mt-2">
+                    {selectedUser.role === 'admin' && (
+                      <span className="nero-badge nero-badge-info text-xs">Admin</span>
+                    )}
+                    {selectedUser.isPartner && (
+                      <span className="nero-badge nero-badge-warning text-xs">🤝 Partner</span>
+                    )}
+                  </div>
                 </div>
               </div>
 

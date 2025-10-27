@@ -1084,7 +1084,7 @@ export class DatabaseService {
       const usersWithStats = await this.withRetry(async () => {
         const { data: users, error } = await client
           .from('app_users')
-          .select('id, username, full_name, email, role, is_active, balance, total_spent, created_at, updated_at')
+          .select('id, username, full_name, email, role, is_active, is_partner, balance, total_spent, created_at, updated_at')
           .order('created_at', { ascending: false });
         if (error) throw error;
 
@@ -1168,7 +1168,6 @@ export class DatabaseService {
       const passwordHash = await bcrypt.hash(userData.password, 10);
 
       // Step 3: Create app_users record with matching ID
-      // Note: is_partner column removed temporarily - run ADD_PARTNER_AND_UNIQUE_NAME.sql to enable
       const { data, error } = await supabaseAdmin
         .from('app_users')
         .insert({
@@ -1180,6 +1179,7 @@ export class DatabaseService {
           role: 'user',
           is_active: true,
           balance: userData.balance || 0,
+          is_partner: userData.isPartner || false,
         })
         .select()
         .single();
@@ -1386,6 +1386,7 @@ export class DatabaseService {
     email?: string;
     password?: string;
     isActive?: boolean;
+    isPartner?: boolean;
   }): Promise<void> {
     if (!isSupabaseConfigured() || !supabase) {
       throw new Error('Database not available');
@@ -1398,6 +1399,7 @@ export class DatabaseService {
       if (updates.username !== undefined) updateData.username = updates.username;
       if (updates.email !== undefined) updateData.email = updates.email;
       if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
+      if (updates.isPartner !== undefined) updateData.is_partner = updates.isPartner;
 
       if (updates.password !== undefined) {
         const bcrypt = await import('bcryptjs');
