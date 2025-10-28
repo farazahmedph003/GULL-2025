@@ -20,8 +20,29 @@ interface Entry {
   };
 }
 
+interface DeductionRecord {
+  id: string;
+  deducted_first: number;
+  deducted_second: number;
+  deduction_type: string;
+  created_at: string;
+  metadata: any;
+  transactions: {
+    id: string;
+    number: string;
+    app_users: {
+      username: string;
+      full_name: string;
+    };
+  };
+  admin: {
+    username: string;
+  };
+}
+
 const AdminOpenPage: React.FC = () => {
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [deductions, setDeductions] = useState<DeductionRecord[]>([]);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -44,6 +65,10 @@ const AdminOpenPage: React.FC = () => {
       // Use adminView=true to apply admin deductions
       const data = await db.getAllEntriesByType('open', true);
       setEntries(data);
+
+      // Load deduction records
+      const deductionData = await db.getAdminDeductionsByType('open');
+      setDeductions(deductionData);
 
       // Calculate stats
       const firstPkr = data.reduce((sum, e) => sum + (e.first_amount || 0), 0);
@@ -163,6 +188,26 @@ const AdminOpenPage: React.FC = () => {
     } catch (error) {
       console.error('Reset error:', error);
       showError('Error', 'Failed to reset Open entries');
+    }
+  };
+
+  const handleUndoDeduction = async (deduction: DeductionRecord) => {
+    if (!confirm) return;
+
+    const result = await confirm(
+      `Are you sure you want to UNDO this deduction?\n\nNumber: ${deduction.transactions.number}\nUser: ${deduction.transactions.app_users.username}\nDeducted: F ${deduction.deducted_first}, S ${deduction.deducted_second}\n\nThis will restore the original amounts.`,
+      { type: 'warning', title: '⏮️ Undo Deduction' }
+    );
+
+    if (!result) return;
+
+    try {
+      await db.deleteAdminDeduction(deduction.id);
+      await showSuccess('Success', 'Deduction undone successfully. Amounts have been restored.');
+      loadEntries();
+    } catch (error) {
+      console.error('Undo deduction error:', error);
+      showError('Error', 'Failed to undo deduction');
     }
   };
 
@@ -482,6 +527,64 @@ const AdminOpenPage: React.FC = () => {
                           </svg>
                         </button>
                       </div>
+                    </td>
+                  </tr>
+                ))}
+
+                {/* Deduction Records */}
+                {deductions
+                  .filter(d => !searchNumber.trim() || d.transactions.number.toLowerCase().includes(searchNumber.trim().toLowerCase()))
+                  .map((deduction) => (
+                  <tr key={`deduction-${deduction.id}`} className="bg-orange-50 dark:bg-orange-900/10 hover:bg-orange-100 dark:hover:bg-orange-900/20 transition-colors border-l-4 border-orange-500">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
+                          {deduction.transactions.app_users.username}
+                        </span>
+                        <span className="px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs rounded">
+                          DEDUCTION
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="font-semibold text-gray-900 dark:text-white">
+                        {deduction.transactions.number}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <span className="text-red-600 dark:text-red-400 font-semibold">
+                        -{deduction.deducted_first.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <span className="text-red-600 dark:text-red-400 font-semibold">
+                        -{deduction.deducted_second.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <span className="text-red-600 dark:text-red-400 font-bold">
+                        -{(deduction.deducted_first + deduction.deducted_second).toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                      <div className="flex flex-col">
+                        <span>{new Date(deduction.created_at).toLocaleString()}</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-500">
+                          by {deduction.admin.username}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <button
+                        onClick={() => handleUndoDeduction(deduction)}
+                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-sm font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors flex items-center gap-1"
+                        title="Undo Deduction"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                        </svg>
+                        Undo
+                      </button>
                     </td>
                   </tr>
                 ))}
