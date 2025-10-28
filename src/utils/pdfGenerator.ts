@@ -67,12 +67,18 @@ export const generateUserReport = (data: UserReportData): void => {
   doc.text(`Generated: ${reportDate}`, pageWidth / 2, yPos, { align: 'center' });
   yPos += 15;
 
+  // Calculate total deposited from top-up history
+  const totalDeposited = data.topupHistory && data.topupHistory.length > 0
+    ? data.topupHistory.reduce((sum, topup) => sum + topup.amount, 0)
+    : 0;
+
   // User Information Table
   const userInfoData = [
     ['Full Name', data.user.fullName],
     ['Username', data.user.username],
     ['Email', data.user.email],
     ['Current Balance', `PKR ${data.user.balance.toLocaleString()}`],
+    ['Total Balance Deposited', `PKR ${totalDeposited.toLocaleString()}`],
   ];
 
   if (data.dateRange) {
@@ -229,24 +235,32 @@ export const generateUserReport = (data: UserReportData): void => {
   addEntryTable('Ring Entries', data.entries.ring, ringSummary);
   addEntryTable('Packet Entries', data.entries.packet, packetSummary);
 
-  // Top-up History
+  // Balance Deposit History
   if (data.topupHistory && data.topupHistory.length > 0) {
-    checkNewPage(50);
+    checkNewPage(60);
     
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('Balance Top-up History', margin, yPos);
+    doc.text('Balance Deposit History', margin, yPos);
+    yPos += 6;
+
+    // Add summary
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Total Deposits: PKR ${totalDeposited.toLocaleString()} | Number of Deposits: ${data.topupHistory.length}`, margin + 5, yPos);
     yPos += 8;
 
-    const topupTableData = data.topupHistory.map(topup => [
+    const topupTableData = data.topupHistory.map((topup, index) => [
+      (index + 1).toString(),
       new Date(topup.created_at).toLocaleDateString(),
       new Date(topup.created_at).toLocaleTimeString(),
-      `PKR ${topup.amount.toLocaleString()}`
+      `PKR ${topup.amount.toLocaleString()}`,
+      topup.admin_user?.username || 'Admin'
     ]);
 
     autoTable(doc, {
       startY: yPos,
-      head: [['Date', 'Time', 'Amount']],
+      head: [['#', 'Date', 'Time', 'Amount', 'By']],
       body: topupTableData,
       theme: 'striped',
       headStyles: {
@@ -259,11 +273,23 @@ export const generateUserReport = (data: UserReportData): void => {
         fontSize: 8
       },
       columnStyles: {
-        0: { cellWidth: 40 },
-        1: { cellWidth: 40 },
-        2: { cellWidth: 50, halign: 'right', fontStyle: 'bold' }
+        0: { cellWidth: 15, halign: 'center' },
+        1: { cellWidth: 35 },
+        2: { cellWidth: 35 },
+        3: { cellWidth: 40, halign: 'right', fontStyle: 'bold' },
+        4: { cellWidth: 30 }
       },
-      margin: { left: margin, right: margin }
+      margin: { left: margin, right: margin },
+      foot: [[
+        { content: 'TOTAL DEPOSITED:', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold', fillColor: [230, 245, 230] } },
+        { content: `PKR ${totalDeposited.toLocaleString()}`, styles: { halign: 'right', fontStyle: 'bold', fontSize: 10, fillColor: [230, 245, 230] } },
+        ''
+      ]],
+      footStyles: {
+        fillColor: [230, 245, 230],
+        textColor: [0, 100, 0],
+        fontStyle: 'bold'
+      }
     });
   }
 
