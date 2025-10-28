@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { db } from '../services/database';
+import { supabase } from '../lib/supabase';
 
 export interface SystemSettingsState {
   entriesEnabled: boolean;
@@ -90,7 +91,64 @@ export const useSystemSettings = () => {
 
   useEffect(() => {
     fetchSettings();
+
+    // ✨ Real-time subscription to system_settings for INSTANT updates
+    if (!supabase) return;
+
+    console.log('📡 Setting up real-time subscription for system settings...');
+    
+    const subscription = supabase
+      .channel('system-settings-realtime')
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'system_settings'
+        },
+        (payload: any) => {
+          console.log('🔴 Real-time system settings update received:', payload);
+          
+          if (payload.new) {
+            const newEntriesEnabled = payload.new.entries_enabled === true || payload.new.entries_enabled === 'true';
+            console.log('🔴 Updating entriesEnabled to:', newEntriesEnabled);
+            
+            // Update local state instantly
+            setEntriesEnabledState(newEntriesEnabled);
+            globalSettings = { entriesEnabled: newEntriesEnabled };
+            
+            // Broadcast to other tabs/windows
+            window.dispatchEvent(new CustomEvent('system-settings-updated', {
+              detail: { entriesEnabled: newEntriesEnabled }
+            }));
+          }
+        }
+      )
+      .subscribe((status: string) => {
+        console.log('📡 System settings subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ System settings real-time subscription active');
+        }
+      });
+
+    return () => {
+      console.log('🔌 Unsubscribing from system settings real-time updates');
+      subscription.unsubscribe();
+    };
   }, [fetchSettings]);
+
+  // Listen for cross-tab updates
+  useEffect(() => {
+    const handleStorageUpdate = (event: any) => {
+      if (event.detail?.entriesEnabled !== undefined) {
+        console.log('🔄 Cross-tab settings update received:', event.detail);
+        setEntriesEnabledState(event.detail.entriesEnabled);
+        globalSettings = { entriesEnabled: event.detail.entriesEnabled };
+      }
+    };
+
+    window.addEventListener('system-settings-updated', handleStorageUpdate as any);
+    return () => window.removeEventListener('system-settings-updated', handleStorageUpdate as any);
+  }, []);
 
   return {
     entriesEnabled,

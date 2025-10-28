@@ -111,14 +111,31 @@ const AdminUserManagement: React.FC = () => {
   const handleDeactivate = async (user: NeroUser) => {
     if (!confirm) return;
     
+    const isActive = user.status === 'active';
+    const action = isActive ? 'Deactivate' : 'Activate';
+    
     const result = await confirm(
-      `Deactivate ${user.displayName}'s account?`,
-      { type: 'warning', title: 'Deactivate User' }
+      `${action} ${user.displayName}'s account?`,
+      { type: 'warning', title: `${action} User` }
     );
     
     if (!result) return;
     
-    console.log(`✅ User ${user.displayName} has been deactivated.`);
+    setLoading(true);
+    try {
+      // Update user status in database
+      await db.updateUser(user.id, { isActive: !isActive });
+      console.log(`✅ User ${user.displayName} has been ${isActive ? 'deactivated' : 'activated'}.`);
+      alert(`✅ User ${user.displayName} has been ${isActive ? 'deactivated' : 'activated'} successfully!`);
+      
+      // Reload users to show updated status
+      await loadUsers();
+    } catch (error) {
+      console.error('Error updating user status:', error);
+      alert(`❌ Failed to ${action.toLowerCase()} user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDelete = async (user: NeroUser) => {
