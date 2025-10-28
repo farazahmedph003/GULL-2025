@@ -62,12 +62,12 @@ const UserDashboard: React.FC = () => {
     silentRefresh();
   }, [transactions.length, silentRefresh]);
 
-  // Auto-refresh balance and transactions every 5 seconds
+  // Auto-refresh balance and transactions every 1 second
   useEffect(() => {
     const autoRefreshInterval = setInterval(() => {
-      console.log('⏰ Auto-refresh triggered (5s)');
+      console.log('⏰ Auto-refresh triggered (1s)');
       silentRefresh();
-    }, 5000); // 5 seconds
+    }, 1000); // 1 second for instant updates
 
     return () => {
       clearInterval(autoRefreshInterval);
