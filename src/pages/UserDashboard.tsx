@@ -10,7 +10,7 @@ import { useTransactions } from '../hooks/useTransactions';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
-import { formatDate } from '../utils/helpers';
+// formatDate import removed - not needed
 import { playReloadSound } from '../utils/audioFeedback';
 import { exportUserTransactionsToPDF } from '../utils/pdfExport';
 import type { Project, EntryType, Transaction } from '../types';
@@ -47,17 +47,11 @@ const UserDashboard: React.FC = () => {
   
   // Log entries enabled/disabled state changes
   useEffect(() => {
-    console.log('🎛️ Entries enabled state changed to:', entriesEnabled);
-    if (!entriesEnabled) {
-      console.log('🚫 ENTRIES ARE DISABLED - Entry panel should show warning');
-    } else {
-      console.log('✅ ENTRIES ARE ENABLED - Entry panel should be active');
-    }
+    // Entries state tracking removed for production
   }, [entriesEnabled]);
   
   // Silent refresh without sound for background updates
   const silentRefresh = useCallback(() => {
-    console.log('🔄 Silent refresh: transactions and balance...');
     refreshTransactions();
     refreshBalance();
     
@@ -72,8 +66,6 @@ const UserDashboard: React.FC = () => {
 
   // Comprehensive refresh function
   const refresh = useCallback(() => {
-    console.log('🔄 Refreshing transactions and balance...');
-    console.log('📊 Current transactions count:', transactions.length);
     playReloadSound();
     silentRefresh();
   }, [transactions.length, silentRefresh]);
@@ -81,7 +73,6 @@ const UserDashboard: React.FC = () => {
   // Auto-refresh balance and transactions every 5 seconds
   useEffect(() => {
     const autoRefreshInterval = setInterval(() => {
-      console.log('⏰ Auto-refresh triggered (5s)');
       silentRefresh();
     }, 5000); // 5 seconds for regular updates
 
@@ -142,8 +133,6 @@ const UserDashboard: React.FC = () => {
           filter: `id=eq.${user.id}`
         },
         (payload: any) => {
-          console.log('🔴 User status update received:', payload);
-          
           // Check if user was deactivated
           if (payload.new && payload.new.is_active === false) {
             alert('⚠️ Your account has been deactivated by an administrator. You will be logged out.');
@@ -152,9 +141,7 @@ const UserDashboard: React.FC = () => {
           }
         }
       )
-      .subscribe((status: string) => {
-        console.log('📡 User status subscription:', status);
-      });
+      .subscribe();
 
     return () => {
       userStatusSubscription.unsubscribe();
@@ -167,8 +154,6 @@ const UserDashboard: React.FC = () => {
 
     const checkUserStatus = async () => {
       try {
-        console.log('🔍 Checking user status for:', user.id);
-        
         // Use database service which has proper admin access
         const { data: userData, error } = await db.getUserBalance(user.id);
 
@@ -177,11 +162,8 @@ const UserDashboard: React.FC = () => {
           return;
         }
 
-        console.log('👤 User data retrieved:', userData);
-
         // Check if user account is active
         if (userData && 'is_active' in userData && userData.is_active === false) {
-          console.log('🚫 User has been deactivated! Logging out...');
           alert('⚠️ Your account has been deactivated by an administrator. You will be logged out.');
           // Clear any stored data
           localStorage.clear();
@@ -191,10 +173,7 @@ const UserDashboard: React.FC = () => {
           return;
         }
 
-        console.log('✅ User is still active');
-
         // Also refresh system settings to ensure entries toggle is up-to-date
-        console.log('🔄 Refreshing system settings...');
         refreshSettings();
       } catch (err) {
         console.error('❌ Error in status check:', err);
@@ -202,17 +181,14 @@ const UserDashboard: React.FC = () => {
     };
 
     // Check immediately on mount
-    console.log('🚀 Initial user status check...');
     checkUserStatus();
 
     // Then check every 5 seconds
     const statusCheckInterval = setInterval(() => {
-      console.log('⏰ Auto-checking user status and settings (5s interval)');
       checkUserStatus();
     }, 5000); // 5 seconds
 
     return () => {
-      console.log('🛑 Cleaning up status check interval');
       clearInterval(statusCheckInterval);
     };
   }, [user?.id, refreshSettings]);
@@ -220,7 +196,6 @@ const UserDashboard: React.FC = () => {
   // Keyboard shortcuts removed for regular users
 
   const handleEntryAdded = () => {
-    console.log('🔄 Entry added, refreshing...');
     refresh();
   };
 
@@ -368,7 +343,6 @@ const UserDashboard: React.FC = () => {
                           <span>Entries are temporarily disabled by admin.</span>
                           <button
                             onClick={() => {
-                              console.log('🔄 Force refreshing system settings...');
                               refreshSettings();
                             }}
                             className="ml-4 px-3 py-1 bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 rounded text-sm hover:bg-yellow-300 dark:hover:bg-yellow-700"
@@ -382,7 +356,6 @@ const UserDashboard: React.FC = () => {
                         projectId={'user-scope'}
                         addTransaction={addTransaction}
                         onSuccess={() => {
-                          console.log('✅ StandardEntry onSuccess called');
                           // Parent state is already updated via addTransaction. Keep a light refresh to sync balances.
                           refreshBalance();
                         }}
@@ -392,7 +365,6 @@ const UserDashboard: React.FC = () => {
                         projectId={'user-scope'}
                         entryType={project.entryTypes[0] || 'akra'}
                         onSuccess={() => {
-                          console.log('✅ IntelligentEntry onSuccess called');
                           refresh();
                         }}
                       />

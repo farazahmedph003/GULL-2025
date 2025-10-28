@@ -24,7 +24,6 @@ export const useSystemSettings = () => {
     if (settingsPromise) {
       try {
         const settings = await settingsPromise;
-        console.log('⚡ Using existing promise result:', settings.entriesEnabled);
         setEntriesEnabledState(settings.entriesEnabled);
         return;
       } catch (e) {
@@ -40,17 +39,11 @@ export const useSystemSettings = () => {
     globalError = null;
 
     try {
-      console.log('🔍 Fetching FRESH system settings from database...');
       settingsPromise = db.getSystemSettings();
       const settings = await settingsPromise;
       
-      console.log('📥 System settings received:', settings);
-      console.log('✨ Parsed entriesEnabled:', settings.entriesEnabled);
-      
       globalSettings = settings;
       setEntriesEnabledState(settings.entriesEnabled);
-      
-      console.log('💾 Global state updated to:', settings.entriesEnabled);
     } catch (e) {
       console.error('❌ Error fetching system settings:', e);
       const errorMessage = e instanceof Error ? e.message : 'Failed to load settings';
@@ -67,7 +60,6 @@ export const useSystemSettings = () => {
   const toggleEntriesEnabled = useCallback(async () => {
     try {
       const newValue = !entriesEnabled;
-      console.log('🔄 Toggling entries enabled to:', newValue);
       
       // Update immediately for responsive UI
       setEntriesEnabledState(newValue);
@@ -75,7 +67,6 @@ export const useSystemSettings = () => {
       
       // Save to database
       await db.setSystemSettings({ entriesEnabled: newValue });
-      console.log('✅ Settings saved to database');
     } catch (e) {
       console.error('❌ Error toggling settings:', e);
       setError(e instanceof Error ? e.message : 'Failed to update settings');
@@ -91,8 +82,6 @@ export const useSystemSettings = () => {
 
     // ✨ Real-time subscription to system_settings for INSTANT updates
     if (!supabase) return;
-
-    console.log('📡 Setting up real-time subscription for system settings...');
     
     const subscription = supabase
       .channel('system-settings-realtime')
@@ -103,11 +92,8 @@ export const useSystemSettings = () => {
           table: 'system_settings'
         },
         (payload: any) => {
-          console.log('🔴 Real-time system settings update received:', payload);
-          
           if (payload.new) {
             const newEntriesEnabled = payload.new.entries_enabled === true || payload.new.entries_enabled === 'true';
-            console.log('🔴 Updating entriesEnabled to:', newEntriesEnabled);
             
             // Update local state instantly
             setEntriesEnabledState(newEntriesEnabled);
@@ -120,15 +106,9 @@ export const useSystemSettings = () => {
           }
         }
       )
-      .subscribe((status: string) => {
-        console.log('📡 System settings subscription status:', status);
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ System settings real-time subscription active');
-        }
-      });
+      .subscribe();
 
     return () => {
-      console.log('🔌 Unsubscribing from system settings real-time updates');
       subscription.unsubscribe();
     };
   }, [fetchSettings]);
@@ -137,7 +117,6 @@ export const useSystemSettings = () => {
   useEffect(() => {
     const handleStorageUpdate = (event: any) => {
       if (event.detail?.entriesEnabled !== undefined) {
-        console.log('🔄 Cross-tab settings update received:', event.detail);
         setEntriesEnabledState(event.detail.entriesEnabled);
         globalSettings = { entriesEnabled: event.detail.entriesEnabled };
       }

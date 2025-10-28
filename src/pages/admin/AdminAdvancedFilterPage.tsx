@@ -129,75 +129,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
     setHistoryIndex(newHistory.length - 1);
   };
 
-  // Undo action
-  const handleUndo = async () => {
-    if (historyIndex > 0) {
-      setProcessing(true);
-      try {
-        const previousState = history[historyIndex - 1].entries;
-        
-        // Restore each entry to the database
-        console.log(`🔄 Undoing: Restoring ${previousState.length} entries to database...`);
-        for (const entry of previousState) {
-          await db.updateTransaction(entry.id, {
-            number: entry.number,
-            entryType: entry.entryType,
-            first: entry.first,
-            second: entry.second,
-          });
-        }
-        
-        setHistoryIndex(historyIndex - 1);
-        
-        // Reload entries from database to ensure we have the latest state
-        await loadEntries(false, true); // Force reload, don't save to history
-        
-        showSuccess('Undo', 'Reverted to previous state. Refresh dashboards to see changes.');
-      } catch (error) {
-        console.error('Undo error:', error);
-        showError('Error', 'Failed to undo changes');
-      } finally {
-        setProcessing(false);
-      }
-    } else {
-      showError('Undo', 'No more actions to undo');
-    }
-  };
-
-  // Redo action
-  const handleRedo = async () => {
-    if (historyIndex < history.length - 1) {
-      setProcessing(true);
-      try {
-        const nextState = history[historyIndex + 1].entries;
-        
-        // Restore each entry to the database
-        console.log(`🔄 Redoing: Restoring ${nextState.length} entries to database...`);
-        for (const entry of nextState) {
-          await db.updateTransaction(entry.id, {
-            number: entry.number,
-            entryType: entry.entryType,
-            first: entry.first,
-            second: entry.second,
-          });
-        }
-        
-        setHistoryIndex(historyIndex + 1);
-        
-        // Reload entries from database to ensure we have the latest state
-        await loadEntries(false, true); // Force reload, don't save to history
-        
-        showSuccess('Redo', 'Restored to next state. Refresh dashboards to see changes.');
-      } catch (error) {
-        console.error('Redo error:', error);
-        showError('Error', 'Failed to redo changes');
-      } finally {
-        setProcessing(false);
-      }
-    } else {
-      showError('Redo', 'No more actions to redo');
-    }
-  };
+  // Undo/Redo functions removed as buttons were removed from UI
 
   // Group transactions
   const summaries = useMemo(

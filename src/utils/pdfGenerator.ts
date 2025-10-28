@@ -255,7 +255,7 @@ export const generateUserReport = (data: UserReportData): void => {
       new Date(topup.created_at).toLocaleDateString(),
       new Date(topup.created_at).toLocaleTimeString(),
       `PKR ${topup.amount.toLocaleString()}`,
-      topup.admin_user?.username || 'Admin'
+      (topup as any).admin_user?.username || 'Admin'
     ]);
 
     autoTable(doc, {
