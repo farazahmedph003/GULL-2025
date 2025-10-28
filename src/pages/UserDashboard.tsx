@@ -148,46 +148,56 @@ const UserDashboard: React.FC = () => {
 
   // Auto-check user status and system settings every 2 seconds (fallback for real-time)
   useEffect(() => {
-    if (!user?.id || !supabase) return;
+    if (!user?.id) return;
 
     const checkUserStatus = async () => {
       try {
-        // Check if user is still active
-        const { data: userData, error } = await supabase
-          .from('app_users')
-          .select('is_active')
-          .eq('id', user.id)
-          .single();
+        console.log('🔍 Checking user status for:', user.id);
+        
+        // Use database service which has proper admin access
+        const { data: userData, error } = await db.getUserBalance(user.id);
 
         if (error) {
-          console.warn('Error checking user status:', error);
+          console.error('❌ Error checking user status:', error);
           return;
         }
 
-        // If user has been deactivated, force logout
-        if (userData && userData.is_active === false) {
+        console.log('👤 User data retrieved:', userData);
+
+        // Check if user account is active
+        if (userData && 'is_active' in userData && userData.is_active === false) {
+          console.log('🚫 User has been deactivated! Logging out...');
           alert('⚠️ Your account has been deactivated by an administrator. You will be logged out.');
+          // Clear any stored data
+          localStorage.clear();
+          sessionStorage.clear();
+          // Force logout
           window.location.href = '/login';
           return;
         }
 
+        console.log('✅ User is still active');
+
         // Also refresh system settings to ensure entries toggle is up-to-date
+        console.log('🔄 Refreshing system settings...');
         refreshSettings();
       } catch (err) {
-        console.warn('Error in status check:', err);
+        console.error('❌ Error in status check:', err);
       }
     };
 
-    // Check immediately
+    // Check immediately on mount
+    console.log('🚀 Initial user status check...');
     checkUserStatus();
 
     // Then check every 2 seconds
     const statusCheckInterval = setInterval(() => {
-      console.log('⏰ Auto-checking user status and settings (2s)');
+      console.log('⏰ Auto-checking user status and settings (2s interval)');
       checkUserStatus();
     }, 2000); // 2 seconds
 
     return () => {
+      console.log('🛑 Cleaning up status check interval');
       clearInterval(statusCheckInterval);
     };
   }, [user?.id, refreshSettings]);

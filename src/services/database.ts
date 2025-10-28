@@ -1304,7 +1304,7 @@ export class DatabaseService {
   /**
    * Get user balance (uses service role to bypass RLS)
    */
-  async getUserBalance(userId: string): Promise<{ data?: { balance: number; total_spent: number }, error?: any }> {
+  async getUserBalance(userId: string): Promise<{ data?: { balance: number; total_spent: number; is_active?: boolean }, error?: any }> {
     if (!isSupabaseConfigured() || !supabaseAdmin) {
       console.error('❌ Admin client not available for getUserBalance:', { 
         isSupabaseConfigured: isSupabaseConfigured(), 
@@ -1322,7 +1322,7 @@ export class DatabaseService {
 
       const { data, error } = await supabaseAdmin
         .from('app_users')
-        .select('balance, total_spent')
+        .select('balance, total_spent, is_active')
         .eq('id', userId)
         .single();
 
