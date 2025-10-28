@@ -1343,6 +1343,15 @@ export class DatabaseService {
    * Update user balance (uses service role to bypass RLS)
    */
   async updateUserBalance(userId: string, newBalance: number): Promise<{ error?: any }> {
+    // ⚠️ CRITICAL: Prevent negative balance
+    if (newBalance < 0) {
+      console.error('❌ Cannot update balance: Balance would become negative', {
+        userId,
+        attemptedBalance: newBalance
+      });
+      return { error: new Error('Insufficient balance. Balance cannot be negative.') };
+    }
+
     if (!isSupabaseConfigured() || !supabaseAdmin) {
       console.error('❌ Admin client not available:', { 
         isSupabaseConfigured: isSupabaseConfigured(), 
