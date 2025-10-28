@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import type { Transaction } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
@@ -47,12 +47,7 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
   const [adminActions, setAdminActions] = useState<any[]>([]);
   const [topUps, setTopUps] = useState<any[]>([]);
 
-  // Load admin actions and top-ups once
-  useEffect(() => {
-    loadAdditionalHistory();
-  }, [user?.id]);
-
-  const loadAdditionalHistory = async () => {
+  const loadAdditionalHistory = useCallback(async () => {
     if (!user?.id) {
       return;
     }
@@ -97,7 +92,39 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
     } catch (error) {
       console.error('Error loading additional history:', error);
     }
-  };
+  }, [user?.id]);
+
+  // Load admin actions and top-ups, and subscribe to changes
+  useEffect(() => {
+    loadAdditionalHistory();
+
+    // Set up real-time subscription for balance_history changes
+    if (!supabase || !user?.id) return;
+
+    const subscription = supabase
+      .channel('user-balance-history-realtime')
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'balance_history',
+          filter: `app_user_id=eq.${user.id}`
+        },
+        (payload: any) => {
+          console.log('🔴 Real-time balance_history update received:', payload);
+          // Reload balance history when any change occurs
+          loadAdditionalHistory();
+        }
+      )
+      .subscribe((status: string) => {
+        console.log('📡 Balance history subscription status:', status);
+      });
+
+    return () => {
+      console.log('🔌 Unsubscribing from balance history updates');
+      subscription.unsubscribe();
+    };
+  }, [user?.id, loadAdditionalHistory]);
 
   // Combine transactions (from props) with admin actions and top-ups
   const history = useMemo(() => {
