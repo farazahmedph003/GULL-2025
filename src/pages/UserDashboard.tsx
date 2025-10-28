@@ -43,6 +43,16 @@ const UserDashboard: React.FC = () => {
   const { refresh: refreshBalance } = useUserBalance();
   const { entriesEnabled, refresh: refreshSettings } = useSystemSettings();
   
+  // Log entries enabled/disabled state changes
+  useEffect(() => {
+    console.log('🎛️ Entries enabled state changed to:', entriesEnabled);
+    if (!entriesEnabled) {
+      console.log('🚫 ENTRIES ARE DISABLED - Entry panel should show warning');
+    } else {
+      console.log('✅ ENTRIES ARE ENABLED - Entry panel should be active');
+    }
+  }, [entriesEnabled]);
+  
   // Silent refresh without sound for background updates
   const silentRefresh = useCallback(() => {
     console.log('🔄 Silent refresh: transactions and balance...');

@@ -24,6 +24,7 @@ export const useSystemSettings = () => {
     if (settingsPromise) {
       try {
         const settings = await settingsPromise;
+        console.log('⚡ Using existing promise result:', settings.entriesEnabled);
         setEntriesEnabledState(settings.entriesEnabled);
         return;
       } catch (e) {
@@ -32,28 +33,24 @@ export const useSystemSettings = () => {
       }
     }
 
-    // If we already have settings and they're recent, use them
-    if (globalSettings) {
-      setEntriesEnabledState(globalSettings.entriesEnabled);
-      setLoading(false);
-      return;
-    }
-
+    // ALWAYS fetch fresh data from database (don't use cached settings)
     globalLoading = true;
     setLoading(true);
     setError(null);
     globalError = null;
 
     try {
-      console.log('🔍 Fetching system settings...');
+      console.log('🔍 Fetching FRESH system settings from database...');
       settingsPromise = db.getSystemSettings();
       const settings = await settingsPromise;
       
-      console.log('🔍 System settings received:', settings);
-      console.log('🔍 Parsed entriesEnabled:', settings.entriesEnabled);
+      console.log('📥 System settings received:', settings);
+      console.log('✨ Parsed entriesEnabled:', settings.entriesEnabled);
       
       globalSettings = settings;
       setEntriesEnabledState(settings.entriesEnabled);
+      
+      console.log('💾 Global state updated to:', settings.entriesEnabled);
     } catch (e) {
       console.error('❌ Error fetching system settings:', e);
       const errorMessage = e instanceof Error ? e.message : 'Failed to load settings';
