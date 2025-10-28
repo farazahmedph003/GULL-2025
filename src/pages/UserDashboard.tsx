@@ -146,6 +146,52 @@ const UserDashboard: React.FC = () => {
     };
   }, [user?.id]);
 
+  // Auto-check user status and system settings every 2 seconds (fallback for real-time)
+  useEffect(() => {
+    if (!user?.id || !supabase) return;
+
+    const checkUserStatus = async () => {
+      try {
+        // Check if user is still active
+        const { data: userData, error } = await supabase
+          .from('app_users')
+          .select('is_active')
+          .eq('id', user.id)
+          .single();
+
+        if (error) {
+          console.warn('Error checking user status:', error);
+          return;
+        }
+
+        // If user has been deactivated, force logout
+        if (userData && userData.is_active === false) {
+          alert('⚠️ Your account has been deactivated by an administrator. You will be logged out.');
+          window.location.href = '/login';
+          return;
+        }
+
+        // Also refresh system settings to ensure entries toggle is up-to-date
+        refreshSettings();
+      } catch (err) {
+        console.warn('Error in status check:', err);
+      }
+    };
+
+    // Check immediately
+    checkUserStatus();
+
+    // Then check every 2 seconds
+    const statusCheckInterval = setInterval(() => {
+      console.log('⏰ Auto-checking user status and settings (2s)');
+      checkUserStatus();
+    }, 2000); // 2 seconds
+
+    return () => {
+      clearInterval(statusCheckInterval);
+    };
+  }, [user?.id, refreshSettings]);
+
   // Keyboard shortcuts removed for regular users
 
   const handleEntryAdded = () => {
