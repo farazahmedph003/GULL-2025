@@ -279,7 +279,7 @@ const UserManagement: React.FC = () => {
     if (!confirm) return;
     
     const firstConfirm = await confirm(
-      `Are you sure you want to RESET ALL HISTORY for "${user.full_name}" (@${user.username})?\n\nThis will permanently delete:\n• All transactions (Open, Akra, Ring, Packet)\n• All entry history\n• All admin deductions\n\nThis action CANNOT be undone!`,
+      `Are you sure you want to RESET ALL HISTORY for "${user.full_name}" (@${user.username})?\n\nThis will permanently delete:\n• All transactions (Open, Akra, Ring, Packet)\n• All entry history\n• All admin deductions\n• All balance history (deposits/withdrawals)\n\nThis action CANNOT be undone!`,
       { type: 'danger', title: '⚠️ Reset User History' }
     );
     

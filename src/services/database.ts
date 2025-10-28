@@ -2096,6 +2096,18 @@ export class DatabaseService {
         console.warn('Error deleting admin deductions:', deductionsError);
       }
 
+      // Delete all balance history for this user (deposits/withdrawals)
+      const { error: balanceHistoryError } = await client
+        .from('balance_history')
+        .delete()
+        .eq('user_id', userId);
+
+      if (balanceHistoryError) {
+        console.warn('Error deleting balance history:', balanceHistoryError);
+      } else {
+        console.log('✅ Deleted balance history for user:', userId);
+      }
+
       // EXPLICITLY reset total_spent to 0 (even though trigger should do this)
       const { error: resetSpentError } = await client
         .from('app_users')
