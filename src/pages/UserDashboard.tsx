@@ -17,6 +17,7 @@ import type { Project, EntryType, Transaction } from '../types';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
 import { useSystemSettings } from '../hooks/useSystemSettings';
 import { useUserRealtimeSubscriptions } from '../hooks/useRealtimeSubscriptions';
+import { supabase } from '../lib/supabase';
 
 type TabType = 'all' | 'open' | 'akra' | 'ring' | 'packet';
 
@@ -111,6 +112,39 @@ const UserDashboard: React.FC = () => {
 
   // Real-time subscriptions for instant updates
   useUserRealtimeSubscriptions(user?.id, silentRefresh);
+
+  // Subscribe to user account status changes (deactivation)
+  useEffect(() => {
+    if (!user?.id || !supabase) return;
+
+    const userStatusSubscription = supabase
+      .channel('user-status-changes')
+      .on('postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'app_users',
+          filter: `id=eq.${user.id}`
+        },
+        (payload: any) => {
+          console.log('🔴 User status update received:', payload);
+          
+          // Check if user was deactivated
+          if (payload.new && payload.new.is_active === false) {
+            alert('⚠️ Your account has been deactivated by an administrator. You will be logged out.');
+            // Force logout
+            window.location.href = '/login';
+          }
+        }
+      )
+      .subscribe((status: string) => {
+        console.log('📡 User status subscription:', status);
+      });
+
+    return () => {
+      userStatusSubscription.unsubscribe();
+    };
+  }, [user?.id]);
 
   // Keyboard shortcuts removed for regular users
 
