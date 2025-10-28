@@ -40,9 +40,11 @@ interface UserHistoryPanelProps {
   onEdit?: (transaction: Transaction) => void;
   onDelete?: (transactionId: string) => void;
   onExportPDF?: () => void;
+  refreshTrigger?: number; // Timestamp to trigger refresh from parent
+  isPartner?: boolean; // Show edit/delete buttons only for partner users
 }
 
-const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activeTab = 'all', onEdit, onDelete, onExportPDF }) => {
+const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activeTab = 'all', onEdit, onDelete, onExportPDF, refreshTrigger, isPartner = false }) => {
   const { user } = useAuth();
   const [adminActions, setAdminActions] = useState<any[]>([]);
   const [topUps, setTopUps] = useState<any[]>([]);
@@ -93,6 +95,14 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
       console.error('Error loading additional history:', error);
     }
   }, [user?.id]);
+
+  // Refresh when refreshTrigger changes (triggered by parent's auto-refresh)
+  useEffect(() => {
+    if (refreshTrigger) {
+      console.log('🔄 UserHistoryPanel: Refresh triggered by parent at', refreshTrigger);
+      loadAdditionalHistory();
+    }
+  }, [refreshTrigger, loadAdditionalHistory]);
 
   // Load admin actions and top-ups, and subscribe to changes
   useEffect(() => {
@@ -332,8 +342,8 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
               </div>
             </div>
             
-            {/* Edit and Delete Actions - Only for single entries */}
-            {!isGrouped && (
+            {/* Edit and Delete Actions - Only visible for partner users */}
+            {isPartner && !isGrouped && (
               <div className="flex items-center gap-2 ml-4">
                 {onEdit && (
                   <button
@@ -371,8 +381,8 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
                 )}
               </div>
             )}
-            {/* For grouped entries, show delete all button */}
-            {isGrouped && onDelete && (
+            {/* For grouped entries, show delete all button - Only visible for partner users */}
+            {isPartner && isGrouped && onDelete && (
               <div className="flex items-center gap-2 ml-4">
                 <button
                   onClick={async () => {

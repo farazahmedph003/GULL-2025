@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useCallback } from 'react';
+import React, { useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useSystemSettings } from '../../hooks/useSystemSettings';
@@ -8,6 +8,8 @@ import { ConfirmationContext } from '../../App';
 import CreateUserModal from '../../components/CreateUserModal';
 import TopUpModal from '../../components/TopUpModal';
 import EditUserModal from '../../components/EditUserModal';
+import EditTransactionModal from '../../components/EditTransactionModal';
+import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
 import { generateUserReport } from '../../utils/pdfGenerator';
 
 interface UserData {
@@ -34,13 +36,33 @@ const UserManagement: React.FC = () => {
   const [topUpModalOpen, setTopUpModalOpen] = useState(false);
   const [editUserModalOpen, setEditUserModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
+  
+  // Transaction editing states
+  const [editingTransaction, setEditingTransaction] = useState<any | null>(null);
+  const [deletingTransaction, setDeletingTransaction] = useState<any | null>(null);
 
   const { showSuccess, showError, showInfo } = useNotifications();
   const { entriesEnabled, toggleEntriesEnabled } = useSystemSettings();
   const { setRefreshCallback } = useAdminRefresh();
   const confirm = useContext(ConfirmationContext);
 
-  const loadUsers = useCallback(async () => {
+  // Ref to track if any modal is open (for real-time callbacks)
+  const isAnyModalOpenRef = useRef(false);
+
+  // Update ref whenever modal states change
+  useEffect(() => {
+    isAnyModalOpenRef.current = !!(editingTransaction || deletingTransaction || createUserModalOpen || 
+                                    topUpModalOpen || editUserModalOpen);
+    console.log('📝 Modal state changed, any modal open:', isAnyModalOpenRef.current);
+  }, [editingTransaction, deletingTransaction, createUserModalOpen, topUpModalOpen, editUserModalOpen]);
+
+  const loadUsers = useCallback(async (force = false) => {
+    // Skip refresh if ANY modal is open (unless forced)
+    if (!force && isAnyModalOpenRef.current) {
+      console.log('⏸️ Skipping refresh - modal is open');
+      return;
+    }
+    
     try {
       const data = await db.getAllUsersWithStats();
       setUsers(data);
@@ -52,15 +74,15 @@ const UserManagement: React.FC = () => {
 
   useEffect(() => {
     // Register refresh callback for the refresh button
-    setRefreshCallback(loadUsers);
+    setRefreshCallback(() => loadUsers(true));
     
-    loadUsers();
+    loadUsers(true);
 
     // Auto-refresh every 5 seconds
     console.log('⏰ Setting up auto-refresh every 5 seconds for User Management...');
     const autoRefreshInterval = setInterval(() => {
       console.log('🔄 Auto-refreshing User Management data...');
-      loadUsers();
+      loadUsers(false); // Don't force refresh on auto-refresh
     }, 5000);
 
     // Set up real-time subscription for auto-updates
@@ -71,28 +93,27 @@ const UserManagement: React.FC = () => {
           { event: '*', schema: 'public', table: 'app_users' },
           (payload: any) => {
             console.log('🔴 Real-time update received for users:', payload);
-            loadUsers();
+            loadUsers(false); // Don't force refresh on real-time updates
           }
         )
         .on('postgres_changes',
           { event: '*', schema: 'public', table: 'transactions' },
           (payload: any) => {
             console.log('🔴 Real-time update received for transactions (user stats):', payload);
-            loadUsers();
+            loadUsers(false); // Don't force refresh on real-time updates
           }
         )
         .on('postgres_changes',
           { event: '*', schema: 'public', table: 'balance_history' },
           (payload: any) => {
             console.log('🔴 Real-time update received for balance_history:', payload);
-            loadUsers();
-            // Refresh balance history if a user's history is currently expanded
+            loadUsers(false); // Don't force refresh on real-time updates
+            // Refresh balance history if a user's history is currently expanded (but not if any modal is open)
             const currentExpandedUserId = expandedUserId;
-            if (currentExpandedUserId) {
-              db.getUserHistory(currentExpandedUserId).then(history => {
-                const balanceHist = history.filter((item: any) => item.isTopUp);
-                setBalanceHistory(balanceHist);
-              }).catch(err => console.error('Error reloading balance history:', err));
+            if (currentExpandedUserId && !isAnyModalOpenRef.current) {
+              reloadBalanceHistory(currentExpandedUserId, false).catch(err => 
+                console.error('Error reloading balance history:', err)
+              );
             }
           }
         )
@@ -139,7 +160,7 @@ const UserManagement: React.FC = () => {
       
       await db.createUser(userData);
       await showSuccess('Success', `User ${userData.username} created successfully${userData.isPartner ? ' as Partner' : ''}`);
-      loadUsers();
+      loadUsers(true); // Force reload after create
     } catch (error) {
       throw error;
     }
@@ -156,11 +177,11 @@ const UserManagement: React.FC = () => {
         await db.topUpUserBalance(selectedUser.id, amount);
         await showSuccess('Success', `Added PKR ${amount.toLocaleString()} to ${selectedUser.username}'s balance`);
       }
-      loadUsers();
+      loadUsers(true); // Force reload after top-up
       
       // Refresh balance history if this user's history is currently expanded
       if (expandedUserId === selectedUser.id) {
-        await reloadBalanceHistory(selectedUser.id);
+        await reloadBalanceHistory(selectedUser.id, true);
       }
     } catch (error) {
       throw error;
@@ -168,7 +189,13 @@ const UserManagement: React.FC = () => {
   };
 
   // Helper function to reload balance history for a specific user
-  const reloadBalanceHistory = async (userId: string) => {
+  const reloadBalanceHistory = useCallback(async (userId: string, force = false) => {
+    // Skip refresh if ANY modal is open (unless forced)
+    if (!force && isAnyModalOpenRef.current) {
+      console.log('⏸️ Skipping balance history refresh - modal is open');
+      return;
+    }
+    
     try {
       const history = await db.getUserHistory(userId);
       const balanceHist = history.filter((item: any) => item.isTopUp);
@@ -176,7 +203,7 @@ const UserManagement: React.FC = () => {
     } catch (error) {
       console.error('Error reloading balance history:', error);
     }
-  };
+  }, []);
 
   // Handle tab switching with refresh
   const handleTabSwitch = async (tab: 'entries' | 'balance') => {
@@ -184,7 +211,9 @@ const UserManagement: React.FC = () => {
     
     // Refresh balance history when switching to balance tab
     if (tab === 'balance' && expandedUserId) {
-      await reloadBalanceHistory(expandedUserId);
+      await reloadBalanceHistory(expandedUserId, true);
+    } else if (tab === 'entries' && expandedUserId) {
+      await loadHistoryData(expandedUserId, true);
     }
   };
 
@@ -203,7 +232,7 @@ const UserManagement: React.FC = () => {
         ? (updates.isPartner ? ' (now a Partner)' : ' (Partner status removed)')
         : '';
       await showSuccess('Success', `User updated successfully${partnerMessage}`);
-      loadUsers();
+      loadUsers(true); // Force reload after edit
     } catch (error) {
       throw error;
     }
@@ -218,6 +247,27 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  const loadHistoryData = useCallback(async (userId: string, force = false) => {
+    // Skip refresh if ANY modal is open (unless forced)
+    if (!force && isAnyModalOpenRef.current) {
+      console.log('⏸️ Skipping history refresh - modal is open');
+      return;
+    }
+    
+    try {
+      const history = await db.getUserHistory(userId);
+      // Separate entries from balance history
+      const entries = history.filter((item: any) => !item.isTopUp);
+      const balanceHist = history.filter((item: any) => item.isTopUp);
+      
+      setHistoryData(entries);
+      setBalanceHistory(balanceHist);
+    } catch (error) {
+      console.error('Error loading history:', error);
+      showError('Error', 'Failed to load user history');
+    }
+  }, [showError]);
+
   const handleViewHistory = async (user: UserData) => {
     if (expandedUserId === user.id) {
       setExpandedUserId(null);
@@ -229,17 +279,78 @@ const UserManagement: React.FC = () => {
 
     setExpandedUserId(user.id);
     setHistoryTab('entries');
+    await loadHistoryData(user.id, true);
+  };
+
+  const handleEditTransaction = async (updatedTransaction: any) => {
+    if (!editingTransaction || !expandedUserId) return;
+
     try {
-      const history = await db.getUserHistory(user.id);
-      // Separate entries from balance history
-      const entries = history.filter((item: any) => !item.isTopUp);
-      const balanceHist = history.filter((item: any) => item.isTopUp);
+      // Calculate balance difference
+      const oldTotal = editingTransaction.first_amount + editingTransaction.second_amount;
+      const newTotal = updatedTransaction.first + updatedTransaction.second;
+      const difference = newTotal - oldTotal;
+
+      // Get current user balance
+      const { data: userData } = await db.getUserBalance(expandedUserId);
+      if (!userData) {
+        throw new Error('User data not found');
+      }
+      const newBalance = userData.balance - difference;
+
+      // Update user balance
+      await db.updateUserBalance(expandedUserId, newBalance);
+
+      // Update transaction
+      await db.updateTransaction(editingTransaction.id, {
+        number: updatedTransaction.number || editingTransaction.number,
+        entryType: updatedTransaction.entryType || editingTransaction.entry_type,
+        first: updatedTransaction.first,
+        second: updatedTransaction.second,
+        notes: updatedTransaction.notes,
+      });
+
+      await showSuccess('Success', 'Entry updated successfully');
+      setEditingTransaction(null);
       
-      setHistoryData(entries);
-      setBalanceHistory(balanceHist);
+      // Reload history (force refresh)
+      await loadHistoryData(expandedUserId, true);
+      
+      // Reload users to update balance display
+      loadUsers(true); // Force reload after edit
     } catch (error) {
-      console.error('Error loading history:', error);
-      showError('Error', 'Failed to load user history');
+      console.error('Edit error:', error);
+      showError('Error', 'Failed to update entry');
+    }
+  };
+
+  const handleDeleteTransaction = async () => {
+    if (!deletingTransaction || !expandedUserId) return;
+
+    try {
+      // Refund the balance to the user
+      const refundAmount = deletingTransaction.first_amount + deletingTransaction.second_amount;
+      const { data: userData } = await db.getUserBalance(expandedUserId);
+      if (!userData) {
+        throw new Error('User data not found');
+      }
+      const newBalance = userData.balance + refundAmount;
+      await db.updateUserBalance(expandedUserId, newBalance);
+
+      // Delete the transaction
+      await db.deleteTransaction(deletingTransaction.id);
+      await showSuccess('Success', 'Entry deleted successfully and balance refunded');
+      
+      setDeletingTransaction(null);
+      
+      // Reload history (force refresh)
+      await loadHistoryData(expandedUserId, true);
+      
+      // Reload users to update balance display
+      loadUsers(true); // Force reload after delete
+    } catch (error) {
+      console.error('Delete error:', error);
+      showError('Error', 'Failed to delete entry');
     }
   };
 
@@ -248,7 +359,7 @@ const UserManagement: React.FC = () => {
       const newStatus = !user.is_active;
       await db.toggleUserActiveStatus(user.id, newStatus);
       await showSuccess('Success', `User ${user.username} is now ${newStatus ? 'active' : 'inactive'}`);
-      loadUsers();
+      loadUsers(true); // Force reload after toggle
     } catch (error) {
       console.error('Error toggling user status:', error);
       showError('Error', 'Failed to update user status');
@@ -268,7 +379,7 @@ const UserManagement: React.FC = () => {
     try {
       await db.deleteUser(user.id, true); // Hard delete - completely remove from database
       await showSuccess('Success', `User ${user.username} has been permanently deleted`);
-      loadUsers();
+      loadUsers(true); // Force reload after delete
     } catch (error) {
       console.error('Error deleting user:', error);
       showError('Error', 'Failed to delete user');
@@ -299,7 +410,7 @@ const UserManagement: React.FC = () => {
         'History Reset',
         `Successfully deleted ${result.deletedCount} transaction(s) for ${user.username}`
       );
-      loadUsers();
+      loadUsers(true); // Force reload after reset
       // Close expanded history if it was open
       if (expandedUserId === user.id) {
         setExpandedUserId(null);
@@ -327,7 +438,7 @@ const UserManagement: React.FC = () => {
         'Spent Reset',
         `Successfully reset spent amount for ${user.username} to PKR 0`
       );
-      loadUsers();
+      loadUsers(true); // Force reload after reset
     } catch (error) {
       console.error('Error resetting user spent:', error);
       showError('Error', 'Failed to reset user spent');
@@ -655,22 +766,44 @@ const UserManagement: React.FC = () => {
                                     {item.entry_type}
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-2 text-sm">
-                                  {(item.first_amount || 0) > 0 && (
-                                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                                      F {item.first_amount.toLocaleString()}
-                                    </span>
-                                  )}
-                                  {(item.second_amount || 0) > 0 && (
-                                    <span className="font-semibold text-amber-600 dark:text-amber-400">
-                                      S {item.second_amount.toLocaleString()}
-                                    </span>
-                                  )}
-                                  {(item.first_amount || 0) <= 0 && (item.second_amount || 0) <= 0 && (
-                                    <span className="font-semibold text-red-600 dark:text-red-400">
-                                      Deduction
-                                    </span>
-                                  )}
+                                <div className="flex items-center gap-3">
+                                  <div className="flex items-center gap-2 text-sm">
+                                    {(item.first_amount || 0) > 0 && (
+                                      <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                        F {item.first_amount.toLocaleString()}
+                                      </span>
+                                    )}
+                                    {(item.second_amount || 0) > 0 && (
+                                      <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                        S {item.second_amount.toLocaleString()}
+                                      </span>
+                                    )}
+                                    {(item.first_amount || 0) <= 0 && (item.second_amount || 0) <= 0 && (
+                                      <span className="font-semibold text-red-600 dark:text-red-400">
+                                        Deduction
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={() => setEditingTransaction(item)}
+                                      className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                                      title="Edit Entry"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={() => setDeletingTransaction(item)}
+                                      className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                                      title="Delete Entry"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                               <div className="text-xs text-gray-500 dark:text-gray-500">
@@ -768,6 +901,40 @@ const UserManagement: React.FC = () => {
             onSubmit={handleEditUser}
           />
         </>
+      )}
+
+      {/* Edit Transaction Modal */}
+      {editingTransaction && expandedUserId && (
+        <EditTransactionModal
+          isOpen={!!editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+          transaction={{
+            id: editingTransaction.id,
+            number: editingTransaction.number,
+            first: editingTransaction.first_amount,
+            second: editingTransaction.second_amount,
+            notes: '',
+            entryType: editingTransaction.entry_type as any,
+            projectId: 'admin',
+            createdAt: editingTransaction.created_at,
+            updatedAt: editingTransaction.created_at,
+          }}
+          onSave={handleEditTransaction}
+          userBalance={users.find(u => u.id === expandedUserId)?.balance || 0}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingTransaction && (
+        <DeleteConfirmationModal
+          isOpen={!!deletingTransaction}
+          onClose={() => setDeletingTransaction(null)}
+          onConfirm={handleDeleteTransaction}
+          title="Delete Entry"
+          message="Are you sure you want to delete this entry? The balance will be refunded to the user."
+          itemName={`Number: ${deletingTransaction.number} (${deletingTransaction.entry_type.toUpperCase()})`}
+          isLoading={false}
+        />
       )}
 
     </div>

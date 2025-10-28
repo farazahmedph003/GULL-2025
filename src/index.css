@@ -4,10 +4,10 @@
 /* NERO Account Management System Styles */
 @import './nero/styles/nero.css';
 
-/* Smooth theme transition helper (applied temporarily on <html>) */
+/* Smooth theme transition helper (applied temporarily on <html>) - instant feel */
 .theme-transition,
 .theme-transition * {
-  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, fill 0.2s ease, stroke 0.2s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, fill 0.15s ease, stroke 0.15s ease;
 }
 
 @theme {
@@ -639,7 +639,7 @@ img, svg, video, canvas {
     rgba(124, 58, 237, 0.03),
     transparent
   );
-  transition: left 0.5s;
+  transition: left 0.3s;
 }
 
 .card:hover::before {
@@ -1334,7 +1334,7 @@ img, svg, video, canvas {
     rgba(255, 255, 255, 0.3),
     transparent
   );
-  transition: left 0.5s;
+  transition: left 0.3s;
 }
 
 .card-premium:hover::before {
@@ -1695,7 +1695,7 @@ textarea.input-field {
 }
 
 .animate-slide-in-right {
-  animation: slideInFromRight 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: slideInFromRight 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .animate-slide-in-bottom {
@@ -1711,11 +1711,11 @@ textarea.input-field {
 }
 
 .animate-pulse-scale {
-  animation: pulse-scale 0.6s ease-in-out;
+  animation: pulse-scale 0.3s ease-in-out;
 }
 
 .animate-float {
-  animation: float 3s ease-in-out infinite;
+  animation: float 1.5s ease-in-out infinite;
 }
 
 /* Skeleton Loading */
@@ -1727,7 +1727,7 @@ textarea.input-field {
     #f0f0f0 75%
   );
   background-size: 1000px 100%;
-  animation: shimmer 2s infinite;
+  animation: shimmer 1s infinite;
   border-radius: 0.5rem;
 }
 
@@ -1778,7 +1778,7 @@ textarea.input-field {
   border: 4px solid rgba(61, 184, 143, 0.1);
   border-top-color: #3DB88F;
   border-radius: 50%;
-  animation: spin-smooth 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  animation: spin-smooth 0.5s cubic-bezier(0.5, 0, 0.5, 1) infinite;
 }
 
 .spinner-small {
@@ -1817,7 +1817,7 @@ textarea.input-field {
   height: 12px;
   border-radius: 50%;
   background: #3DB88F;
-  animation: dot-pulse 1.4s infinite ease-in-out;
+  animation: dot-pulse 0.8s infinite ease-in-out;
 }
 
 .dots-loader span:nth-child(2) {
@@ -1931,7 +1931,7 @@ textarea.input-field {
   padding: 16px 24px;
   border-radius: 12px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-  animation: toast-slide-in 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  animation: toast-slide-in 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
   border-left: 4px solid #3DB88F;
   min-width: 300px;
   max-width: 500px;
@@ -2070,7 +2070,7 @@ textarea.input-field {
 }
 
 .modal-content {
-  animation: modal-slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: modal-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform, opacity;
 }
 
@@ -2107,7 +2107,7 @@ textarea.input-field {
   height: 100%;
   background: linear-gradient(90deg, #3DB88F, #5CD4A5);
   border-radius: 999px;
-  transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
 }
@@ -2125,7 +2125,7 @@ textarea.input-field {
     rgba(255, 255, 255, 0.3),
     transparent
   );
-  animation: shimmer 2s infinite;
+  animation: shimmer 1s infinite;
 }
 
 /* ================================
@@ -2210,15 +2210,15 @@ textarea.input-field {
 }
 
 .page-enter {
-  animation: pageEnter 0.4s ease-out;
+  animation: pageEnter 0.3s ease-out;
 }
 
 .slide-up {
-  animation: slideUp 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .bounce-in {
-  animation: bounceIn 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  animation: bounceIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 }
 
 /* Premium Micro-Interactions */
@@ -2237,7 +2237,7 @@ textarea.input-field {
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.5);
   transform: translate(-50%, -50%);
-  transition: width 0.6s, height 0.6s;
+  transition: width 0.3s, height 0.3s;
 }
 
 .click-effect:active::after {
@@ -2302,7 +2302,7 @@ textarea.input-field {
 }
 
 .loading-pulse {
-  animation: loadingPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: loadingPulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 /* Smooth Transitions for All Interactive Elements */
@@ -2635,7 +2635,7 @@ button:active, a:active {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: gradient-shift 15s ease infinite;
+  animation: gradient-shift 8s ease infinite;
 }
 
 /* Mesh Gradient Background */

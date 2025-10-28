@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import type { Transaction } from '../types';
+import { useUserBalance } from '../hooks/useUserBalance';
+import { formatCurrency } from '../utils/helpers';
 
 interface EditTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   transaction: Transaction | null;
   onSave: (transaction: Transaction) => void;
+  userBalance?: number; // Optional: use specific user's balance (for admin editing)
 }
 
 const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
@@ -13,12 +16,17 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   onClose,
   transaction,
   onSave,
+  userBalance,
 }) => {
   const [first, setFirst] = useState('');
   const [second, setSecond] = useState('');
   const [notes, setNotes] = useState('');
-  const [errors, setErrors] = useState<{ first?: string; second?: string }>({});
+  const [errors, setErrors] = useState<{ first?: string; second?: string; balance?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { balance: currentUserBalance } = useUserBalance();
+  
+  // Use provided userBalance for admin editing, otherwise use current user's balance
+  const balance = userBalance !== undefined ? userBalance : currentUserBalance;
 
   useEffect(() => {
     if (transaction) {
@@ -29,7 +37,7 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   }, [transaction]);
 
   const validate = (): boolean => {
-    const newErrors: { first?: string; second?: string } = {};
+    const newErrors: { first?: string; second?: string; balance?: string } = {};
 
     if (!first.trim() && !second.trim()) {
       newErrors.first = 'Enter at least one amount';
@@ -41,6 +49,20 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
     if (second.trim() && isNaN(Number(second))) {
       newErrors.second = 'SECOND must be a valid number';
+    }
+
+    // Balance validation - check if increasing amounts beyond available balance
+    if (transaction) {
+      const oldTotal = transaction.first + transaction.second;
+      const newFirst = first.trim() ? Number(first) : 0;
+      const newSecond = second.trim() ? Number(second) : 0;
+      const newTotal = newFirst + newSecond;
+      const difference = newTotal - oldTotal;
+
+      // If user is increasing the amounts, check if they have enough balance
+      if (difference > 0 && difference > balance) {
+        newErrors.balance = `Insufficient balance. You need ${formatCurrency(difference)} more but only have ${formatCurrency(balance)} available.`;
+      }
     }
 
     setErrors(newErrors);
@@ -117,6 +139,21 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="relative z-10 p-6 space-y-6">
+              {/* Balance Error */}
+              {errors.balance && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4">
+                  <div className="flex items-start space-x-3">
+                    <svg className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-semibold text-red-800 dark:text-red-200 mb-1">Insufficient Balance</h4>
+                      <p className="text-sm text-red-600 dark:text-red-400">{errors.balance}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Number (readonly) */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
@@ -148,7 +185,7 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                     value={first}
                     onChange={(e) => {
                       setFirst(e.target.value);
-                      if (errors.first) setErrors(prev => ({ ...prev, first: undefined }));
+                      if (errors.first || errors.balance) setErrors(prev => ({ ...prev, first: undefined, balance: undefined }));
                     }}
                     placeholder="Enter FIRST amount"
                     className={`w-full px-4 py-3 bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 ${errors.first ? 'border-red-500 focus:ring-red-500' : ''}`}
@@ -181,7 +218,7 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                     value={second}
                     onChange={(e) => {
                       setSecond(e.target.value);
-                      if (errors.second) setErrors(prev => ({ ...prev, second: undefined }));
+                      if (errors.second || errors.balance) setErrors(prev => ({ ...prev, second: undefined, balance: undefined }));
                     }}
                     placeholder="Enter SECOND amount"
                     className={`w-full px-4 py-3 bg-gray-50 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 ${errors.second ? 'border-red-500 focus:ring-red-500' : ''}`}

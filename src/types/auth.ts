@@ -7,6 +7,7 @@ export interface User {
   lastLoginAt: string;
   username?: string | null;
   role?: 'user' | 'admin';
+  isPartner?: boolean; // Partner users get edit/delete permissions
 }
 
 export interface AuthState {

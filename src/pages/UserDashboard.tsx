@@ -18,6 +18,7 @@ import { groupTransactionsByNumber } from '../utils/transactionHelpers';
 import { useSystemSettings } from '../hooks/useSystemSettings';
 import { useUserRealtimeSubscriptions } from '../hooks/useRealtimeSubscriptions';
 import { supabase } from '../lib/supabase';
+import { db } from '../services/database';
 
 type TabType = 'all' | 'open' | 'akra' | 'ring' | 'packet';
 
@@ -28,6 +29,7 @@ const UserDashboard: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
   const { showSuccess, showError } = useNotifications();
   const { user } = useAuth();
 
@@ -59,6 +61,9 @@ const UserDashboard: React.FC = () => {
     refreshTransactions();
     refreshBalance();
     
+    // Trigger UserHistoryPanel refresh
+    setRefreshTrigger(Date.now());
+    
     // Dispatch global event to refresh all balance displays
     window.dispatchEvent(new CustomEvent('user-balance-updated', { 
       detail: { userId: user?.id } 
@@ -73,12 +78,12 @@ const UserDashboard: React.FC = () => {
     silentRefresh();
   }, [transactions.length, silentRefresh]);
 
-  // Auto-refresh balance and transactions every 1 second
+  // Auto-refresh balance and transactions every 5 seconds
   useEffect(() => {
     const autoRefreshInterval = setInterval(() => {
-      console.log('⏰ Auto-refresh triggered (1s)');
+      console.log('⏰ Auto-refresh triggered (5s)');
       silentRefresh();
-    }, 1000); // 1 second for instant updates
+    }, 5000); // 5 seconds for regular updates
 
     return () => {
       clearInterval(autoRefreshInterval);
@@ -200,11 +205,11 @@ const UserDashboard: React.FC = () => {
     console.log('🚀 Initial user status check...');
     checkUserStatus();
 
-    // Then check every 2 seconds
+    // Then check every 5 seconds
     const statusCheckInterval = setInterval(() => {
-      console.log('⏰ Auto-checking user status and settings (2s interval)');
+      console.log('⏰ Auto-checking user status and settings (5s interval)');
       checkUserStatus();
-    }, 2000); // 2 seconds
+    }, 5000); // 5 seconds
 
     return () => {
       console.log('🛑 Cleaning up status check interval');
@@ -284,7 +289,6 @@ const UserDashboard: React.FC = () => {
     <>
       <ProjectHeader
         projectName={project.name}
-        projectDate={formatDate(project.date)}
         showTabs={true}
         tabs={tabs}
         activeTab={activeTab}
@@ -345,6 +349,8 @@ const UserDashboard: React.FC = () => {
                   }
                 }}
                 onExportPDF={handleExportPDF}
+                refreshTrigger={refreshTrigger}
+                isPartner={user?.isPartner || false}
               />
 
               {/* Right Panel - Entry Panel (moved from bottom) */}

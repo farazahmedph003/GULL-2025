@@ -160,12 +160,12 @@ export const showCopyFeedback = (message: string = 'Copied to clipboard!'): void
 
   // Remove after 2 seconds
   setTimeout(() => {
-    notification.style.animation = 'slideOut 0.3s ease';
+    notification.style.animation = 'slideOut 0.2s ease';
     setTimeout(() => {
       document.body.removeChild(notification);
       document.head.removeChild(style);
-    }, 300);
-  }, 2000);
+    }, 200); // Reduced animation duration
+  }, 1500); // Reduced display duration
 };
 
 /**

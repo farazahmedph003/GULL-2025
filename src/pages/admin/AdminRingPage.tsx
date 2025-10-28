@@ -60,7 +60,13 @@ const AdminRingPage: React.FC = () => {
   const { setRefreshCallback } = useAdminRefresh();
   const confirm = useContext(ConfirmationContext);
 
-  const loadEntries = useCallback(async () => {
+  const loadEntries = useCallback(async (force = false) => {
+    // Skip refresh if modal is open (unless forced)
+    if (!force && (editingEntry || deletingEntry)) {
+      console.log('⏸️ Skipping refresh - modal is open');
+      return;
+    }
+
     try {
       // Use adminView=true to apply admin deductions
       const data = await db.getAllEntriesByType('ring', true);
@@ -86,7 +92,7 @@ const AdminRingPage: React.FC = () => {
       console.error('Error loading entries:', error);
       showError('Error', 'Failed to load entries');
     }
-  }, [showError]);
+  }, [showError, editingEntry, deletingEntry]);
 
   // Filter entries by search
   const filteredEntries = useMemo(() => {
@@ -162,7 +168,7 @@ const AdminRingPage: React.FC = () => {
       await showSuccess('Success', 'Entry deleted successfully and balance refunded');
       
       setDeletingEntry(null);
-      loadEntries();
+      loadEntries(true); // Force reload after delete
     } catch (error) {
       console.error('Delete error:', error);
       showError('Error', 'Failed to delete entry');
@@ -184,30 +190,30 @@ const AdminRingPage: React.FC = () => {
     try {
       await db.deleteAllEntriesByType('ring');
       await showSuccess('Success', `All ${stats.totalEntries} Ring entries have been deleted`);
-      loadEntries();
+      loadEntries(true); // Force reload after reset
     } catch (error) {
       console.error('Reset error:', error);
       showError('Error', 'Failed to reset Ring entries');
     }
   };
 
-  const handleUndoDeduction = async (deduction: DeductionRecord) => {
+  const handleDeleteDeduction = async (deduction: DeductionRecord) => {
     if (!confirm) return;
 
     const result = await confirm(
-      `Are you sure you want to UNDO this deduction?\n\nNumber: ${deduction.transactions.number}\nUser: ${deduction.transactions.app_users.username}\nDeducted: F ${deduction.deducted_first}, S ${deduction.deducted_second}\n\nThis will restore the original amounts.`,
-      { type: 'warning', title: '⏮️ Undo Deduction' }
+      `Are you sure you want to DELETE this deduction?\n\nNumber: ${deduction.transactions.number}\nUser: ${deduction.transactions.app_users.username}\nDeducted: F ${deduction.deducted_first}, S ${deduction.deducted_second}\n\nThis will restore the original amounts.`,
+      { type: 'danger', title: '🗑️ Delete Deduction' }
     );
 
     if (!result) return;
 
     try {
       await db.deleteAdminDeduction(deduction.id);
-      await showSuccess('Success', 'Deduction undone successfully. Amounts have been restored.');
-      loadEntries();
+      await showSuccess('Success', 'Deduction deleted successfully. Amounts have been restored.');
+      loadEntries(true); // Force reload after delete
     } catch (error) {
-      console.error('Undo deduction error:', error);
-      showError('Error', 'Failed to undo deduction');
+      console.error('Delete deduction error:', error);
+      showError('Error', 'Failed to delete deduction');
     }
   };
 
@@ -241,7 +247,7 @@ const AdminRingPage: React.FC = () => {
 
       await showSuccess('Success', 'Entry updated successfully');
       setEditingEntry(null);
-      loadEntries();
+      loadEntries(true); // Force reload after edit
     } catch (error) {
       console.error('Edit error:', error);
       showError('Error', 'Failed to update entry');
@@ -473,8 +479,68 @@ const AdminRingPage: React.FC = () => {
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {filteredEntries.map((entry) => (
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {/* Deduction Records - Show at TOP (most recent first) */}
+                {deductions
+                  .filter(d => !searchNumber.trim() || d.transactions.number.toLowerCase().includes(searchNumber.trim().toLowerCase()))
+                  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                  .map((deduction) => (
+                  <tr key={`deduction-${deduction.id}`} className="bg-orange-50 dark:bg-orange-900/10 hover:bg-orange-100 dark:hover:bg-orange-900/20 transition-colors border-l-4 border-orange-500">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
+                          {deduction.transactions.app_users.username}
+                        </span>
+                        <span className="px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs rounded">
+                          DEDUCTION
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="font-semibold text-gray-900 dark:text-white">
+                        {deduction.transactions.number}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <span className="text-red-600 dark:text-red-400 font-semibold">
+                        -{deduction.deducted_first.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <span className="text-red-600 dark:text-red-400 font-semibold">
+                        -{deduction.deducted_second.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <span className="text-red-600 dark:text-red-400 font-bold">
+                        -{(deduction.deducted_first + deduction.deducted_second).toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                      <div className="flex flex-col">
+                        <span>{new Date(deduction.created_at).toLocaleString()}</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-500">
+                          by {deduction.admin.username}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <button
+                        onClick={() => handleDeleteDeduction(deduction)}
+                        className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-sm font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors flex items-center gap-1"
+                        title="Delete Deduction"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                
+                {/* Regular Entries */}
+                {filteredEntries.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((entry) => (
                     <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
@@ -527,64 +593,6 @@ const AdminRingPage: React.FC = () => {
                             </svg>
                           </button>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-
-                  {/* Deduction Records */}
-                  {deductions
-                    .filter(d => !searchNumber.trim() || d.transactions.number.toLowerCase().includes(searchNumber.trim().toLowerCase()))
-                    .map((deduction) => (
-                    <tr key={`deduction-${deduction.id}`} className="bg-orange-50 dark:bg-orange-900/10 hover:bg-orange-100 dark:hover:bg-orange-900/20 transition-colors border-l-4 border-orange-500">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
-                            {deduction.transactions.app_users.username}
-                          </span>
-                          <span className="px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs rounded">
-                            DEDUCTION
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="font-semibold text-gray-900 dark:text-white">
-                          {deduction.transactions.number}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right">
-                        <span className="text-red-600 dark:text-red-400 font-semibold">
-                          -{deduction.deducted_first.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right">
-                        <span className="text-red-600 dark:text-red-400 font-semibold">
-                          -{deduction.deducted_second.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right">
-                        <span className="text-red-600 dark:text-red-400 font-bold">
-                          -{(deduction.deducted_first + deduction.deducted_second).toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                        <div className="flex flex-col">
-                          <span>{new Date(deduction.created_at).toLocaleString()}</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-500">
-                            by {deduction.admin.username}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <button
-                          onClick={() => handleUndoDeduction(deduction)}
-                          className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-sm font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors flex items-center gap-1"
-                          title="Undo Deduction"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                          </svg>
-                          Undo
-                        </button>
                       </td>
                     </tr>
                   ))}

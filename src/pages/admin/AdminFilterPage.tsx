@@ -643,30 +643,6 @@ const AdminFilterPage: React.FC = () => {
                   Reset
                 </button>
 
-                <button
-                  onClick={handleUndo}
-                  disabled={historyIndex <= 0}
-                  className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
-                  title="Undo (Ctrl+Z)"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                  </svg>
-                  Undo
-                </button>
-                
-                <button
-                  onClick={handleRedo}
-                  disabled={historyIndex >= history.length - 1}
-                  className="px-4 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-lg font-semibold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
-                  title="Redo (Ctrl+Y)"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />
-                  </svg>
-                  Redo
-                </button>
-
                 {calculatedResults.length > 0 && (
                   <button
                     onClick={handleSaveFilterClick}

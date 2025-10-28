@@ -18,7 +18,6 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClose, onSu
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
   const [balance, setBalance] = useState('0');
   const [isPartner, setIsPartner] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -30,11 +29,12 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClose, onSu
     setLoading(true);
 
     try {
+      // Auto-generate email from username
       await onSubmit({
         username,
         password,
         fullName,
-        email,
+        email: `${username}@gmail.com`,
         balance: parseFloat(balance) || 0,
         isPartner,
       });
@@ -43,7 +43,6 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClose, onSu
       setUsername('');
       setPassword('');
       setFullName('');
-      setEmail('');
       setBalance('0');
       setIsPartner(false);
       onClose();
@@ -108,20 +107,6 @@ const CreateUserModal: React.FC<CreateUserModalProps> = ({ isOpen, onClose, onSu
               disabled={loading}
               autoCapitalize="none"
               autoCorrect="off"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Email <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              required
-              disabled={loading}
             />
           </div>
 

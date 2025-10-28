@@ -2100,7 +2100,7 @@ export class DatabaseService {
       const { error: balanceHistoryError } = await client
         .from('balance_history')
         .delete()
-        .eq('user_id', userId);
+        .eq('app_user_id', userId);
 
       if (balanceHistoryError) {
         console.warn('Error deleting balance history:', balanceHistoryError);

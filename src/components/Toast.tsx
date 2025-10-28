@@ -29,7 +29,7 @@ const Toast: React.FC<ToastProps> = ({
     setIsClosing(true);
     setTimeout(() => {
       onClose();
-    }, 300); // Match animation duration
+    }, 200); // Reduced animation duration
   };
 
   const icons = {

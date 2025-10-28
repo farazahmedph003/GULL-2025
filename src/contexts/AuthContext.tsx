@@ -67,7 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             try {
               const { data: appUser, error: fetchError } = await supabase
                 .from('app_users')
-                .select('id, username, full_name, role, is_active, email')
+                .select('id, username, full_name, role, is_active, is_partner, email')
                 .eq('id', parsedUser.id)
                 .single();
 
@@ -79,6 +79,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   displayName: appUser.full_name,
                   username: appUser.username,
                   role: appUser.role,
+                  isPartner: appUser.is_partner || false,
                   isAnonymous: false,
                   createdAt: parsedUser.createdAt || new Date().toISOString(),
                   lastLoginAt: new Date().toISOString(),
@@ -225,7 +226,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Try to find user by username first, then by email
         let { data, error: fetchError } = await supabase
           .from('app_users')
-          .select('id, username, full_name, role, password_hash, is_active, email')
+          .select('id, username, full_name, role, password_hash, is_active, is_partner, email')
           .eq('username', credentials.username)
           .single();
 
@@ -233,7 +234,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (fetchError && credentials.username?.includes('@')) {
           const { data: emailData, error: emailError } = await supabase
             .from('app_users')
-            .select('id, username, full_name, role, password_hash, is_active, email')
+            .select('id, username, full_name, role, password_hash, is_active, is_partner, email')
             .eq('email', credentials.username)
             .single();
           
@@ -277,6 +278,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           displayName: data.full_name,
           username: data.username,
           role: data.role,
+          isPartner: data.is_partner || false,
           isAnonymous: false,
           createdAt: new Date().toISOString(),
           lastLoginAt: new Date().toISOString(),

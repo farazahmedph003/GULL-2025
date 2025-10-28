@@ -259,7 +259,7 @@ const OpenPage: React.FC = () => {
       refresh();
       // Refresh the modal by closing and reopening
       setModalNumber(null);
-      setTimeout(() => setModalNumber(transaction.number), 100);
+      setTimeout(() => setModalNumber(transaction.number), 50); // Reduced for instant feel
     }
   };
 

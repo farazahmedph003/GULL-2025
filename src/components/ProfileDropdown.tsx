@@ -61,7 +61,7 @@ const ProfileDropdown: React.FC = () => {
         navigate('/welcome', { state: { switchTo: login.email } });
         setTimeout(() => {
           alert(`Please enter your password to sign in as ${login.email}`);
-        }, 300);
+        }, 100); // Reduced for instant feel
       }
     } else {
       // No saved credentials, ask for password
@@ -69,7 +69,7 @@ const ProfileDropdown: React.FC = () => {
       navigate('/welcome', { state: { switchTo: login.email } });
       setTimeout(() => {
         alert(`Please enter your password to sign in as ${login.email}`);
-      }, 300);
+      }, 100); // Reduced for instant feel
     }
   };
 

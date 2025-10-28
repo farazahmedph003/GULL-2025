@@ -29,13 +29,13 @@ const AdminAdvancedFilterPage: React.FC = () => {
   // Load entries when type changes
   useEffect(() => {
     // Register refresh callback for the refresh button
-    setRefreshCallback(loadEntries);
+    setRefreshCallback(() => loadEntries(false, true)); // Force refresh when manual
     
     loadEntries(true); // Save initial state to history
 
     // Auto-refresh every 5 seconds
     const autoRefreshInterval = setInterval(() => {
-      loadEntries(false);
+      loadEntries(false, false); // Don't force, respect processing state
     }, 5000);
 
     // Set up real-time subscription for auto-updates
@@ -51,7 +51,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
           },
           (payload: any) => {
             console.log(`🔴 Real-time update received for ${selectedType} (advanced filter):`, payload);
-            loadEntries(false);
+            loadEntries(false, false); // Don't force, respect processing state
           }
         )
         .subscribe((status: string) => {
@@ -71,9 +71,15 @@ const AdminAdvancedFilterPage: React.FC = () => {
     return () => {
       clearInterval(autoRefreshInterval);
     };
-  }, [selectedType]); // Only re-run when selectedType changes
+  }, [selectedType, processing]); // Add processing as dependency
 
-  const loadEntries = async (saveHistory = false) => {
+  const loadEntries = async (saveHistory = false, force = false) => {
+    // Skip refresh if processing (unless forced)
+    if (!force && processing) {
+      console.log('⏸️ Skipping refresh - processing deduction');
+      return;
+    }
+
     try {
       // Use adminView=true to see admin-adjusted amounts
       const data = await db.getAllEntriesByType(selectedType, true);
@@ -144,7 +150,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
         setHistoryIndex(historyIndex - 1);
         
         // Reload entries from database to ensure we have the latest state
-        await loadEntries(false); // Don't save to history
+        await loadEntries(false, true); // Force reload, don't save to history
         
         showSuccess('Undo', 'Reverted to previous state. Refresh dashboards to see changes.');
       } catch (error) {
@@ -179,7 +185,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
         setHistoryIndex(historyIndex + 1);
         
         // Reload entries from database to ensure we have the latest state
-        await loadEntries(false); // Don't save to history
+        await loadEntries(false, true); // Force reload, don't save to history
         
         showSuccess('Redo', 'Restored to next state. Refresh dashboards to see changes.');
       } catch (error) {
@@ -482,7 +488,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
       }
 
       showSuccess('Success', `Created ${processedEntries.size} admin deductions for FIRST amounts (admin-only view).`);
-      await loadEntries(true); // Save to history after reload
+      await loadEntries(true, true); // Force reload and save to history
       setFirstNumbers('');
     } catch (error) {
       console.error('❌ Deduct FIRST error:', error);
@@ -599,7 +605,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
       }
 
       showSuccess('Success', `Created ${processedEntries.size} admin deductions for SECOND amounts (admin-only view).`);
-      await loadEntries(true); // Save to history after reload
+      await loadEntries(true, true); // Force reload and save to history
       setSecondNumbers('');
     } catch (error) {
       console.error('❌ Deduct SECOND error:', error);
@@ -624,35 +630,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
 
         {/* Entry Type Tabs */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white">Select Data Source</h2>
-            
-            {/* Undo/Redo Buttons */}
-            <div className="flex gap-2">
-              <button
-                onClick={handleUndo}
-                disabled={historyIndex <= 0}
-                className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
-                title="Undo (Ctrl+Z)"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                </svg>
-                Undo
-              </button>
-              <button
-                onClick={handleRedo}
-                disabled={historyIndex >= history.length - 1}
-                className="px-4 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-lg font-semibold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
-                title="Redo (Ctrl+Y)"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />
-                </svg>
-                Redo
-              </button>
-            </div>
-          </div>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Select Data Source</h2>
           
           <div className="flex flex-wrap gap-3">
             {(['open', 'akra', 'ring', 'packet'] as EntryType[]).map((type) => (

@@ -104,7 +104,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const newTheme: Theme = theme === 'light' ? 'dark' : 'light';
     const root = window.document.documentElement;
     root.classList.add('theme-transition');
-    setTimeout(() => root.classList.remove('theme-transition'), 250);
+    setTimeout(() => root.classList.remove('theme-transition'), 150); // Reduced for instant feel
     setTheme(newTheme);
     applyTheme(newTheme);
     localStorage.setItem('gull-theme', newTheme);

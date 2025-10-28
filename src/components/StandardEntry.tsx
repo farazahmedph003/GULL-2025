@@ -268,7 +268,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
       // Focus back to number input for next entry (don't close panel)
       setTimeout(() => {
         numbersInputRef.current?.focus();
-      }, 100);
+      }, 50); // Reduced for instant feel
 
       // Call onSuccess to trigger silent refresh (form stays open)
       _onSuccess();
@@ -301,10 +301,10 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         </div>
       )}
 
-      {/* Horizontal Layout Form - No Labels */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        {/* Left Side - Large Number Textarea */}
-        <div className="flex-1">
+      {/* Vertical Stack Layout - Numbers, First, Second, Button */}
+      <div className="flex flex-col gap-4">
+        {/* Numbers Input - Full Width */}
+        <div className="w-full">
           <textarea
             ref={numbersInputRef as any}
             value={numbers}
@@ -313,18 +313,17 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
               if (errors.numbers) setErrors(prev => ({ ...prev, numbers: undefined }));
             }}
             placeholder="e.g., 0 1 2 (open) OR 00 01 02 (akra) OR 000 001 (ring) OR 0000 0001 (packet)"
-            className={`w-full h-full min-h-[200px] px-6 py-6 text-xl font-medium text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700 border-2 rounded-3xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none ${errors.numbers ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
+            className={`w-full min-h-[140px] px-6 py-4 text-lg font-medium text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 bg-white dark:bg-gray-700 border-2 rounded-3xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none ${errors.numbers ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
             autoComplete="off"
-            rows={8}
+            rows={5}
           />
           {errors.numbers && (
             <p className="mt-2 text-sm text-red-500">{errors.numbers}</p>
           )}
         </div>
 
-        {/* Right Side - Stacked Inputs and Button */}
-        <div className="flex flex-col gap-3 sm:w-64">
-          {/* FIRST Amount */}
+        {/* FIRST Amount - Full Width */}
+        <div className="w-full">
           <input
             type="number"
             value={first}
@@ -338,10 +337,12 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
             inputMode="decimal"
           />
           {errors.first && (
-            <p className="text-xs text-red-500">{errors.first}</p>
+            <p className="mt-2 text-sm text-red-500">{errors.first}</p>
           )}
+        </div>
 
-          {/* SECOND Amount */}
+        {/* SECOND Amount - Full Width */}
+        <div className="w-full">
           <input
             type="number"
             value={second}
@@ -355,21 +356,21 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
             inputMode="decimal"
           />
           {errors.second && (
-            <p className="text-xs text-red-500">{errors.second}</p>
+            <p className="mt-2 text-sm text-red-500">{errors.second}</p>
           )}
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full px-5 py-4 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-lg font-semibold rounded-3xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
-          >
-            {isSubmitting && (
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-            )}
-            {isSubmitting ? 'Adding Entry...' : 'Add Entry'}
-          </button>
         </div>
+
+        {/* Submit Button - Full Width */}
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="w-full px-5 py-4 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-lg font-semibold rounded-3xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
+        >
+          {isSubmitting && (
+            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+          )}
+          {isSubmitting ? 'Adding Entry...' : 'Add Entry'}
+        </button>
       </div>
     </form>
   );

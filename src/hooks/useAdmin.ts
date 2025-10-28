@@ -439,7 +439,7 @@ export const useAdminData = () => {
             // Refresh admin data when projects change
             setTimeout(() => {
               loadAdminData();
-            }, 500); // Small delay to ensure database consistency
+            }, 200); // Reduced for instant feel
           }
         )
         .subscribe((status: any) => {

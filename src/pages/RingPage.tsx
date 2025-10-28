@@ -305,7 +305,7 @@ const RingPage: React.FC = () => {
       
       refresh();
       setModalNumber(null);
-      setTimeout(() => setModalNumber(transaction.number), 100);
+      setTimeout(() => setModalNumber(transaction.number), 50); // Reduced for instant feel
     }
   };
 

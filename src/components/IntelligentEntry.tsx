@@ -130,13 +130,12 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     setErrors([]);
     setParsedEntries([]);
 
-    setTimeout(() => {
-      const result = parseIntelligentInput(inputText);
-      setParsedEntries(result.entries);
-      setErrors(result.errors);
-      setShowPreview(true);
-      setIsProcessing(false);
-    }, 300);
+    // Parse immediately without delay for instant feedback
+    const result = parseIntelligentInput(inputText);
+    setParsedEntries(result.entries);
+    setErrors(result.errors);
+    setShowPreview(true);
+    setIsProcessing(false);
   };
 
   const handleSubmit = async () => {
@@ -199,7 +198,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       setTimeout(() => {
         const textarea = document.querySelector('textarea');
         if (textarea) textarea.focus();
-      }, 100);
+      }, 50); // Reduced for instant feel
 
       onSuccess();
     } catch (error) {

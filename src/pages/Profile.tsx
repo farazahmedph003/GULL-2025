@@ -34,7 +34,7 @@ const Profile: React.FC = () => {
       await updateProfile(displayName.trim());
       setIsEditing(false);
       setUpdateSuccess(true);
-      setTimeout(() => setUpdateSuccess(false), 3000);
+      setTimeout(() => setUpdateSuccess(false), 2000); // Reduced for faster feedback
     } catch (err) {
       setUpdateError(err instanceof Error ? err.message : 'Update failed');
     }

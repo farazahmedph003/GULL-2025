@@ -65,14 +65,14 @@ const AdminSettings: React.FC = () => {
       localStorage.setItem('admin-system-settings', JSON.stringify(systemSettings));
       
       // Simulate save delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 300)); // Reduced for instant feel
       
       setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 3000);
+      setTimeout(() => setSaveStatus('idle'), 2000); // Reduced duration
     } catch (error) {
       console.error('Failed to save settings:', error);
       setSaveStatus('error');
-      setTimeout(() => setSaveStatus('idle'), 3000);
+      setTimeout(() => setSaveStatus('idle'), 2000); // Reduced duration
     } finally {
       setLoading(false);
     }
