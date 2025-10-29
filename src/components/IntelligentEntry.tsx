@@ -124,43 +124,55 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       const lineNum = i + 1;
       const normalized = line.trim().replace(/\s+/g, ' ');
       
-      // Extract all numbers from the line
-      const numberMatches = normalized.match(/\d+/g) || [];
-      const validNumbers: string[] = [];
-      
-      // Filter to only valid game numbers (1-4 digits)
-      for (const num of numberMatches) {
-        if (num.length >= 1 && num.length <= 4) {
-          validNumbers.push(num);
-        }
-      }
-      
-      // Try to find amount pattern on this line
+      // FIRST: Check if the entire line is an amount pattern (before extracting numbers)
+      // This handles cases like "50by50", "10/20" where the pattern contains digits
       const tokens = normalized.split(/\s+/);
       let amountPattern: { first: number; second: number } | null = null;
+      let isOnlyPattern = false;
       
-      // Check single tokens
-      for (const token of tokens) {
-        // Skip if it's a pure number (could be a game number)
-        if (/^\d+$/.test(token) && token.length <= 4) {
-          continue;
-        }
-        
-        const parsed = parseAmountPattern(token);
-        if (parsed) {
-          amountPattern = parsed;
-          break;
-        }
-      }
-      
-      // If no pattern in single tokens, try combining consecutive tokens
-      if (!amountPattern) {
-        for (let j = 0; j < tokens.length - 1; j++) {
-          const combined = tokens[j] + ' ' + tokens[j + 1];
-          const parsed = parseAmountPattern(combined);
+      // Check if the entire line (or first token) is a pattern
+      const wholeLineParsed = parseAmountPattern(normalized);
+      if (wholeLineParsed) {
+        amountPattern = wholeLineParsed;
+        isOnlyPattern = true;
+      } else {
+        // Check single tokens
+        for (const token of tokens) {
+          // Skip if it's a pure number (could be a game number)
+          if (/^\d+$/.test(token) && token.length <= 4) {
+            continue;
+          }
+          
+          const parsed = parseAmountPattern(token);
           if (parsed) {
             amountPattern = parsed;
             break;
+          }
+        }
+        
+        // If no pattern in single tokens, try combining consecutive tokens
+        if (!amountPattern) {
+          for (let j = 0; j < tokens.length - 1; j++) {
+            const combined = tokens[j] + ' ' + tokens[j + 1];
+            const parsed = parseAmountPattern(combined);
+            if (parsed) {
+              amountPattern = parsed;
+              break;
+            }
+          }
+        }
+      }
+      
+      // SECOND: Extract numbers (only if line is not purely a pattern)
+      const numberMatches = normalized.match(/\d+/g) || [];
+      const validNumbers: string[] = [];
+      
+      // Only extract numbers if this line is not purely an amount pattern
+      if (!isOnlyPattern) {
+        // Filter to only valid game numbers (1-4 digits)
+        for (const num of numberMatches) {
+          if (num.length >= 1 && num.length <= 4) {
+            validNumbers.push(num);
           }
         }
       }
