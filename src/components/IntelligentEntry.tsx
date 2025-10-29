@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import type { EntryType } from '../types';
 import { isValidNumber, formatCurrency } from '../utils/helpers';
 import { useUserBalance } from '../hooks/useUserBalance';
@@ -6,6 +6,7 @@ import { useTransactions } from '../hooks/useTransactions';
 import { useAuth } from '../contexts/AuthContext';
 import { isAdminEmail } from '../config/admin';
 import { useNotifications } from '../contexts/NotificationContext';
+import { createWorker } from 'tesseract.js';
 
 interface IntelligentEntryProps {
   projectId: string;
@@ -37,6 +38,8 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Helper function to parse amount patterns
   const parseAmountPattern = (text: string): { first: number; second: number } | null => {
@@ -347,10 +350,10 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     setParsedEntries([]);
 
     // Parse immediately without delay for instant feedback
-    const result = parseIntelligentInput(inputText);
-    setParsedEntries(result.entries);
-    setErrors(result.errors);
-    setShowPreview(true);
+      const result = parseIntelligentInput(inputText);
+      setParsedEntries(result.entries);
+      setErrors(result.errors);
+      setShowPreview(true);
   };
 
   const handleSubmit = async () => {
@@ -528,9 +531,9 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
                 className="bg-white dark:bg-gray-800 rounded-lg p-3 flex justify-between items-center border border-gray-200 dark:border-gray-600"
               >
                 <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold text-gray-900 dark:text-gray-100 text-sm">
-                    {entry.number}
-                  </span>
+                <span className="font-mono font-bold text-gray-900 dark:text-gray-100 text-sm">
+                  {entry.number}
+                </span>
                   <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded uppercase font-semibold">
                     {entry.entryType}
                   </span>
