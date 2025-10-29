@@ -17,6 +17,7 @@ interface ParsedEntry {
   number: string;
   first: number;
   second: number;
+  entryType: EntryType; // Auto-detected from number length
 }
 
 const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
@@ -37,10 +38,76 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
   const [showPreview, setShowPreview] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Helper function to parse amount patterns
+  const parseAmountPattern = (text: string): { first: number; second: number } | null => {
+    const cleanText = text.trim();
+    
+    // Check for nil/n patterns: N+200, n+200, NIL+200, nil+200, 300+N, 300+nil
+    const nilPattern = /^(n|nil)$/i;
+    const nilPlusNumber = /^(n|nil)\+(\d+(?:\.\d+)?)$/i;
+    const numberPlusNil = /^(\d+(?:\.\d+)?)\+(n|nil|ff)$/i;
+    
+    if (nilPlusNumber.test(cleanText)) {
+      const match = cleanText.match(nilPlusNumber);
+      return { first: 0, second: Number(match![2]) };
+    }
+    
+    if (numberPlusNil.test(cleanText)) {
+      const match = cleanText.match(numberPlusNil);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    // Check for ff/ss patterns: ff10, FF10, ss20, SS20
+    const ffPattern = /^ff(\d+(?:\.\d+)?)$/i;
+    const ssPattern = /^ss(\d+(?:\.\d+)?)$/i;
+    
+    if (ffPattern.test(cleanText)) {
+      const match = cleanText.match(ffPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (ssPattern.test(cleanText)) {
+      const match = cleanText.match(ssPattern);
+      return { first: 0, second: Number(match![1]) };
+    }
+    
+    // Check for f/s patterns: 10f 20s, 10F 20S
+    const fsPattern = /^(\d+(?:\.\d+)?)[fF]\s+(\d+(?:\.\d+)?)[sS]$/;
+    if (fsPattern.test(cleanText)) {
+      const match = cleanText.match(fsPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    // Check for / pattern: 10/20
+    const slashPattern = /^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/;
+    if (slashPattern.test(cleanText)) {
+      const match = cleanText.match(slashPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    // Check for by pattern: 10by20, 10BY20
+    const byPattern = /^(\d+(?:\.\d+)?)by(\d+(?:\.\d+)?)$/i;
+    if (byPattern.test(cleanText)) {
+      const match = cleanText.match(byPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    return null;
+  };
+
   const parseIntelligentInput = (text: string): { entries: ParsedEntry[]; errors: string[] } => {
     const entries: ParsedEntry[] = [];
     const parseErrors: string[] = [];
     const lines = text.split('\n').filter(line => line.trim());
+
+    // Helper function to detect entry type from number length
+    const detectEntryType = (num: string): EntryType => {
+      const len = num.length;
+      if (len === 1) return 'open';
+      if (len === 2) return 'akra';
+      if (len === 3) return 'ring';
+      return 'packet';
+    };
 
     // Helper function to pad numbers to correct length based on entry type
     const padNumber = (num: string, type: EntryType): string => {
@@ -48,72 +115,84 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return num.padStart(lengths[type], '0');
     };
 
-    // Get the digit pattern based on entry type
-    const getDigitPattern = () => {
-      switch (entryType) {
-        case 'open':
-          return '\\d{1}';
-        case 'akra':
-          return '\\d{1,2}'; // Allow 1-2 digits, we'll pad later
-        case 'ring':
-          return '\\d{1,3}'; // Allow 1-3 digits, we'll pad later
-        case 'packet':
-          return '\\d{1,4}'; // Allow 1-4 digits, we'll pad later
-        default:
-          return '\\d{2,3}';
-      }
-    };
-
-    const digitPattern = getDigitPattern(); void digitPattern;
-
     lines.forEach((line, index) => {
       const lineNum = index + 1;
       
-      // Try multiple patterns:
-      // Pattern 1: "01 100 200" or "001 100 200" (number first second)
-      // Pattern 2: "01:100:200" or "001-100-200" (with separators)
-      // Pattern 3: "01 F:100 S:200" (with labels)
-      // Pattern 4: "01 first:100 second:200"
-      
-      // Remove extra spaces and normalize
+      // Normalize whitespace (trim, collapse multiple spaces)
       const normalized = line.trim().replace(/\s+/g, ' ');
       
-      // Try pattern with separators (: or -)
-      const separatorRegex = new RegExp(`^(\\d{1,4})[\\s:-]+(\\d+(?:\\.\\d+)?)[\\s:-]+(\\d+(?:\\.\\d+)?)$`);
-      let match = normalized.match(separatorRegex);
+      // Extract all numbers from the line (split by space, +, comma, or any non-digit)
+      const numberMatches = normalized.match(/\d+/g) || [];
+      const numbers: string[] = [];
       
-      if (!match) {
-        // Try pattern with labels
-        const labelRegex = new RegExp(`^(\\d{1,4})\\s+(?:F|first):?(\\d+(?:\\.\\d+)?)\\s+(?:S|second):?(\\d+(?:\\.\\d+)?)$`, 'i');
-        match = normalized.match(labelRegex);
-      }
-      
-      if (!match) {
-        // Try simple space-separated pattern
-        const parts = normalized.split(/\s+/);
-        const numberRegex = new RegExp(`^\\d{1,4}$`); // More flexible pattern
-        if (parts.length === 3 && numberRegex.test(parts[0]) && !isNaN(Number(parts[1])) && !isNaN(Number(parts[2]))) {
-          match = [normalized, parts[0], parts[1], parts[2]];
+      // Filter to only valid game numbers (1-4 digits)
+      for (const num of numberMatches) {
+        if (num.length >= 1 && num.length <= 4) {
+          numbers.push(num);
         }
       }
-
-      if (match) {
-        const [, number, first, second] = match;
-        
-        // Pad the number to the correct format for the entry type
-        const paddedNumber = padNumber(number, entryType);
-        
-        if (!isValidNumber(paddedNumber, entryType)) {
-          parseErrors.push(`Line ${lineNum}: Invalid number "${number}" for ${entryType} type`);
-        } else {
-          entries.push({
-            number: paddedNumber,
-            first: Number(first),
-            second: Number(second),
-          });
+      
+      if (numbers.length === 0) {
+        parseErrors.push(`Line ${lineNum}: No valid numbers found in "${line}"`);
+        return;
+      }
+      
+      // Find amount pattern in the line
+      // Get all tokens that are not pure numbers
+      const tokens = normalized.split(/\s+/);
+      let amountPattern: { first: number; second: number } | null = null;
+      let foundPattern = false;
+      
+      for (const token of tokens) {
+        // Skip if it's a pure number (could be a game number)
+        if (/^\d+$/.test(token) && token.length <= 4) {
+          continue;
         }
-      } else {
-        parseErrors.push(`Line ${lineNum}: Could not parse "${line}"`);
+        
+        // Try to parse as amount pattern
+        const parsed = parseAmountPattern(token);
+        if (parsed) {
+          amountPattern = parsed;
+          foundPattern = true;
+          break; // Use first valid pattern found
+        }
+      }
+      
+      // If no pattern found in single tokens, try combining tokens
+      if (!foundPattern) {
+        // Try combinations of consecutive tokens
+        for (let i = 0; i < tokens.length - 1; i++) {
+          const combined = tokens[i] + ' ' + tokens[i + 1];
+          const parsed = parseAmountPattern(combined);
+          if (parsed) {
+            amountPattern = parsed;
+            foundPattern = true;
+            break;
+          }
+        }
+      }
+      
+      if (!amountPattern) {
+        parseErrors.push(`Line ${lineNum}: No amount pattern detected in "${line}"`);
+        return;
+      }
+      
+      // Create entries for each number with the same amounts
+      for (const num of numbers) {
+        const detectedType = detectEntryType(num);
+        const paddedNumber = padNumber(num, detectedType);
+        
+        if (!isValidNumber(paddedNumber, detectedType)) {
+          parseErrors.push(`Line ${lineNum}: Invalid number "${num}" for ${detectedType} type`);
+          continue;
+        }
+        
+        entries.push({
+          number: paddedNumber,
+          first: amountPattern.first,
+          second: amountPattern.second,
+          entryType: detectedType,
+        });
       }
     });
 
@@ -163,7 +242,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       const transactionsToAdd = parsedEntries.map(entry => ({
         projectId,
         number: entry.number,
-        entryType,
+        entryType: entry.entryType, // Use auto-detected type
         first: entry.first,
         second: entry.second,
         createdAt: new Date().toISOString(),
@@ -189,7 +268,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       // Success notification
       await showSuccess(
         'Entries Added Successfully',
-        `Added ${successCount} ${entryType} ${successCount === 1 ? 'entry' : 'entries'} for ${formatCurrency(totalCost)}`,
+        `Added ${successCount} ${successCount === 1 ? 'entry' : 'entries'} for ${formatCurrency(totalCost)}`,
         { duration: 2000 }
       );
 
@@ -217,9 +296,14 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       {/* Instructions */}
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-xl p-3">
         <div className="text-sm text-blue-800 dark:text-blue-400">
-          <span className="font-semibold">Format:</span> Number FIRST SECOND
-          <div className="mt-2 font-mono bg-white dark:bg-gray-800 px-3 py-2 rounded-lg text-sm border">
-            {entryType === 'akra' ? '01 100 200' : entryType === 'ring' ? '001 100 200' : entryType === 'open' ? '1 100 200' : '0001 100 200'}
+          <span className="font-semibold">Flexible Format Examples:</span>
+          <div className="mt-2 space-y-1">
+            <div className="font-mono bg-white dark:bg-gray-800 px-3 py-1.5 rounded text-xs border">
+              <span className="text-gray-500">Numbers + Amounts:</span> 68 N+200, 68 66 88 ff100, 68+66+88 10/20
+            </div>
+            <div className="font-mono bg-white dark:bg-gray-800 px-3 py-1.5 rounded text-xs border">
+              <span className="text-gray-500">Amount Formats:</span> N+200, 300+N, ff10, ss20, 10f 20s, 10/20, 10by20
+            </div>
           </div>
         </div>
       </div>
@@ -232,7 +316,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         <textarea
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder={`Paste data here...\n${entryType === 'akra' ? '01 100 200\n23 150 250' : entryType === 'ring' ? '001 100 200\n234 150 250' : entryType === 'open' ? '1 100 200\n2 150 250' : '0001 100 200\n2345 150 250'}`}
+          placeholder={`Paste data here...\n68 N+200\n66 88 ff100\n68+66 10/20\n100 200+ff`}
           className="w-full px-4 py-3 text-base border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono resize-none transition-all duration-200"
           rows={4}
         />
@@ -318,9 +402,14 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
                 key={idx}
                 className="bg-white dark:bg-gray-800 rounded-lg p-3 flex justify-between items-center border border-gray-200 dark:border-gray-600"
               >
-                <span className="font-mono font-bold text-gray-900 dark:text-gray-100 text-sm">
-                  {entry.number}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold text-gray-900 dark:text-gray-100 text-sm">
+                    {entry.number}
+                  </span>
+                  <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded uppercase font-semibold">
+                    {entry.entryType}
+                  </span>
+                </div>
                 <span className="text-gray-600 dark:text-gray-400 text-sm">
                   F:{entry.first} S:{entry.second}
                 </span>
