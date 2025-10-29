@@ -434,19 +434,107 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     }
   };
 
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      await showError('Invalid File', 'Please upload an image file (JPG, PNG, etc.)');
+      return;
+    }
+
+    setIsProcessingImage(true);
+    
+    try {
+      // Create Tesseract worker
+      const worker = await createWorker('eng');
+      
+      // Perform OCR
+      const { data: { text } } = await worker.recognize(file);
+      
+      // Terminate worker
+      await worker.terminate();
+      
+      // Set extracted text to input
+      setInputText(text);
+      
+      await showSuccess(
+        'Image Processed',
+        'Text extracted successfully! Review and click "Process Data".',
+        { duration: 3000 }
+      );
+      
+      // Focus textarea
+      setTimeout(() => {
+        const textarea = document.querySelector('textarea');
+        if (textarea) textarea.focus();
+      }, 100);
+      
+    } catch (error) {
+      console.error('OCR Error:', error);
+      await showError(
+        'Processing Failed',
+        'Could not extract text from image. Please try again or enter manually.',
+        { duration: 5000 }
+      );
+    } finally {
+      setIsProcessingImage(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   return (
     <div className="space-y-4">
-      {/* Input Area */}
+      {/* Input Area with Image Upload */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Paste your data here
-        </label>
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Paste your data here
+          </label>
+          {/* Image Upload Button */}
+          <div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isProcessingImage}
+              className="px-3 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+              title="Upload image to extract text"
+            >
+              {isProcessingImage ? (
+                <>
+                  <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>Processing...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span>Upload Image</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
         <textarea
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder={`Paste data here...`}
+          placeholder={`Paste data here or upload an image...`}
           className="w-full px-6 py-5 text-xl border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono resize-none transition-all duration-200"
           rows={15}
+          disabled={isProcessingImage}
         />
         <div className="flex items-center justify-between mt-3">
           <p className="text-sm text-gray-600 dark:text-gray-400">
