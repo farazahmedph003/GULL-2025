@@ -236,17 +236,13 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         }
       }
       
-      // CASE 1: Line has both numbers AND amount pattern (horizontal format)
+      // CASE 1: Line has both numbers AND amount pattern (horizontal format + vertical grouping)
       if (validNumbers.length > 0 && amountPattern) {
-        // Process any accumulated vertical group first
-        if (currentNumberGroup.length > 0) {
-          parseErrors.push(`Line ${currentNumberLineNums.join(',')}: Numbers without amount pattern: ${currentNumberGroup.join(', ')}`);
-          currentNumberGroup = [];
-          currentNumberLineNums = [];
-        }
+        // Combine accumulated numbers from previous lines with current line's numbers
+        const allNumbers = [...currentNumberGroup, ...validNumbers];
         
-        // Process this line's numbers with its pattern
-        for (const num of validNumbers) {
+        // Apply pattern to ALL numbers (accumulated + current line)
+        for (const num of allNumbers) {
           const detectedType = detectEntryType(num);
           const paddedNumber = padNumber(num, detectedType);
           
@@ -262,6 +258,10 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
             entryType: detectedType,
           });
         }
+        
+        // Reset the accumulator
+        currentNumberGroup = [];
+        currentNumberLineNums = [];
       }
       // CASE 2: Line has ONLY numbers (vertical format - accumulate)
       else if (validNumbers.length > 0 && !amountPattern) {
