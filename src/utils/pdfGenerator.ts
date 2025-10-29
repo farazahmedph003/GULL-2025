@@ -188,8 +188,18 @@ export const generateUserReport = (data: UserReportData): void => {
     doc.text(`Entries: ${summary.totalEntries} | First: ${summary.firstTotal} | Second: ${summary.secondTotal} | Total: ${summary.totalPKR} | Unique: ${summary.uniqueNumbers}`, margin + 5, yPos);
     yPos += 6;
 
+    // Sort entries by number (numerically) before creating table
+    const sortedEntries = [...entries].sort((a, b) => {
+      const numA = parseInt(a.number);
+      const numB = parseInt(b.number);
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return numA - numB; // Numeric sort (00-99)
+      }
+      return a.number.localeCompare(b.number); // Fallback to string sort
+    });
+
     // Table
-    const tableData = entries.map(entry => [
+    const tableData = sortedEntries.map(entry => [
       new Date(entry.createdAt || '').toLocaleDateString(),
       entry.number,
       entry.first || 0,
@@ -333,7 +343,17 @@ export const generateQuickUserReport = (
   doc.text(`Generated: ${new Date().toLocaleDateString()}`, pageWidth / 2, yPos, { align: 'center' });
   yPos += 15;
 
-  const tableData = entries.map(entry => [
+  // Sort entries by number (numerically)
+  const sortedEntries = [...entries].sort((a, b) => {
+    const numA = parseInt(a.number);
+    const numB = parseInt(b.number);
+    if (!isNaN(numA) && !isNaN(numB)) {
+      return numA - numB; // Numeric sort (00-99)
+    }
+    return a.number.localeCompare(b.number); // Fallback to string sort
+  });
+
+  const tableData = sortedEntries.map(entry => [
     entry.entryType.toUpperCase(),
     entry.number,
     entry.first || 0,
