@@ -33,7 +33,11 @@ const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onSwitch }) => {
       try {
         // Auto-login with saved credentials
         await signOut();
-        await signIn({ username: usernameKey || login.email, email: login.email, password: savedPassword });
+        // signIn expects only username and password
+        await signIn({ 
+          username: usernameKey || login.email, 
+          password: savedPassword 
+        });
         
         // Navigate to home
         navigate('/');

@@ -49,8 +49,11 @@ const ProfileDropdown: React.FC = () => {
       try {
         // Auto-login with saved credentials
         await signOut();
-        // Support username or email sign-in
-        await signIn({ username: usernameKey || login.email, email: login.email, password: savedPassword });
+        // Support username or email sign-in - signIn expects only username and password
+        await signIn({ 
+          username: usernameKey || login.email, 
+          password: savedPassword 
+        });
         
         // Force reload to ensure auth state is properly updated
         window.location.href = '/';
