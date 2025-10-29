@@ -40,10 +40,9 @@ const ProfileDropdown: React.FC = () => {
     }
     
     // Check if we have saved credentials
-    // Try retrieving by email or username alias (left side of email)
-    const emailKey = login.email || '';
-    const usernameKey = emailKey.includes('@') ? emailKey.split('@')[0] : emailKey;
-    const savedPassword = getCredential(emailKey) || getCredential(usernameKey);
+    // Try retrieving by username (preferred), then email, then username from email
+    const username = login.username || login.email?.split('@')[0] || '';
+    const savedPassword = getCredential(username) || getCredential(login.email) || getCredential(username);
     
     if (savedPassword && login.email) {
       try {
@@ -51,7 +50,7 @@ const ProfileDropdown: React.FC = () => {
         await signOut();
         // Support username or email sign-in - signIn expects only username and password
         await signIn({ 
-          username: usernameKey || login.email, 
+          username: username || login.email, 
           password: savedPassword 
         });
         

@@ -6,6 +6,7 @@ const MAX_RECENT_LOGINS = 5;
 export interface RecentLogin {
   id: string;
   email: string;
+  username?: string; // Added to support credential lookup
   displayName: string | null;
   lastLoginAt: string;
   device: string;
@@ -23,6 +24,7 @@ export const saveRecentLogin = (user: User): void => {
     const loginEntry: RecentLogin = {
       id: user.id,
       email: user.email || 'unknown',
+      username: user.username || (user.email?.split('@')[0]), // Store username for credential lookup
       displayName: user.displayName,
       lastLoginAt: new Date().toISOString(),
       device,

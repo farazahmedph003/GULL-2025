@@ -25,9 +25,9 @@ const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onSwitch }) => {
     }
 
     // Check if we have saved credentials
-    const emailKey = login.email || '';
-    const usernameKey = emailKey.includes('@') ? emailKey.split('@')[0] : emailKey;
-    const savedPassword = getCredential(emailKey) || getCredential(usernameKey);
+    // Try retrieving by username (preferred), then email, then username from email
+    const username = login.username || login.email?.split('@')[0] || '';
+    const savedPassword = getCredential(username) || getCredential(login.email) || getCredential(username);
     
     if (savedPassword && login.email) {
       try {
@@ -35,7 +35,7 @@ const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ onSwitch }) => {
         await signOut();
         // signIn expects only username and password
         await signIn({ 
-          username: usernameKey || login.email, 
+          username: username || login.email, 
           password: savedPassword 
         });
         
