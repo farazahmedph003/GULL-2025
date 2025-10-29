@@ -153,7 +153,14 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
   const parseIntelligentInput = (text: string): { entries: ParsedEntry[]; errors: string[] } => {
     const entries: ParsedEntry[] = [];
     const parseErrors: string[] = [];
-    const lines = text.split('\n').filter(line => line.trim());
+    
+    // Filter out WhatsApp timestamp lines (e.g., "[28/10/2025 11:16 pm] Username:")
+    // Skip lines that start with [ and contain date/time patterns
+    const whatsappTimestampPattern = /^\[.*?\d{1,2}[\/\-:]\d{1,2}.*?\]/;
+    
+    const lines = text.split('\n')
+      .filter(line => line.trim())
+      .filter(line => !whatsappTimestampPattern.test(line.trim()));
 
     // Helper function to detect entry type from number length
     const detectEntryType = (num: string): EntryType => {
