@@ -49,6 +49,7 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
   const [adminActions, setAdminActions] = useState<any[]>([]);
   const [topUps, setTopUps] = useState<any[]>([]);
   const historyEndRef = React.useRef<HTMLDivElement>(null);
+  const prevHistoryLengthRef = React.useRef<number>(0);
 
   const loadAdditionalHistory = useCallback(async () => {
     if (!user?.id) {
@@ -205,11 +206,18 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
     return combined;
   }, [transactions, topUps, adminActions, activeTab]);
 
-  // Auto-scroll to bottom when history changes (to show recent entries)
+  // Auto-scroll to bottom ONLY when NEW entries are added (history length increases)
   useEffect(() => {
-    if (historyEndRef.current) {
+    const currentLength = history.length;
+    const previousLength = prevHistoryLengthRef.current;
+
+    // Only scroll if history grew (new entry added), not on every change
+    if (currentLength > previousLength && historyEndRef.current) {
       historyEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
+
+    // Update the previous length for next comparison
+    prevHistoryLengthRef.current = currentLength;
   }, [history]);
 
   const formatDate = (dateString: string) => {
