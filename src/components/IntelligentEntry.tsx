@@ -293,21 +293,6 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Instructions */}
-      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-xl p-3">
-        <div className="text-sm text-blue-800 dark:text-blue-400">
-          <span className="font-semibold">Flexible Format Examples:</span>
-          <div className="mt-2 space-y-1">
-            <div className="font-mono bg-white dark:bg-gray-800 px-3 py-1.5 rounded text-xs border">
-              <span className="text-gray-500">Numbers + Amounts:</span> 68 N+200, 68 66 88 ff100, 68+66+88 10/20
-            </div>
-            <div className="font-mono bg-white dark:bg-gray-800 px-3 py-1.5 rounded text-xs border">
-              <span className="text-gray-500">Amount Formats:</span> N+200, 300+N, ff10, ss20, 10f 20s, 10/20, 10by20
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Input Area */}
       <div>
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -316,9 +301,9 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         <textarea
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder={`Paste data here...\n68 N+200\n66 88 ff100\n68+66 10/20\n100 200+ff`}
-          className="w-full px-5 py-4 text-lg border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono resize-none transition-all duration-200"
-          rows={8}
+          placeholder={`Paste data here...`}
+          className="w-full px-6 py-5 text-xl border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono resize-none transition-all duration-200"
+          rows={15}
         />
         <div className="flex items-center justify-between mt-3">
           <p className="text-sm text-gray-600 dark:text-gray-400">
