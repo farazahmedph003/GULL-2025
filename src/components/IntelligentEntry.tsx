@@ -317,8 +317,8 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           placeholder={`Paste data here...\n68 N+200\n66 88 ff100\n68+66 10/20\n100 200+ff`}
-          className="w-full px-4 py-3 text-base border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono resize-none transition-all duration-200"
-          rows={4}
+          className="w-full px-5 py-4 text-lg border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono resize-none transition-all duration-200"
+          rows={8}
         />
         <div className="flex items-center justify-between mt-3">
           <p className="text-sm text-gray-600 dark:text-gray-400">
