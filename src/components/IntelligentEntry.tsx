@@ -124,39 +124,46 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       const lineNum = i + 1;
       const normalized = line.trim().replace(/\s+/g, ' ');
       
-      // FIRST: Check if the entire line is an amount pattern (before extracting numbers)
-      // This handles cases like "50by50", "10/20", "ff.10" where the pattern contains digits/dots
-      const tokens = normalized.split(/\s+/);
+      // FIRST: Find and extract pattern from the line BEFORE splitting by dots
       let amountPattern: { first: number; second: number } | null = null;
       let isOnlyPattern = false;
+      let lineWithoutPattern = normalized;
       
-      // Check if the entire line (or first token) is a pattern
+      // Check if the entire line is just a pattern (like "ff.10" alone)
       const wholeLineParsed = parseAmountPattern(normalized);
       if (wholeLineParsed) {
         amountPattern = wholeLineParsed;
         isOnlyPattern = true;
       } else {
-        // Check single tokens
-        for (const token of tokens) {
-          // Skip if it's a pure number (could be a game number)
-          if (/^\d+$/.test(token) && token.length <= 4) {
-            continue;
-          }
-          
-          const parsed = parseAmountPattern(token);
+        // Search for patterns in the line and remove them to get numbers
+        // Pattern prefixes to look for: ff, ss, n, nil, ending with +, /, by
+        const patternRegex = /(^|\s)(ff\.?\d+|ss\.?\d+|n\+\d+|nil\+\d+|\d+\+n|\d+\+nil|\d+\+ff|\d+\/\d+|\d+by\d+|\d+f\s+\d+s)($|\s)/gi;
+        const patternMatch = normalized.match(patternRegex);
+        
+        if (patternMatch) {
+          const patternText = patternMatch[0].trim();
+          const parsed = parseAmountPattern(patternText);
           if (parsed) {
             amountPattern = parsed;
-            break;
+            // Remove the pattern from the line to extract numbers
+            lineWithoutPattern = normalized.replace(patternRegex, ' ').trim();
           }
         }
         
-        // If no pattern in single tokens, try combining consecutive tokens
+        // If still no pattern found, try space-separated tokens
         if (!amountPattern) {
-          for (let j = 0; j < tokens.length - 1; j++) {
-            const combined = tokens[j] + ' ' + tokens[j + 1];
-            const parsed = parseAmountPattern(combined);
+          const tokens = normalized.split(/\s+/);
+          for (const token of tokens) {
+            // Skip if it's a pure number (could be a game number)
+            if (/^\d+$/.test(token) && token.length <= 4) {
+              continue;
+            }
+            
+            const parsed = parseAmountPattern(token);
             if (parsed) {
               amountPattern = parsed;
+              // Remove this token from the line
+              lineWithoutPattern = normalized.replace(token, ' ').trim();
               break;
             }
           }
@@ -165,15 +172,16 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       
       // SECOND: Extract numbers (only if line is not purely a pattern)
       // Split by dots, spaces, commas, and plus signs to extract individual numbers
-      const numberMatches = normalized.split(/[\s.,+]+/);
+      const numberMatches = lineWithoutPattern.split(/[\s.,+]+/);
       const validNumbers: string[] = [];
       
       // Only extract numbers if this line is not purely an amount pattern
       if (!isOnlyPattern) {
         // Filter to only valid game numbers (1-4 digits, pure numbers only)
         for (const num of numberMatches) {
-          if (/^\d+$/.test(num) && num.length >= 1 && num.length <= 4) {
-            validNumbers.push(num);
+          const trimmed = num.trim();
+          if (/^\d+$/.test(trimmed) && trimmed.length >= 1 && trimmed.length <= 4) {
+            validNumbers.push(trimmed);
           }
         }
       }
