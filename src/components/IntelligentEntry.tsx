@@ -376,15 +376,17 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     }
 
     try {
-      // Add all transactions in parallel for better performance
-      const transactionsToAdd = parsedEntries.map(entry => ({
+      // Add all transactions with incrementing timestamps to preserve exact entry order
+      const baseTime = new Date();
+      const transactionsToAdd = parsedEntries.map((entry, index) => ({
         projectId,
         number: entry.number,
         entryType: entry.entryType, // Use auto-detected type
         first: entry.first,
         second: entry.second,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        // Add milliseconds to preserve order (each entry gets +1ms)
+        createdAt: new Date(baseTime.getTime() + index).toISOString(),
+        updatedAt: new Date(baseTime.getTime() + index).toISOString(),
       }));
 
       const addPromises = transactionsToAdd.map(transaction => addTransaction(transaction));
