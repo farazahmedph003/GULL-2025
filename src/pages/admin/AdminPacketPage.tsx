@@ -45,7 +45,6 @@ const AdminPacketPage: React.FC = () => {
   const [deductions, setDeductions] = useState<DeductionRecord[]>([]);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<'aggregated' | 'history'>('aggregated');
   const [searchNumber, setSearchNumber] = useState('');
   const [stats, setStats] = useState({
@@ -159,7 +158,6 @@ const AdminPacketPage: React.FC = () => {
     if (!deletingEntry) return;
 
     try {
-      setIsDeleting(true);
 
       // Refund the balance to the user
       const refundAmount = deletingEntry.first_amount + deletingEntry.second_amount;
@@ -180,7 +178,6 @@ const AdminPacketPage: React.FC = () => {
       console.error('Delete error:', error);
       showError('Error', 'Failed to delete entry');
     } finally {
-      setIsDeleting(false);
     }
   };
 
@@ -645,7 +642,6 @@ const AdminPacketPage: React.FC = () => {
           title="Delete Packet Entry"
           message="Are you sure you want to delete this packet entry?"
           itemName={`Number: ${deletingEntry.number} (${deletingEntry.app_users.username})`}
-          isLoading={isDeleting}
         />
       )}
     </div>

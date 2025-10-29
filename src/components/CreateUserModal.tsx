@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import LoadingSpinner from './LoadingSpinner';
 
 interface CreateUserModalProps {
   isOpen: boolean;

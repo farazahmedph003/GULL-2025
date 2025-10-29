@@ -23,7 +23,7 @@ interface ParsedEntry {
 
 const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
   projectId,
-  entryType,
+  entryType: _entryType,
   onSuccess,
 }) => {
   const { user } = useAuth();
@@ -46,7 +46,6 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     const cleanText = text.trim();
     
     // Check for nil/n patterns: N+200, n+200, NIL+200, nil+200, 300+N, 300+nil
-    const nilPattern = /^(n|nil)$/i;
     const nilPlusNumber = /^(n|nil)\+(\d+(?:\.\d+)?)$/i;
     const numberPlusNil = /^(\d+(?:\.\d+)?)\+(n|nil|ff)$/i;
     

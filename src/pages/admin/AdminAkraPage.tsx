@@ -46,7 +46,6 @@ const AdminAkraPage: React.FC = () => {
   const [deductions, setDeductions] = useState<DeductionRecord[]>([]);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<'aggregated' | 'history'>('aggregated');
   const [searchNumber, setSearchNumber] = useState('');
   const [stats, setStats] = useState({
@@ -175,7 +174,6 @@ const AdminAkraPage: React.FC = () => {
     if (!deletingEntry) return;
 
     try {
-      setIsDeleting(true);
 
       // Refund the balance to the user
       const refundAmount = deletingEntry.first_amount + deletingEntry.second_amount;
@@ -196,7 +194,6 @@ const AdminAkraPage: React.FC = () => {
       console.error('Delete error:', error);
       showError('Error', 'Failed to delete entry');
     } finally {
-      setIsDeleting(false);
     }
   };
 
@@ -651,7 +648,6 @@ const AdminAkraPage: React.FC = () => {
           title="Delete Akra Entry"
           message="Are you sure you want to delete this akra entry?"
           itemName={`Number: ${deletingEntry.number} (${deletingEntry.app_users.username})`}
-          isLoading={isDeleting}
         />
       )}
     </div>

@@ -45,7 +45,6 @@ const AdminRingPage: React.FC = () => {
   const [deductions, setDeductions] = useState<DeductionRecord[]>([]);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<'aggregated' | 'history'>('aggregated');
   const [searchNumber, setSearchNumber] = useState('');
   const [stats, setStats] = useState({
@@ -159,7 +158,6 @@ const AdminRingPage: React.FC = () => {
     if (!deletingEntry) return;
 
     try {
-      setIsDeleting(true);
 
       // Refund the balance to the user
       const refundAmount = deletingEntry.first_amount + deletingEntry.second_amount;
@@ -180,7 +178,6 @@ const AdminRingPage: React.FC = () => {
       console.error('Delete error:', error);
       showError('Error', 'Failed to delete entry');
     } finally {
-      setIsDeleting(false);
     }
   };
 
@@ -486,7 +483,7 @@ const AdminRingPage: React.FC = () => {
                     </th>
                   </tr>
                 </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {/* Deduction Records - Show at TOP (most recent first) */}
                 {deductions
                   .filter(d => !searchNumber.trim() || d.transactions.number.toLowerCase().includes(searchNumber.trim().toLowerCase()))
@@ -647,7 +644,6 @@ const AdminRingPage: React.FC = () => {
           title="Delete Ring Entry"
           message="Are you sure you want to delete this ring entry?"
           itemName={`Number: ${deletingEntry.number} (${deletingEntry.app_users.username})`}
-          isLoading={isDeleting}
         />
       )}
     </div>

@@ -62,7 +62,7 @@ const AdminFilterPage: React.FC = () => {
     // Auto-refresh every 5 seconds
     const autoRefreshInterval = setInterval(() => {
       if (!isAnyModalOpenRef.current) {
-        loadEntries(false);
+      loadEntries(false);
       } else {
         console.log('⏸️ Skipping Filter refresh - modal or processing');
       }
@@ -82,7 +82,7 @@ const AdminFilterPage: React.FC = () => {
           (payload: any) => {
             console.log(`🔴 Real-time update received for ${selectedType} (filter):`, payload);
             if (!isAnyModalOpenRef.current) {
-              loadEntries(false);
+            loadEntries(false);
             } else {
               console.log('⏸️ Skipping real-time refresh - modal or processing');
             }

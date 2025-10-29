@@ -28,7 +28,6 @@ const UserDashboard: React.FC = () => {
   const [entryTab, setEntryTab] = useState<'standard' | 'intelligent'>('standard');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
   const { showSuccess, showError } = useNotifications();
   const { user } = useAuth();
@@ -219,7 +218,6 @@ const UserDashboard: React.FC = () => {
     if (!deletingTransaction) return;
 
     try {
-      setIsDeleting(true);
 
       // Check if this is a batch delete (groupedIds array passed as metadata)
       const groupedIds = (deletingTransaction as any).groupedIds;
@@ -243,17 +241,16 @@ const UserDashboard: React.FC = () => {
         showSuccess('Batch Delete Success', `Deleted ${successCount} of ${groupedIds.length} entries and refunded balance`);
       } else {
         // Single delete
-        await deleteTransaction(deletingTransaction.id);
-        
-        setDeletingTransaction(null);
-        silentRefresh();
-        showSuccess('Success', 'Transaction deleted successfully and balance refunded');
+      await deleteTransaction(deletingTransaction.id);
+      
+      setDeletingTransaction(null);
+      silentRefresh();
+      showSuccess('Success', 'Transaction deleted successfully and balance refunded');
       }
     } catch (error) {
       console.error('Delete error:', error);
       showError('Error', 'Failed to delete transaction');
     } finally {
-      setIsDeleting(false);
     }
   };
 
@@ -346,7 +343,7 @@ const UserDashboard: React.FC = () => {
                     if (groupedIds && groupedIds.length > 0) {
                       setDeletingTransaction({ ...transaction, groupedIds } as any);
                     } else {
-                      setDeletingTransaction(transaction);
+                    setDeletingTransaction(transaction);
                     }
                   }
                 }}
@@ -459,7 +456,6 @@ const UserDashboard: React.FC = () => {
           title="Delete Transaction"
           message="Are you sure you want to delete this transaction?"
           itemName={`Number: ${deletingTransaction.number} (${deletingTransaction.entryType})`}
-          isLoading={isDeleting}
         />
       )}
 

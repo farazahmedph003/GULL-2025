@@ -933,7 +933,6 @@ const UserManagement: React.FC = () => {
           title="Delete Entry"
           message="Are you sure you want to delete this entry? The balance will be refunded to the user."
           itemName={`Number: ${deletingTransaction.number} (${deletingTransaction.entry_type.toUpperCase()})`}
-          isLoading={false}
         />
       )}
 

@@ -430,10 +430,10 @@ const AdminDashboard: React.FC = () => {
                             
                             // Force reload with a small delay to ensure database updates propagate
                             setTimeout(() => {
-                              loadUsers();
-                              if (selectedFilter) {
-                                loadUserStatsForType(selectedFilter);
-                              }
+                            loadUsers();
+                            if (selectedFilter) {
+                              loadUserStatsForType(selectedFilter);
+                            }
                             }, 500);
                           } catch (error: any) {
                             console.error('Error resetting user data:', error);
