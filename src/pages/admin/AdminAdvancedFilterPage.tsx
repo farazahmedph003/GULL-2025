@@ -601,9 +601,9 @@ const AdminAdvancedFilterPage: React.FC = () => {
                       <button
                         onClick={handleDeductFirst}
                         disabled={processing}
-                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                       >
-                        ➖ {processing ? 'Processing...' : 'Deduct'}
+                        ➖ Deduct
                       </button>
                     </div>
                   )}
@@ -668,9 +668,9 @@ const AdminAdvancedFilterPage: React.FC = () => {
                       <button
                         onClick={handleDeductSecond}
                         disabled={processing}
-                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                       >
-                        ➖ {processing ? 'Processing...' : 'Deduct'}
+                        ➖ Deduct
                       </button>
                     </div>
                   )}

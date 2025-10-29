@@ -34,8 +34,8 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
   const [parsedEntries, setParsedEntries] = useState<ParsedEntry[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [balanceError, setBalanceError] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const parseIntelligentInput = (text: string): { entries: ParsedEntry[]; errors: string[] } => {
     const entries: ParsedEntry[] = [];
@@ -126,7 +126,6 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return;
     }
 
-    setIsProcessing(true);
     setErrors([]);
     setParsedEntries([]);
 
@@ -135,14 +134,14 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     setParsedEntries(result.entries);
     setErrors(result.errors);
     setShowPreview(true);
-    setIsProcessing(false);
   };
 
   const handleSubmit = async () => {
-    if (parsedEntries.length === 0) {
+    if (parsedEntries.length === 0 || isSubmitting) {
       return;
     }
 
+    setIsSubmitting(true);
     setBalanceError(null);
 
     // Calculate total cost (betting amounts only)
@@ -208,6 +207,8 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         'An error occurred while adding transactions. Please try again.',
         { duration: 5000 }
       );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -242,10 +243,10 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
           <button
             type="button"
             onClick={handleProcess}
-            disabled={isProcessing || !inputText.trim()}
-            className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none min-h-[48px]"
+            disabled={!inputText.trim()}
+            className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
           >
-            {isProcessing ? 'Processing...' : 'Process Data'}
+            Process Data
           </button>
         </div>
       </div>
@@ -304,7 +305,8 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
               <button
                 type="button"
                 onClick={handleSubmit}
-                className="px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 min-h-[40px]"
+                disabled={isSubmitting}
+                className="px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 min-h-[40px] disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
               >
                 Add {parsedEntries.length}
               </button>

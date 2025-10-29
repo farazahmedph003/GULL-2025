@@ -25,7 +25,7 @@ type TabType = 'all' | 'open' | 'akra' | 'ring' | 'packet';
 const UserDashboard: React.FC = () => {
   const [project, setProject] = useState<Project | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('all');
-  const [entryTab] = useState<'standard' | 'intelligent'>('standard');
+  const [entryTab, setEntryTab] = useState<'standard' | 'intelligent'>('standard');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -335,6 +335,32 @@ const UserDashboard: React.FC = () => {
                     <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
                       Add Entry
                     </h3>
+                    
+                    {/* Entry Mode Toggle */}
+                    {entriesEnabled && (
+                      <div className="flex gap-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                        <button
+                          onClick={() => setEntryTab('standard')}
+                          className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                            entryTab === 'standard'
+                              ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                          }`}
+                        >
+                          Standard
+                        </button>
+                        <button
+                          onClick={() => setEntryTab('intelligent')}
+                          className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                            entryTab === 'intelligent'
+                              ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                          }`}
+                        >
+                          Intelligent
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div>
                     {!entriesEnabled ? (

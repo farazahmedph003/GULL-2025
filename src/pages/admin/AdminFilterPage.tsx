@@ -577,9 +577,9 @@ const AdminFilterPage: React.FC = () => {
                   <button
                     onClick={handleSaveFilterClick}
                     disabled={processing}
-                    className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-semibold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-semibold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                   >
-                    💾 {processing ? 'Processing...' : 'Save Filter'}
+                    💾 Save Filter
                   </button>
                 )}
               </div>

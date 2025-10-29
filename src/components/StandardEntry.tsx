@@ -63,7 +63,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!validate()) {
+    if (!validate() || isSubmitting) {
       return;
     }
 
@@ -94,9 +94,6 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
       // Parse numbers: split on any non-digit characters (all keyboard symbols)
       let numberList = numbersText.split(/[^0-9]+/).filter(n => n.length > 0);
       
-      console.log('🔍 Debug - Input numbers:', numbers);
-      console.log('🔍 Debug - Parsed numberList:', numberList);
-      
       // Helper function to pad numbers to correct length based on entry type
       const padNumber = (num: string, type: 'open' | 'akra' | 'ring' | 'packet'): string => {
         const lengths = { open: 1, akra: 2, ring: 3, packet: 4 };
@@ -114,8 +111,6 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         ring: numberList.filter(n => n.length === 3),
         packet: numberList.filter(n => n.length === 4),
       };
-      
-      console.log('🔍 Debug - Categorized numbers:', categorizedNumbers);
 
       // Calculate total cost
       const totalNumbers = categorizedNumbers.open.length + categorizedNumbers.akra.length + 
@@ -129,7 +124,6 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
           ...prev,
           balance: `Insufficient balance. You need ${formatCurrency(totalCost)} but only have ${formatCurrency(balance)}.`,
         }));
-        setIsSubmitting(false);
         return;
       }
 
@@ -141,7 +135,6 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
             ...prev,
             balance: 'Failed to deduct balance. Please try again.',
           }));
-          setIsSubmitting(false);
           return;
         }
       }
@@ -163,7 +156,6 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
             updatedAt: new Date().toISOString(),
           };
           transactionsToAdd.push(transaction);
-          console.log('🔍 Debug - Added OPEN transaction:', transaction);
         });
       }
       
@@ -181,7 +173,6 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
             updatedAt: new Date().toISOString(),
           };
           transactionsToAdd.push(transaction);
-          console.log('🔍 Debug - Added AKRA transaction:', transaction);
         });
       }
       
@@ -199,7 +190,6 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
             updatedAt: new Date().toISOString(),
           };
           transactionsToAdd.push(transaction);
-          console.log('🔍 Debug - Added RING transaction:', transaction);
         });
       }
       
@@ -217,28 +207,19 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
             updatedAt: new Date().toISOString(),
           };
           transactionsToAdd.push(transaction);
-          console.log('🔍 Debug - Added PACKET transaction:', transaction);
         });
       }
-      
-      console.log('🔍 Debug - Total transactions to add:', transactionsToAdd.length);
-      console.log('🔍 Debug - Transactions:', transactionsToAdd);
 
       // Add all transactions in parallel with balance deduction skipped (already done above)
       const addPromises = transactionsToAdd.map(transaction => addTransaction(transaction, true));
       const results = await Promise.all(addPromises);
       const successCount = results.filter(Boolean).length;
       
-      console.log('🔍 Debug - Add transaction results:', results);
-      console.log('🔍 Debug - Success count:', successCount);
-      
       if (successCount === 0) {
-        console.error('🔍 Debug - All transactions failed!');
         setErrors(prev => ({
           ...prev,
           balance: 'Failed to add transactions. Please try again.',
         }));
-        setIsSubmitting(false);
         return;
       }
 
@@ -263,12 +244,10 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         { duration: 2000 }
       );
 
-      console.log('Entries added successfully!');
-
       // Focus back to number input for next entry (don't close panel)
       setTimeout(() => {
         numbersInputRef.current?.focus();
-      }, 50); // Reduced for instant feel
+      }, 50);
 
       // Call onSuccess to trigger silent refresh (form stays open)
       _onSuccess();
@@ -364,12 +343,9 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full px-5 py-4 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-lg font-semibold rounded-3xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
+          className="w-full px-5 py-4 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-lg font-semibold rounded-3xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
         >
-          {isSubmitting && (
-            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-          )}
-          {isSubmitting ? 'Adding Entry...' : 'Add Entry'}
+          Add Entry
         </button>
       </div>
     </form>

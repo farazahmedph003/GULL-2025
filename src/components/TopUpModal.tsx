@@ -159,14 +159,14 @@ const TopUpModal: React.FC<TopUpModalProps> = ({ isOpen, onClose, userName, curr
             </button>
             <button
               type="submit"
-              className={`flex-1 px-6 py-3 bg-gradient-to-r text-white rounded-xl font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed min-h-[48px] ${
+              className={`flex-1 px-6 py-3 bg-gradient-to-r text-white rounded-xl font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${
                 transactionType === 'deposit'
                   ? 'from-green-500 to-green-600 hover:from-green-600 hover:to-green-700'
                   : 'from-red-500 to-red-600 hover:from-red-600 hover:to-red-700'
               }`}
               disabled={loading}
             >
-              {loading ? <LoadingSpinner size="sm" /> : (transactionType === 'deposit' ? '💰 Deposit' : '💸 Withdraw')}
+              {transactionType === 'deposit' ? '💰 Deposit' : '💸 Withdraw'}
             </button>
           </div>
         </form>
