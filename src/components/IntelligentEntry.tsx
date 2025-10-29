@@ -57,25 +57,50 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return { first: Number(match![1]), second: 0 };
     }
     
-    // Check for ff/ss patterns with optional dots: ff10, FF10, ff.10, FF.10, ss20, SS20, ss.20
-    const ffPattern = /^ff\.?(\d+)$/i;
-    const ssPattern = /^ss\.?(\d+)$/i;
+    // Check for ff/ss patterns: ff10, FF10, ff.10, FF.10, 100ff, 100FF (both prefix and suffix)
+    const ffPrefixPattern = /^ff\.?(\d+)$/i;
+    const fsSuffixPattern = /^(\d+)ff$/i;
+    const ssPrefixPattern = /^ss\.?(\d+)$/i;
+    const ssSuffixPattern = /^(\d+)ss$/i;
     
-    if (ffPattern.test(cleanText)) {
-      const match = cleanText.match(ffPattern);
+    if (ffPrefixPattern.test(cleanText)) {
+      const match = cleanText.match(ffPrefixPattern);
       return { first: Number(match![1]), second: 0 };
     }
     
-    if (ssPattern.test(cleanText)) {
-      const match = cleanText.match(ssPattern);
+    if (fsSuffixPattern.test(cleanText)) {
+      const match = cleanText.match(fsSuffixPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (ssPrefixPattern.test(cleanText)) {
+      const match = cleanText.match(ssPrefixPattern);
       return { first: 0, second: Number(match![1]) };
     }
     
-    // Check for f/s patterns: 10f 20s, 10F 20S
+    if (ssSuffixPattern.test(cleanText)) {
+      const match = cleanText.match(ssSuffixPattern);
+      return { first: 0, second: Number(match![1]) };
+    }
+    
+    // Check for f/s patterns: 10f 20s, 10F 20S, or single: 100f, 200s
+    const fsSingleFirst = /^(\d+)[fF]$/;
+    const fsSingleSecond = /^(\d+)[sS]$/;
     const fsPattern = /^(\d+(?:\.\d+)?)[fF]\s+(\d+(?:\.\d+)?)[sS]$/;
+    
     if (fsPattern.test(cleanText)) {
       const match = cleanText.match(fsPattern);
       return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (fsSingleFirst.test(cleanText)) {
+      const match = cleanText.match(fsSingleFirst);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (fsSingleSecond.test(cleanText)) {
+      const match = cleanText.match(fsSingleSecond);
+      return { first: 0, second: Number(match![1]) };
     }
     
     // Check for / pattern: 10/20
@@ -85,11 +110,11 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return { first: Number(match![1]), second: Number(match![2]) };
     }
     
-    // Check for by pattern: 10by20, 10BY20
-    const byPattern = /^(\d+(?:\.\d+)?)by(\d+(?:\.\d+)?)$/i;
+    // Check for by/x pattern: 10by20, 10BY20, 10x20, 10X20
+    const byPattern = /^(\d+(?:\.\d+)?)(by|x)(\d+(?:\.\d+)?)$/i;
     if (byPattern.test(cleanText)) {
       const match = cleanText.match(byPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
+      return { first: Number(match![1]), second: Number(match![3]) };
     }
     
     return null;
@@ -137,8 +162,8 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         isOnlyPattern = true;
       } else {
         // Try to find patterns embedded in the line using comprehensive regex
-        // Matches: ff.10, ff10, ss.20, ss20, n+100, 100+n, 10/20, 10by20, etc.
-        const patternRegex = /(?:ff\.?\d+|ss\.?\d+|(?:n|nil)\+\d+|\d+\+(?:n|nil|ff|ss)|\d+\/\d+|\d+by\d+|\d+f\s+\d+s)/gi;
+        // Matches: ff.10, ff10, 100ff, ss.20, ss20, 200ss, n+100, 100+n, 10/20, 10by20, 10x20, 100f, 200s, etc.
+        const patternRegex = /(?:ff\.?\d+|\d+ff|ss\.?\d+|\d+ss|(?:n|nil)\+\d+|\d+\+(?:n|nil|ff|ss)|\d+\/\d+|\d+(?:by|x)\d+|\d+f(?:\s+\d+s)?|\d+s)/gi;
         const patternMatches = normalized.match(patternRegex);
         
         if (patternMatches && patternMatches.length > 0) {
