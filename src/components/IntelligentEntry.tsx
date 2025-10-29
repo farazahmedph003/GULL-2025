@@ -115,86 +115,127 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return num.padStart(lengths[type], '0');
     };
 
-    lines.forEach((line, index) => {
-      const lineNum = index + 1;
-      
-      // Normalize whitespace (trim, collapse multiple spaces)
+    // Process lines to support both horizontal and vertical grouping
+    let currentNumberGroup: string[] = [];
+    let currentNumberLineNums: number[] = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineNum = i + 1;
       const normalized = line.trim().replace(/\s+/g, ' ');
       
-      // Extract all numbers from the line (split by space, +, comma, or any non-digit)
+      // Extract all numbers from the line
       const numberMatches = normalized.match(/\d+/g) || [];
-      const numbers: string[] = [];
+      const validNumbers: string[] = [];
       
       // Filter to only valid game numbers (1-4 digits)
       for (const num of numberMatches) {
         if (num.length >= 1 && num.length <= 4) {
-          numbers.push(num);
+          validNumbers.push(num);
         }
       }
       
-      if (numbers.length === 0) {
-        parseErrors.push(`Line ${lineNum}: No valid numbers found in "${line}"`);
-        return;
-      }
-      
-      // Find amount pattern in the line
-      // Get all tokens that are not pure numbers
+      // Try to find amount pattern on this line
       const tokens = normalized.split(/\s+/);
       let amountPattern: { first: number; second: number } | null = null;
-      let foundPattern = false;
       
+      // Check single tokens
       for (const token of tokens) {
         // Skip if it's a pure number (could be a game number)
         if (/^\d+$/.test(token) && token.length <= 4) {
           continue;
         }
         
-        // Try to parse as amount pattern
         const parsed = parseAmountPattern(token);
         if (parsed) {
           amountPattern = parsed;
-          foundPattern = true;
-          break; // Use first valid pattern found
+          break;
         }
       }
       
-      // If no pattern found in single tokens, try combining tokens
-      if (!foundPattern) {
-        // Try combinations of consecutive tokens
-        for (let i = 0; i < tokens.length - 1; i++) {
-          const combined = tokens[i] + ' ' + tokens[i + 1];
+      // If no pattern in single tokens, try combining consecutive tokens
+      if (!amountPattern) {
+        for (let j = 0; j < tokens.length - 1; j++) {
+          const combined = tokens[j] + ' ' + tokens[j + 1];
           const parsed = parseAmountPattern(combined);
           if (parsed) {
             amountPattern = parsed;
-            foundPattern = true;
             break;
           }
         }
       }
       
-      if (!amountPattern) {
-        parseErrors.push(`Line ${lineNum}: No amount pattern detected in "${line}"`);
-        return;
-      }
-      
-      // Create entries for each number with the same amounts
-      for (const num of numbers) {
-        const detectedType = detectEntryType(num);
-        const paddedNumber = padNumber(num, detectedType);
+      // CASE 1: Line has both numbers AND amount pattern (horizontal format)
+      if (validNumbers.length > 0 && amountPattern) {
+        // Process any accumulated vertical group first
+        if (currentNumberGroup.length > 0) {
+          parseErrors.push(`Line ${currentNumberLineNums.join(',')}: Numbers without amount pattern: ${currentNumberGroup.join(', ')}`);
+          currentNumberGroup = [];
+          currentNumberLineNums = [];
+        }
         
-        if (!isValidNumber(paddedNumber, detectedType)) {
-          parseErrors.push(`Line ${lineNum}: Invalid number "${num}" for ${detectedType} type`);
+        // Process this line's numbers with its pattern
+        for (const num of validNumbers) {
+          const detectedType = detectEntryType(num);
+          const paddedNumber = padNumber(num, detectedType);
+          
+          if (!isValidNumber(paddedNumber, detectedType)) {
+            parseErrors.push(`Line ${lineNum}: Invalid number "${num}" for ${detectedType} type`);
+            continue;
+          }
+          
+          entries.push({
+            number: paddedNumber,
+            first: amountPattern.first,
+            second: amountPattern.second,
+            entryType: detectedType,
+          });
+        }
+      }
+      // CASE 2: Line has ONLY numbers (vertical format - accumulate)
+      else if (validNumbers.length > 0 && !amountPattern) {
+        currentNumberGroup.push(...validNumbers);
+        currentNumberLineNums.push(lineNum);
+      }
+      // CASE 3: Line has ONLY amount pattern (applies to accumulated numbers)
+      else if (validNumbers.length === 0 && amountPattern) {
+        if (currentNumberGroup.length === 0) {
+          parseErrors.push(`Line ${lineNum}: Amount pattern without numbers`);
           continue;
         }
         
-        entries.push({
-          number: paddedNumber,
-          first: amountPattern.first,
-          second: amountPattern.second,
-          entryType: detectedType,
-        });
+        // Apply pattern to all accumulated numbers
+        for (const num of currentNumberGroup) {
+          const detectedType = detectEntryType(num);
+          const paddedNumber = padNumber(num, detectedType);
+          
+          if (!isValidNumber(paddedNumber, detectedType)) {
+            parseErrors.push(`Lines ${currentNumberLineNums.join(',')}: Invalid number "${num}" for ${detectedType} type`);
+            continue;
+          }
+          
+          entries.push({
+            number: paddedNumber,
+            first: amountPattern.first,
+            second: amountPattern.second,
+            entryType: detectedType,
+          });
+        }
+        
+        // Reset the group
+        currentNumberGroup = [];
+        currentNumberLineNums = [];
       }
-    });
+      // CASE 4: Line has neither (error)
+      else {
+        parseErrors.push(`Line ${lineNum}: Could not parse "${line}"`);
+      }
+    }
+    
+    // Check for any remaining numbers without pattern
+    if (currentNumberGroup.length > 0) {
+      parseErrors.push(`Lines ${currentNumberLineNums.join(',')}: Numbers without amount pattern: ${currentNumberGroup.join(', ')}`);
+    }
 
     return { entries, errors: parseErrors };
   };
