@@ -137,13 +137,6 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
     };
   }, [user?.id, loadAdditionalHistory]);
 
-  // Auto-scroll to bottom when history changes (to show recent entries)
-  useEffect(() => {
-    if (historyEndRef.current) {
-      historyEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [history]);
-
   // Combine transactions (from props) with admin actions and top-ups
   const history = useMemo(() => {
     // Filter transactions based on activeTab
@@ -204,6 +197,13 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
 
     return combined;
   }, [transactions, topUps, adminActions, activeTab]);
+
+  // Auto-scroll to bottom when history changes (to show recent entries)
+  useEffect(() => {
+    if (historyEndRef.current) {
+      historyEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [history]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
