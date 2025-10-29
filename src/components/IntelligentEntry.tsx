@@ -178,8 +178,8 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       }
       
       // SECOND: Extract numbers (only if line is not purely a pattern)
-      // Split by dots, spaces, commas, and plus signs to extract individual numbers
-      const numberMatches = lineWithoutPattern.split(/[\s.,+]+/);
+      // Split by common separators: spaces, dots, commas, equals, plus, dash, slash, etc.
+      const numberMatches = lineWithoutPattern.split(/[\s.,+=\-\/|;:]+/);
       const validNumbers: string[] = [];
       
       // Only extract numbers if this line is not purely an amount pattern
