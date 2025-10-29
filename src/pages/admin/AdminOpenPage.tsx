@@ -60,10 +60,17 @@ const AdminOpenPage: React.FC = () => {
   const { setRefreshCallback } = useAdminRefresh();
   const confirm = useContext(ConfirmationContext);
 
+  // Track if any modal is open to pause auto-refresh
+  const isAnyModalOpenRef = React.useRef(false);
+  
+  React.useEffect(() => {
+    isAnyModalOpenRef.current = !!(editingEntry || deletingEntry);
+  }, [editingEntry, deletingEntry]);
+
   const loadEntries = useCallback(async (force = false) => {
     // Skip refresh if modal is open (unless forced)
-    if (!force && (editingEntry || deletingEntry)) {
-      console.log('⏸️ Skipping refresh - modal is open');
+    if (!force && isAnyModalOpenRef.current) {
+      console.log('⏸️ Skipping Open refresh - modal is open');
       return;
     }
 
@@ -92,7 +99,7 @@ const AdminOpenPage: React.FC = () => {
       console.error('Error loading entries:', error);
       showError('Error', 'Failed to load entries');
     }
-  }, [showError, editingEntry, deletingEntry]);
+  }, [showError]); // Remove modal states from dependencies, use ref instead
 
   // Filter entries by search
   const filteredEntries = useMemo(() => {

@@ -57,9 +57,9 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return { first: Number(match![1]), second: 0 };
     }
     
-    // Check for ff/ss patterns: ff10, FF10, ss20, SS20
-    const ffPattern = /^ff(\d+(?:\.\d+)?)$/i;
-    const ssPattern = /^ss(\d+(?:\.\d+)?)$/i;
+    // Check for ff/ss patterns with optional dots: ff10, FF10, ff.10, FF.10, ss20, SS20, ss.20
+    const ffPattern = /^ff\.?(\d+)$/i;
+    const ssPattern = /^ss\.?(\d+)$/i;
     
     if (ffPattern.test(cleanText)) {
       const match = cleanText.match(ffPattern);
@@ -125,7 +125,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       const normalized = line.trim().replace(/\s+/g, ' ');
       
       // FIRST: Check if the entire line is an amount pattern (before extracting numbers)
-      // This handles cases like "50by50", "10/20" where the pattern contains digits
+      // This handles cases like "50by50", "10/20", "ff.10" where the pattern contains digits/dots
       const tokens = normalized.split(/\s+/);
       let amountPattern: { first: number; second: number } | null = null;
       let isOnlyPattern = false;
@@ -164,14 +164,15 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       }
       
       // SECOND: Extract numbers (only if line is not purely a pattern)
-      const numberMatches = normalized.match(/\d+/g) || [];
+      // Split by dots, spaces, commas, and plus signs to extract individual numbers
+      const numberMatches = normalized.split(/[\s.,+]+/);
       const validNumbers: string[] = [];
       
       // Only extract numbers if this line is not purely an amount pattern
       if (!isOnlyPattern) {
-        // Filter to only valid game numbers (1-4 digits)
+        // Filter to only valid game numbers (1-4 digits, pure numbers only)
         for (const num of numberMatches) {
-          if (num.length >= 1 && num.length <= 4) {
+          if (/^\d+$/.test(num) && num.length >= 1 && num.length <= 4) {
             validNumbers.push(num);
           }
         }

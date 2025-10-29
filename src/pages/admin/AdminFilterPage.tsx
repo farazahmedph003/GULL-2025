@@ -45,6 +45,13 @@ const AdminFilterPage: React.FC = () => {
   const { user } = useAuth();
   const { setRefreshCallback } = useAdminRefresh();
 
+  // Track if any modal is open or processing to pause auto-refresh
+  const isAnyModalOpenRef = React.useRef(false);
+  
+  React.useEffect(() => {
+    isAnyModalOpenRef.current = !!(showSaveModal || processing);
+  }, [showSaveModal, processing]);
+
   // Load entries when type changes
   React.useEffect(() => {
     // Register refresh callback for the refresh button
@@ -54,7 +61,11 @@ const AdminFilterPage: React.FC = () => {
 
     // Auto-refresh every 5 seconds
     const autoRefreshInterval = setInterval(() => {
-      loadEntries(false);
+      if (!isAnyModalOpenRef.current) {
+        loadEntries(false);
+      } else {
+        console.log('⏸️ Skipping Filter refresh - modal or processing');
+      }
     }, 5000);
 
     // Set up real-time subscription for auto-updates
@@ -70,7 +81,11 @@ const AdminFilterPage: React.FC = () => {
           },
           (payload: any) => {
             console.log(`🔴 Real-time update received for ${selectedType} (filter):`, payload);
-            loadEntries(false);
+            if (!isAnyModalOpenRef.current) {
+              loadEntries(false);
+            } else {
+              console.log('⏸️ Skipping real-time refresh - modal or processing');
+            }
           }
         )
         .subscribe((status: string) => {
