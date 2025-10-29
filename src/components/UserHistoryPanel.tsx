@@ -446,7 +446,7 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
         </div>
       </div>
 
-      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-2 min-h-[400px] max-h-[600px] overflow-y-auto">
+      <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-2 min-h-[400px] max-h-[600px] overflow-y-auto" id="history-scroll-container">
         {history.length === 0 ? (
           <div className="text-center py-12">
             <div className="text-gray-500 mb-2">
@@ -460,6 +460,8 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
         ) : (
           <div className="space-y-2">
             {history.map((item) => renderHistoryItem(item))}
+            {/* Invisible element at the bottom for auto-scroll */}
+            <div ref={historyEndRef} />
           </div>
         )}
       </div>
