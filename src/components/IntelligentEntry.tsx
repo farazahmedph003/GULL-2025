@@ -129,24 +129,28 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       let isOnlyPattern = false;
       let lineWithoutPattern = normalized;
       
-      // Check if the entire line is just a pattern (like "ff.10" alone)
-      const wholeLineParsed = parseAmountPattern(normalized);
+      // Check if the entire line is just a pattern (like "ff.10" alone or ".ff.10")
+      const cleanedLine = normalized.replace(/^[.,\s]+/, '').trim(); // Remove leading dots/commas
+      const wholeLineParsed = parseAmountPattern(cleanedLine);
       if (wholeLineParsed) {
         amountPattern = wholeLineParsed;
         isOnlyPattern = true;
       } else {
-        // Search for patterns in the line and remove them to get numbers
-        // Pattern prefixes to look for: ff, ss, n, nil, ending with +, /, by
-        const patternRegex = /(^|\s)(ff\.?\d+|ss\.?\d+|n\+\d+|nil\+\d+|\d+\+n|\d+\+nil|\d+\+ff|\d+\/\d+|\d+by\d+|\d+f\s+\d+s)($|\s)/gi;
-        const patternMatch = normalized.match(patternRegex);
+        // Try to find patterns embedded in the line using comprehensive regex
+        // Matches: ff.10, ff10, ss.20, ss20, n+100, 100+n, 10/20, 10by20, etc.
+        const patternRegex = /(?:ff\.?\d+|ss\.?\d+|(?:n|nil)\+\d+|\d+\+(?:n|nil|ff|ss)|\d+\/\d+|\d+by\d+|\d+f\s+\d+s)/gi;
+        const patternMatches = normalized.match(patternRegex);
         
-        if (patternMatch) {
-          const patternText = patternMatch[0].trim();
-          const parsed = parseAmountPattern(patternText);
-          if (parsed) {
-            amountPattern = parsed;
-            // Remove the pattern from the line to extract numbers
-            lineWithoutPattern = normalized.replace(patternRegex, ' ').trim();
+        if (patternMatches && patternMatches.length > 0) {
+          // Try each match to see if it's a valid pattern
+          for (const match of patternMatches) {
+            const parsed = parseAmountPattern(match);
+            if (parsed) {
+              amountPattern = parsed;
+              // Remove the pattern from the line to extract numbers
+              lineWithoutPattern = normalized.replace(match, '').trim();
+              break;
+            }
           }
         }
         
@@ -154,16 +158,19 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         if (!amountPattern) {
           const tokens = normalized.split(/\s+/);
           for (const token of tokens) {
+            // Remove leading dots/commas from token
+            const cleanToken = token.replace(/^[.,]+/, '').replace(/[.,]+$/, '');
+            
             // Skip if it's a pure number (could be a game number)
-            if (/^\d+$/.test(token) && token.length <= 4) {
+            if (/^\d+$/.test(cleanToken) && cleanToken.length <= 4) {
               continue;
             }
             
-            const parsed = parseAmountPattern(token);
+            const parsed = parseAmountPattern(cleanToken);
             if (parsed) {
               amountPattern = parsed;
               // Remove this token from the line
-              lineWithoutPattern = normalized.replace(token, ' ').trim();
+              lineWithoutPattern = normalized.replace(cleanToken, '').trim();
               break;
             }
           }
