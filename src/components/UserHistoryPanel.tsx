@@ -48,6 +48,7 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
   const { user } = useAuth();
   const [adminActions, setAdminActions] = useState<any[]>([]);
   const [topUps, setTopUps] = useState<any[]>([]);
+  const historyEndRef = React.useRef<HTMLDivElement>(null);
 
   const loadAdditionalHistory = useCallback(async () => {
     if (!user?.id) {
@@ -191,7 +192,7 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
     combined.sort((a, b) => {
       const dateA = a.created_at || a.createdAt || '';
       const dateB = b.created_at || b.createdAt || '';
-      return new Date(dateB).getTime() - new Date(dateA).getTime();
+      return new Date(dateA).getTime() - new Date(dateB).getTime(); // Oldest first (recent at bottom)
     });
 
     return combined;
