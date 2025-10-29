@@ -6,7 +6,6 @@ import { useTransactions } from '../hooks/useTransactions';
 import { useAuth } from '../contexts/AuthContext';
 import { isAdminEmail } from '../config/admin';
 import { useNotifications } from '../contexts/NotificationContext';
-import { createWorker } from 'tesseract.js';
 
 interface IntelligentEntryProps {
   projectId: string;
@@ -38,7 +37,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [isLoadingFile, setIsLoadingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Helper function to parse amount patterns
@@ -434,76 +433,59 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     }
   };
 
-  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleWhatsAppUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      await showError('Invalid File', 'Please upload an image file (JPG, PNG, etc.)');
+    // Validate file type - accept .txt files
+    if (!file.name.endsWith('.txt') && file.type !== 'text/plain') {
+      await showError(
+        'Invalid File', 
+        'Please upload a WhatsApp chat export (.txt file). Go to WhatsApp → Chat → More → Export Chat → Without Media'
+      );
       return;
     }
 
-    setIsProcessingImage(true);
+    setIsLoadingFile(true);
     
     try {
-      console.log('Starting OCR process...');
+      // Read the text file
+      const text = await file.text();
       
-      // Create Tesseract worker with progress logging
-      const worker = await createWorker('eng', 1, {
-        logger: (m) => console.log('OCR Progress:', m),
-      });
-      
-      console.log('Worker created, starting recognition...');
-      
-      // Perform OCR with timeout
-      const recognitionPromise = worker.recognize(file);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('OCR timeout - image too large or complex')), 30000)
-      );
-      
-      const result = await Promise.race([recognitionPromise, timeoutPromise]) as any;
-      const text = result.data.text;
-      
-      console.log('OCR completed, extracted text length:', text.length);
-      
-      // Terminate worker
-      await worker.terminate();
-      
-      // Set extracted text to input
       if (text.trim()) {
+        // Set the text to input (WhatsApp timestamps will be auto-removed by parser)
         setInputText(text);
         
+        const lineCount = text.split('\n').filter(l => l.trim()).length;
+        
         await showSuccess(
-          'Image Processed',
-          `Extracted ${text.split('\n').filter(l => l.trim()).length} lines of text!`,
+          'WhatsApp Chat Loaded',
+          `Loaded ${lineCount} lines! WhatsApp timestamps will be auto-removed. Click "Process Data" to continue.`,
           { duration: 3000 }
         );
+        
+        // Focus textarea
+        setTimeout(() => {
+          const textarea = document.querySelector('textarea');
+          if (textarea) textarea.focus();
+        }, 100);
       } else {
         await showError(
-          'No Text Found',
-          'Could not find any text in the image. Please try a clearer image.',
+          'Empty File',
+          'The file appears to be empty. Please export a valid WhatsApp chat.',
           { duration: 5000 }
         );
       }
       
-      // Focus textarea
-      setTimeout(() => {
-        const textarea = document.querySelector('textarea');
-        if (textarea) textarea.focus();
-      }, 100);
-      
     } catch (error) {
-      console.error('OCR Error:', error);
+      console.error('File Read Error:', error);
       await showError(
-        'Processing Failed',
-        error instanceof Error && error.message.includes('timeout') 
-          ? 'Image processing timed out. Try a smaller or clearer image.'
-          : 'Could not extract text from image. Please try again or enter manually.',
+        'Loading Failed',
+        'Could not read the file. Please try again or paste the text manually.',
         { duration: 5000 }
       );
     } finally {
-      setIsProcessingImage(false);
+      setIsLoadingFile(false);
       // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -519,34 +501,34 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
             Paste your data here
           </label>
-          {/* Image Upload Button */}
+          {/* WhatsApp Chat Upload Button */}
           <div>
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
+              accept=".txt,text/plain"
+              onChange={handleWhatsAppUpload}
               className="hidden"
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={isProcessingImage}
-              className="px-3 py-2 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
-              title="Upload image to extract text"
+              disabled={isLoadingFile}
+              className="px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+              title="Upload WhatsApp chat export (.txt file)"
             >
-              {isProcessingImage ? (
+              {isLoadingFile ? (
                 <>
                   <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  <span>Processing...</span>
+                  <span>Loading...</span>
                 </>
               ) : (
                 <>
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                   </svg>
-                  <span>Upload Image</span>
+                  <span>Upload WhatsApp</span>
                 </>
               )}
             </button>
@@ -555,10 +537,10 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         <textarea
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder={`Paste data here or upload an image...`}
+          placeholder={`Paste data here or upload WhatsApp chat export...`}
           className="w-full px-6 py-5 text-xl border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono resize-none transition-all duration-200"
           rows={15}
-          disabled={isProcessingImage}
+          disabled={isLoadingFile}
         />
         <div className="flex items-center justify-between mt-3">
           <p className="text-sm text-gray-600 dark:text-gray-400">
