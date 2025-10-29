@@ -447,23 +447,45 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     setIsProcessingImage(true);
     
     try {
-      // Create Tesseract worker
-      const worker = await createWorker('eng');
+      console.log('Starting OCR process...');
       
-      // Perform OCR
-      const { data: { text } } = await worker.recognize(file);
+      // Create Tesseract worker with progress logging
+      const worker = await createWorker('eng', 1, {
+        logger: (m) => console.log('OCR Progress:', m),
+      });
+      
+      console.log('Worker created, starting recognition...');
+      
+      // Perform OCR with timeout
+      const recognitionPromise = worker.recognize(file);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('OCR timeout - image too large or complex')), 30000)
+      );
+      
+      const result = await Promise.race([recognitionPromise, timeoutPromise]) as any;
+      const text = result.data.text;
+      
+      console.log('OCR completed, extracted text length:', text.length);
       
       // Terminate worker
       await worker.terminate();
       
       // Set extracted text to input
-      setInputText(text);
-      
-      await showSuccess(
-        'Image Processed',
-        'Text extracted successfully! Review and click "Process Data".',
-        { duration: 3000 }
-      );
+      if (text.trim()) {
+        setInputText(text);
+        
+        await showSuccess(
+          'Image Processed',
+          `Extracted ${text.split('\n').filter(l => l.trim()).length} lines of text!`,
+          { duration: 3000 }
+        );
+      } else {
+        await showError(
+          'No Text Found',
+          'Could not find any text in the image. Please try a clearer image.',
+          { duration: 5000 }
+        );
+      }
       
       // Focus textarea
       setTimeout(() => {
@@ -475,7 +497,9 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       console.error('OCR Error:', error);
       await showError(
         'Processing Failed',
-        'Could not extract text from image. Please try again or enter manually.',
+        error instanceof Error && error.message.includes('timeout') 
+          ? 'Image processing timed out. Try a smaller or clearer image.'
+          : 'Could not extract text from image. Please try again or enter manually.',
         { duration: 5000 }
       );
     } finally {
