@@ -402,33 +402,47 @@ const AdminDashboard: React.FC = () => {
 
                       <button
                         onClick={async () => {
-                          if (!confirm) return;
+                          if (!confirm) {
+                            console.error('Confirmation dialog not available');
+                            showError('Error', 'Confirmation dialog not available');
+                            return;
+                          }
                           
                           const result = await confirm(
-                            `Are you sure you want to RESET ALL ENTRIES for "${user.full_name}" (@${user.username})?\n\nThis will permanently delete ALL transactions for this user.\n\nThis action CANNOT be undone!`,
-                            { type: 'danger', title: '⚠️ Reset User Entries' }
+                            `Are you sure you want to RESET ALL DATA for "${user.full_name}" (@${user.username})?\n\nThis will:\n• Delete ALL transactions\n• Delete ALL balance history\n• Reset total spent to 0\n\nThis action CANNOT be undone!`,
+                            { type: 'danger', title: '⚠️ Reset User Data' }
                           );
                           
-                          if (!result) return;
+                          if (!result) {
+                            console.log('Reset cancelled by user');
+                            return;
+                          }
 
                           try {
+                            console.log('Starting reset for user:', user.id);
                             const resetResult = await db.resetUserHistory(user.id);
+                            console.log('Reset result:', resetResult);
+                            
                             await showSuccess(
-                              'Entries Reset',
-                              `Successfully deleted ${resetResult.deletedCount} transaction(s) for ${user.username}`
+                              'User Data Reset',
+                              `Successfully reset all data for ${user.username} (${resetResult.deletedCount} transactions deleted)`
                             );
-                            loadUsers();
-                            if (selectedFilter) {
-                              loadUserStatsForType(selectedFilter);
-                            }
-                          } catch (error) {
-                            console.error('Error resetting user entries:', error);
-                            showError('Error', 'Failed to reset user entries');
+                            
+                            // Force reload with a small delay to ensure database updates propagate
+                            setTimeout(() => {
+                              loadUsers();
+                              if (selectedFilter) {
+                                loadUserStatsForType(selectedFilter);
+                              }
+                            }, 500);
+                          } catch (error: any) {
+                            console.error('Error resetting user data:', error);
+                            showError('Reset Failed', error?.message || 'Failed to reset user data');
                           }
                         }}
                         className="w-full px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl font-semibold hover:from-red-600 hover:to-red-700 transition-all"
                       >
-                        Reset Entries
+                        Reset All Data
                       </button>
                     </div>
                   </div>
