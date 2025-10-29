@@ -95,9 +95,11 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return { first: 0, second: Number(match![1]) };
     }
     
-    // Check for f/s patterns: 10f 20s, 10F 20S, or single: 100f, 200s
+    // Check for f/s patterns: 10f 20s, 10F 20S, f20, s20, F20, S20, or single: 100f, 200s
     const fsSingleFirst = /^(\d+)[fF]$/;
     const fsSingleSecond = /^(\d+)[sS]$/;
+    const fPrefixPattern = /^[fF](\d+(?:\.\d+)?)$/;
+    const sPrefixPattern = /^[sS](\d+(?:\.\d+)?)$/;
     const fsPattern = /^(\d+(?:\.\d+)?)[fF]\s+(\d+(?:\.\d+)?)[sS]$/;
     
     if (fsPattern.test(cleanText)) {
@@ -112,6 +114,16 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     
     if (fsSingleSecond.test(cleanText)) {
       const match = cleanText.match(fsSingleSecond);
+      return { first: 0, second: Number(match![1]) };
+    }
+    
+    if (fPrefixPattern.test(cleanText)) {
+      const match = cleanText.match(fPrefixPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (sPrefixPattern.test(cleanText)) {
+      const match = cleanText.match(sPrefixPattern);
       return { first: 0, second: Number(match![1]) };
     }
     
@@ -180,8 +192,8 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         isOnlyPattern = true;
       } else {
         // Try to find patterns embedded in the line using comprehensive regex
-        // Matches: ff.10, ff10, 100ff, 100-ff, ss.20, ss20, 200ss, 200-ss, n+100, 100+n, 10/20, 10-20, 10by20, 10x20, 100f, 200s, etc.
-        const patternRegex = /(?:ff\.?\d+|\d+ff|\d+-ff|ss\.?\d+|\d+ss|\d+-ss|(?:n|nil)\+\d+|\d+\+(?:n|nil|ff|ss)|\d+\/\d+|\d+-\d+|\d+(?:by|x)\d+|\d+f(?:\s+\d+s)?|\d+s)/gi;
+        // Matches: ff.10, ff10, 100ff, 100-ff, ss.20, ss20, 200ss, 200-ss, n+100, 100+n, 10/20, 10-20, 10by20, 10x20, 100f, 200s, f20, s20, etc.
+        const patternRegex = /(?:ff\.?\d+|\d+ff|\d+-ff|ss\.?\d+|\d+ss|\d+-ss|(?:n|nil)\+\d+|\d+\+(?:n|nil|ff|ss)|\d+\/\d+|\d+-\d+|\d+(?:by|x)\d+|\d+f(?:\s+\d+s)?|\d+s|[fF]\d+|[sS]\d+)/gi;
         const patternMatches = normalized.match(patternRegex);
         
         if (patternMatches && patternMatches.length > 0) {
