@@ -156,18 +156,28 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     const entries: ParsedEntry[] = [];
     const parseErrors: string[] = [];
     
-    // Clean WhatsApp timestamp lines (e.g., "[28/10/2025 11:16 pm] Username: 89")
-    // Extract the actual data after the timestamp and username
-    const whatsappPattern = /^\[.*?\].*?:\s*/;
+    // Clean WhatsApp timestamp lines
+    // Format 1: "[28/10/2025 11:16 pm] Username: 89"
+    // Format 2: "10/29/25, 7:40 PM - servant Of ALLAH: 3926."
+    const whatsappBracketPattern = /^\[.*?\].*?:\s*/;
+    const whatsappDashPattern = /^\d{1,2}\/\d{1,2}\/\d{2,4},?\s+\d{1,2}:\d{2}\s+(?:AM|PM|am|pm)?\s*-\s*.*?:\s*/;
     
     const lines = text.split('\n')
       .filter(line => line.trim())
       .map(line => {
-        // If line starts with WhatsApp timestamp, remove it and keep only the data
-        if (whatsappPattern.test(line.trim())) {
-          return line.trim().replace(whatsappPattern, '');
+        const trimmed = line.trim();
+        
+        // Remove WhatsApp timestamp (bracketed format)
+        if (whatsappBracketPattern.test(trimmed)) {
+          return trimmed.replace(whatsappBracketPattern, '');
         }
-        return line.trim();
+        
+        // Remove WhatsApp timestamp (dash format)
+        if (whatsappDashPattern.test(trimmed)) {
+          return trimmed.replace(whatsappDashPattern, '');
+        }
+        
+        return trimmed;
       })
       .filter(line => line.length > 0); // Remove empty lines after cleaning
 
