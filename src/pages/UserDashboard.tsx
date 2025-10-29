@@ -221,12 +221,34 @@ const UserDashboard: React.FC = () => {
     try {
       setIsDeleting(true);
 
-      // Delete the transaction (deleteTransaction will handle balance refund automatically)
-      await deleteTransaction(deletingTransaction.id);
+      // Check if this is a batch delete (groupedIds array passed as metadata)
+      const groupedIds = (deletingTransaction as any).groupedIds;
       
-      setDeletingTransaction(null);
-      silentRefresh();
-      showSuccess('Success', 'Transaction deleted successfully and balance refunded');
+      if (groupedIds && Array.isArray(groupedIds) && groupedIds.length > 1) {
+        // Batch delete - delete all transactions in the group
+        console.log(`🗑️ Batch deleting ${groupedIds.length} entries...`);
+        
+        let successCount = 0;
+        for (const id of groupedIds) {
+          try {
+            await deleteTransaction(id);
+            successCount++;
+          } catch (err) {
+            console.error(`Failed to delete transaction ${id}:`, err);
+          }
+        }
+        
+        setDeletingTransaction(null);
+        silentRefresh();
+        showSuccess('Batch Delete Success', `Deleted ${successCount} of ${groupedIds.length} entries and refunded balance`);
+      } else {
+        // Single delete
+        await deleteTransaction(deletingTransaction.id);
+        
+        setDeletingTransaction(null);
+        silentRefresh();
+        showSuccess('Success', 'Transaction deleted successfully and balance refunded');
+      }
     } catch (error) {
       console.error('Delete error:', error);
       showError('Error', 'Failed to delete transaction');
@@ -317,10 +339,15 @@ const UserDashboard: React.FC = () => {
                 transactions={transactions}
                 activeTab={activeTab}
                 onEdit={(t) => setEditingTransaction(t)}
-                onDelete={(transactionId) => {
+                onDelete={(transactionId, groupedIds) => {
                   const transaction = transactions.find(t => t.id === transactionId);
                   if (transaction) {
-                    setDeletingTransaction(transaction);
+                    // If groupedIds are provided, attach them to the transaction for batch delete
+                    if (groupedIds && groupedIds.length > 0) {
+                      setDeletingTransaction({ ...transaction, groupedIds } as any);
+                    } else {
+                      setDeletingTransaction(transaction);
+                    }
                   }
                 }}
                 onExportPDF={handleExportPDF}

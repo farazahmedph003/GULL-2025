@@ -38,7 +38,7 @@ interface UserHistoryPanelProps {
   transactions: Transaction[];
   activeTab?: 'all' | 'open' | 'akra' | 'ring' | 'packet';
   onEdit?: (transaction: Transaction) => void;
-  onDelete?: (transactionId: string) => void;
+  onDelete?: (transactionId: string, groupedIds?: string[]) => void;
   onExportPDF?: () => void;
   refreshTrigger?: number; // Timestamp to trigger refresh from parent
   isPartner?: boolean; // Show edit/delete buttons only for partner users
@@ -393,20 +393,22 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
             {isPartner && isGrouped && onDelete && (
               <div className="flex items-center gap-2 ml-4">
                 <button
-                  onClick={async () => {
+                  onClick={() => {
                     if (item.groupedIds && item.groupedIds.length > 0) {
-                      // Delete all transactions in the group
-                      for (const id of item.groupedIds) {
-                        await onDelete(id);
-                      }
+                      // Pass the first ID - the delete handler will handle it as a grouped deletion
+                      // Or we can create a batch delete by calling with special format
+                      onDelete(item.id, item.groupedIds);
                     }
                   }}
                   className="p-2.5 rounded-lg bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 transition-colors"
-                  title={`Delete all ${groupCount} entries`}
+                  title={`Delete all ${groupCount} entries at once`}
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
+                  <div className="flex items-center gap-1">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    <span className="text-xs font-semibold">{groupCount}</span>
+                  </div>
                 </button>
               </div>
             )}
