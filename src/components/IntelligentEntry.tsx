@@ -6,6 +6,7 @@ import { useTransactions } from '../hooks/useTransactions';
 import { useAuth } from '../contexts/AuthContext';
 import { isAdminEmail } from '../config/admin';
 import { useNotifications } from '../contexts/NotificationContext';
+import JSZip from 'jszip';
 
 interface IntelligentEntryProps {
   projectId: string;
@@ -447,20 +448,44 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Validate file type - accept .txt files
-    if (!file.name.endsWith('.txt') && file.type !== 'text/plain') {
-      await showError(
-        'Invalid File', 
-        'Please upload a WhatsApp chat export (.txt file). Go to WhatsApp → Chat → More → Export Chat → Without Media'
-      );
-      return;
-    }
-
     setIsLoadingFile(true);
     
     try {
-      // Read the text file
-      const text = await file.text();
+      let text = '';
+      
+      // Handle .zip files (WhatsApp exports as .zip)
+      if (file.name.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed') {
+        const arrayBuffer = await file.arrayBuffer();
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        
+        // Find the .txt file inside the zip
+        const txtFile = Object.keys(zip.files).find(filename => filename.endsWith('.txt'));
+        
+        if (!txtFile) {
+          await showError(
+            'No Text File Found',
+            'Could not find a .txt file inside the zip. Please ensure you exported "Without Media".',
+            { duration: 5000 }
+          );
+          return;
+        }
+        
+        // Extract and read the .txt file
+        text = await zip.files[txtFile].async('text');
+      }
+      // Handle direct .txt files
+      else if (file.name.endsWith('.txt') || file.type === 'text/plain') {
+        text = await file.text();
+      }
+      // Invalid file type
+      else {
+        await showError(
+          'Invalid File', 
+          'Please upload a WhatsApp chat export (.txt or .zip file). Go to WhatsApp → Chat → ⋮ → Export Chat → Without Media',
+          { duration: 5000 }
+        );
+        return;
+      }
       
       if (text.trim()) {
         // Set the text to input (WhatsApp timestamps will be auto-removed by parser)
@@ -470,7 +495,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         
         await showSuccess(
           'WhatsApp Chat Loaded',
-          `Loaded ${lineCount} lines! WhatsApp timestamps will be auto-removed. Click "Process Data" to continue.`,
+          `Loaded ${lineCount} lines! Timestamps will be auto-removed. Click "Process Data".`,
           { duration: 3000 }
         );
         
@@ -491,7 +516,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       console.error('File Read Error:', error);
       await showError(
         'Loading Failed',
-        'Could not read the file. Please try again or paste the text manually.',
+        'Could not read the file. Make sure it\'s a valid WhatsApp export (.txt or .zip).',
         { duration: 5000 }
       );
     } finally {
@@ -511,35 +536,29 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
             Paste your data here
           </label>
-          {/* WhatsApp Chat Upload Button */}
+          {/* WhatsApp Chat Upload Icon */}
           <div>
             <input
               ref={fileInputRef}
               type="file"
-              accept=".txt,text/plain"
+              accept=".txt,.zip,text/plain,application/zip,application/x-zip-compressed"
               onChange={handleWhatsAppUpload}
               className="hidden"
             />
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isLoadingFile}
-              className="px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg font-semibold transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
-              title="Upload WhatsApp chat export (.txt file)"
+              className="p-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+              title="Upload WhatsApp chat export (.txt or .zip)"
             >
               {isLoadingFile ? (
-                <>
-                  <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <span>Loading...</span>
-                </>
+                <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
               ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                  </svg>
-                  <span>Upload WhatsApp</span>
-                </>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
               )}
             </button>
           </div>
