@@ -164,6 +164,13 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
         return sameTime && sameFirst && sameSecond && sameType;
       });
       
+      // Sort similar transactions by creation time to preserve entry order
+      similarTransactions.sort((a, b) => {
+        const timeA = new Date(a.created_at || a.createdAt).getTime();
+        const timeB = new Date(b.created_at || b.createdAt).getTime();
+        return timeA - timeB; // Oldest first = entry order
+      });
+      
       // Mark all similar transactions as processed
       similarTransactions.forEach(t => processedIds.add(t.id));
       
