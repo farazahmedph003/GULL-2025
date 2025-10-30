@@ -129,13 +129,19 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return { first: 0, second: Number(match![1]) };
     }
     
-    // Check for /, by, x patterns (explicit amount indicators): 50/450, 10by20, 10x20
+    // Check for /, =, by, x patterns (explicit amount indicators): 50/450, 10=10, 10by20, 10x20
     // Note: Dash "-" is treated as NUMBER SEPARATOR, not an amount pattern
     const slashPattern = /^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/;
+    const equalsPattern = /^(\d+(?:\.\d+)?)=(\d+(?:\.\d+)?)$/;
     const byPattern = /^(\d+(?:\.\d+)?)(by|x)(\d+(?:\.\d+)?)$/i;
     
     if (slashPattern.test(cleanText)) {
       const match = cleanText.match(slashPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (equalsPattern.test(cleanText)) {
+      const match = cleanText.match(equalsPattern);
       return { first: Number(match![1]), second: Number(match![2]) };
     }
     
@@ -213,9 +219,9 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         isOnlyPattern = true;
       } else {
         // Try to find patterns embedded in the line using comprehensive regex
-        // Matches: ff.10, ff10, 100ff, 100-ff, ss.20, ss20, 200ss, 200-ss, n+100, 100+n, 50/450, 10by20, 10x20, 100f, 200s, f20, s20, etc.
+        // Matches: ff.10, ff10, 100ff, 100-ff, ss.20, ss20, 200ss, 200-ss, n+100, 100+n, 50/450, 10=10, 10by20, 10x20, 100f, 200s, f20, s20, etc.
         // NOTE: Dash "-" in numbers like "905-906" is a separator, NOT an amount pattern
-        const patternRegex = /(?:ff\.?\d+|\d+ff|\d+-ff|ss\.?\d+|\d+ss|\d+-ss|(?:n|nil)\+\d+|\d+\+(?:n|nil|ff|ss)|\d+\/\d+|\d+(?:by|x)\d+|\d+f(?:\s+\d+s)?|\d+s|[fF]\d+|[sS]\d+)/gi;
+        const patternRegex = /(?:ff\.?\d+|\d+ff|\d+-ff|ss\.?\d+|\d+ss|\d+-ss|(?:n|nil)\+\d+|\d+\+(?:n|nil|ff|ss)|\d+\/\d+|\d+=\d+|\d+(?:by|x)\d+|\d+f(?:\s+\d+s)?|\d+s|[fF]\d+|[sS]\d+)/gi;
         const patternMatches = normalized.match(patternRegex);
         
         if (patternMatches && patternMatches.length > 0) {
