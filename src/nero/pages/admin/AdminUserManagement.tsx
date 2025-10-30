@@ -293,12 +293,12 @@ const AdminUserManagement: React.FC = () => {
                           <p className="font-semibold text-gray-900 dark:text-white">{user.displayName}</p>
                           <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
                           <div className="flex gap-1 mt-1">
-                            {user.role === 'admin' && (
+                          {user.role === 'admin' && (
                               <span className="nero-badge nero-badge-info text-xs">Admin</span>
                             )}
                             {user.isPartner && (
                               <span className="nero-badge nero-badge-warning text-xs">🤝 Partner</span>
-                            )}
+                          )}
                           </div>
                         </div>
                       </div>

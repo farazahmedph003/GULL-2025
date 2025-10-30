@@ -39,15 +39,44 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
   const [showPreview, setShowPreview] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<{ index: number; entry: ParsedEntry } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Helper function to parse amount patterns
   const parseAmountPattern = (text: string): { first: number; second: number } | null => {
     const cleanText = text.trim();
     
-    // Check for nil/n patterns: N+200, n+200, NIL+200, nil+200, 300+N, 300+nil
-    const nilPlusNumber = /^(n|nil)\+(\d+(?:\.\d+)?)$/i;
-    const numberPlusNil = /^(\d+(?:\.\d+)?)\+(n|nil|ff)$/i;
+    // Check for parentheses pattern FIRST: 41(10/50), 41(10//50), 41(10by50), 41(10=50), 41(10+50)
+    const parenPattern = /^\d*\((\d+(?:\.\d+)?)[\/]{1,2}(\d+(?:\.\d+)?)\)$/;
+    const parenByPattern = /^\d*\((\d+(?:\.\d+)?)(?:by|x)(\d+(?:\.\d+)?)\)$/i;
+    const parenEqualsPattern = /^\d*\((\d+(?:\.\d+)?)=(\d+(?:\.\d+)?)\)$/;
+    const parenPlusPattern = /^\d*\((\d+(?:\.\d+)?)\+(\d+(?:\.\d+)?)\)$/;
+    
+    if (parenPattern.test(cleanText)) {
+      const match = cleanText.match(parenPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (parenByPattern.test(cleanText)) {
+      const match = cleanText.match(parenByPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (parenEqualsPattern.test(cleanText)) {
+      const match = cleanText.match(parenEqualsPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (parenPlusPattern.test(cleanText)) {
+      const match = cleanText.match(parenPlusPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    // Check for nil/n patterns FIRST: N+200, n+200, NIL+200, nil+200, 300+N, 300+nil, 300+ff, 20.nil, 20nil, nil.20, 20xnil, 100bynil, nilx20, nilby100
+    const nilPlusNumber = /^(n|nil)\.?\+?(\d+(?:\.\d+)?)$/i;
+    const numberPlusNil = /^(\d+(?:\.\d+)?)\.?\+?(n|nil|ff)$/i;
+    const numberByNil = /^(\d+(?:\.\d+)?)[\s.]*(by|x)[\s.]*(n|nil)$/i; // 20xnil, 100bynil
+    const nilByNumber = /^(n|nil)[\s.]*(by|x)[\s.]*(\d+(?:\.\d+)?)$/i; // nilx20, nilby100
     
     if (nilPlusNumber.test(cleanText)) {
       const match = cleanText.match(nilPlusNumber);
@@ -57,6 +86,24 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     if (numberPlusNil.test(cleanText)) {
       const match = cleanText.match(numberPlusNil);
       return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (numberByNil.test(cleanText)) {
+      const match = cleanText.match(numberByNil);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (nilByNumber.test(cleanText)) {
+      const match = cleanText.match(nilByNumber);
+      return { first: 0, second: Number(match![3]) };
+    }
+    
+    // Check for regular number+number pattern: 10+10, 50+100, etc.
+    const plusPattern = /^(\d+(?:\.\d+)?)\+(\d+(?:\.\d+)?)$/;
+    
+    if (plusPattern.test(cleanText)) {
+      const match = cleanText.match(plusPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
     }
     
     // Check for ff/ss patterns: ff10, FF10, ff.10, FF.10, 100ff, 100FF, 100-ff, 100-FF (prefix, suffix, and dash)
@@ -97,16 +144,118 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return { first: 0, second: Number(match![1]) };
     }
     
-    // Check for f/s patterns: 10f 20s, 10F 20S, f20, s20, F20, S20, or single: 100f, 200s
+    // Check for f/s patterns: 10f 20s, 10F 20S, f20, f 20, F.. 50, F 300, s20, s 20, S20, F. S. 25x50, F.100=s.400, F/100, F.100/S.400, F.100+S.400, f100s200, or single: 100f, 200s
     const fsSingleFirst = /^(\d+)[fF]$/;
     const fsSingleSecond = /^(\d+)[sS]$/;
-    const fPrefixPattern = /^[fF](\d+(?:\.\d+)?)$/;
-    const sPrefixPattern = /^[sS](\d+(?:\.\d+)?)$/;
+    const fPrefixPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)$/; // Allow dots/spaces: f20, F 300, F.. 50
+    const sPrefixPattern = /^[sS][\s.]*(\d+(?:\.\d+)?)$/; // Allow dots/spaces: s20, S 300, S.. 50
+    const fSlashPattern = /^[fF][\s.]*\/[\s.]*(\d+(?:\.\d+)?)$/i; // F/100, f/200
+    const sSlashPattern = /^[sS][\s.]*\/[\s.]*(\d+(?:\.\d+)?)$/i; // S/200, s/100
+    const fColonPattern = /^[fF][\s.]*:[\s.]*(\d+(?:\.\d+)?)$/i; // F:100, f:200
+    const sColonPattern = /^[sS][\s.]*:[\s.]*(\d+(?:\.\d+)?)$/i; // S:200, s:100
+    const fPipePattern = /^[fF][\s.]*\|[\s.]*(\d+(?:\.\d+)?)$/i; // F|100, f|200
+    const sPipePattern = /^[sS][\s.]*\|[\s.]*(\d+(?:\.\d+)?)$/i; // S|200, s|100
+    const fDashPattern = /^[fF][\s.]*-[\s.]*(\d+(?:\.\d+)?)$/i; // F-100, f-200
+    const sDashPattern = /^[sS][\s.]*-[\s.]*(\d+(?:\.\d+)?)$/i; // S-200, s-100
     const fsPattern = /^(\d+(?:\.\d+)?)[fF]\s+(\d+(?:\.\d+)?)[sS]$/;
+    const fsCompactPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[sS][\s.]*(\d+(?:\.\d+)?)$/i; // f100s200, F100S200
+    const fsEqualsPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*=[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100=s.400, f100=s400
+    const fsSlashPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*\/[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100/S.400, F100/S200
+    const fsPlusPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*\+[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100+S.400, F100+S200
+    const fsColonPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*:[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100:S.400, F100:S200
+    const fsPipePattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*\|[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100|S.400, F100|S200
+    const fsDashPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*-[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100-S.400, F100-S200
+    const fsDotSpacePattern = /^[fF][\s.]*([sS])[\s.]*(\d+(?:\.\d+)?)(?:[xX]|by)(\d+(?:\.\d+)?)$/i; // F. S. 25x50
+    const fstPattern = /^[\s.]*f(?:a)?st[\s.]*(\d+(?:\.\d+)?)[\s.]*$/i; // fst.50, fast.50, ..fst..50, ..fast..50
     
     if (fsPattern.test(cleanText)) {
       const match = cleanText.match(fsPattern);
       return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (fsCompactPattern.test(cleanText)) {
+      const match = cleanText.match(fsCompactPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (fsEqualsPattern.test(cleanText)) {
+      const match = cleanText.match(fsEqualsPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (fsSlashPattern.test(cleanText)) {
+      const match = cleanText.match(fsSlashPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (fsPlusPattern.test(cleanText)) {
+      const match = cleanText.match(fsPlusPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (fsColonPattern.test(cleanText)) {
+      const match = cleanText.match(fsColonPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (fsPipePattern.test(cleanText)) {
+      const match = cleanText.match(fsPipePattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (fsDashPattern.test(cleanText)) {
+      const match = cleanText.match(fsDashPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (fsDotSpacePattern.test(cleanText)) {
+      const match = cleanText.match(fsDotSpacePattern);
+      return { first: Number(match![2]), second: Number(match![3]) };
+    }
+    
+    if (fstPattern.test(cleanText)) {
+      const match = cleanText.match(fstPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (fSlashPattern.test(cleanText)) {
+      const match = cleanText.match(fSlashPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (sSlashPattern.test(cleanText)) {
+      const match = cleanText.match(sSlashPattern);
+      return { first: 0, second: Number(match![1]) };
+    }
+    
+    if (fColonPattern.test(cleanText)) {
+      const match = cleanText.match(fColonPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (sColonPattern.test(cleanText)) {
+      const match = cleanText.match(sColonPattern);
+      return { first: 0, second: Number(match![1]) };
+    }
+    
+    if (fPipePattern.test(cleanText)) {
+      const match = cleanText.match(fPipePattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (sPipePattern.test(cleanText)) {
+      const match = cleanText.match(sPipePattern);
+      return { first: 0, second: Number(match![1]) };
+    }
+    
+    if (fDashPattern.test(cleanText)) {
+      const match = cleanText.match(fDashPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (sDashPattern.test(cleanText)) {
+      const match = cleanText.match(sDashPattern);
+      return { first: 0, second: Number(match![1]) };
     }
     
     if (fsSingleFirst.test(cleanText)) {
@@ -129,11 +278,15 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return { first: 0, second: Number(match![1]) };
     }
     
-    // Check for /, =, by, x patterns (explicit amount indicators): 50/450, 10=10, 10by20, 10x20
-    // Note: Dash "-" is treated as NUMBER SEPARATOR, not an amount pattern
-    const slashPattern = /^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/;
-    const equalsPattern = /^(\d+(?:\.\d+)?)=(\d+(?:\.\d+)?)$/;
-    const byPattern = /^(\d+(?:\.\d+)?)(by|x)(\d+(?:\.\d+)?)$/i;
+    // Check for /, =, by, x, :, |, - patterns (explicit amount indicators): 50/450, 150/250, 10=10, 10by20, 10x20, 25x50, 50 by 350, 50.by.50, .10..by..50.., 10:20, 10|20, 100-200
+    // Note: Asterisk "*" is treated as NUMBER SEPARATOR, not amount pattern
+    // Allow dots and/or spaces around patterns
+    const slashPattern = /^[\s.]*(\d+(?:\.\d+)?)[\s.]*\/[\s.]*(\d+(?:\.\d+)?)[\s.]*$/; // Dots/spaces optional for 150/250
+    const equalsPattern = /^[\s.]*(\d+(?:\.\d+)?)[\s.]*=[\s.]*(\d+(?:\.\d+)?)[\s.]*$/; // Dots/spaces optional for 10=10
+    const byPattern = /^[\s.]*(\d+(?:\.\d+)?)[\s.]*(by|x)[\s.]*(\d+(?:\.\d+)?)[\s.]*$/i; // Dots/spaces optional for 50 by 350
+    const colonPattern = /^[\s.]*(\d+(?:\.\d+)?)[\s.]*:[\s.]*(\d+(?:\.\d+)?)[\s.]*$/; // 10:20, 100:200
+    const pipePattern = /^[\s.]*(\d+(?:\.\d+)?)[\s.]*\|[\s.]*(\d+(?:\.\d+)?)[\s.]*$/; // 10|20, 100|200
+    const dashPattern = /^[\s.]*(\d+(?:\.\d+)?)[\s.]*-[\s.]*(\d+(?:\.\d+)?)[\s.]*$/; // 100-200 (standalone only)
     
     if (slashPattern.test(cleanText)) {
       const match = cleanText.match(slashPattern);
@@ -148,6 +301,208 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     if (byPattern.test(cleanText)) {
       const match = cleanText.match(byPattern);
       return { first: Number(match![1]), second: Number(match![3]) };
+    }
+    
+    if (colonPattern.test(cleanText)) {
+      const match = cleanText.match(colonPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (pipePattern.test(cleanText)) {
+      const match = cleanText.match(pipePattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (dashPattern.test(cleanText)) {
+      const match = cleanText.match(dashPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    // Word-based patterns: first100, second200, 1st100, 2nd200, etc.
+    const firstPattern = /^(?:first|1st|f1rst|fir|fst)[\s.]*(\d+(?:\.\d+)?)$/i;
+    const secondPattern = /^(?:second|2nd|sec|snd|scnd)[\s.]*(\d+(?:\.\d+)?)$/i;
+    const numberFirstPattern = /^(\d+(?:\.\d+)?)[\s.]*(?:first|1st|fir)$/i;
+    const numberSecondPattern = /^(\d+(?:\.\d+)?)[\s.]*(?:second|2nd|sec)$/i;
+    const amtPattern = /^(?:a|amt|amount)[\s.]*(\d+(?:\.\d+)?)$/i;
+    const betPattern = /^(?:b|bet|bett)[\s.]*(\d+(?:\.\d+)?)$/i;
+    const winPattern = /^(?:win|w)[\s.]*(\d+(?:\.\d+)?)$/i;
+    const losePattern = /^(?:lose|loss|l)[\s.]*(\d+(?:\.\d+)?)$/i;
+    
+    if (firstPattern.test(cleanText)) {
+      const match = cleanText.match(firstPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (secondPattern.test(cleanText)) {
+      const match = cleanText.match(secondPattern);
+      return { first: 0, second: Number(match![1]) };
+    }
+    
+    if (numberFirstPattern.test(cleanText)) {
+      const match = cleanText.match(numberFirstPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (numberSecondPattern.test(cleanText)) {
+      const match = cleanText.match(numberSecondPattern);
+      return { first: 0, second: Number(match![1]) };
+    }
+    
+    if (amtPattern.test(cleanText)) {
+      const match = cleanText.match(amtPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (betPattern.test(cleanText)) {
+      const match = cleanText.match(betPattern);
+      return { first: 0, second: Number(match![1]) };
+    }
+    
+    if (winPattern.test(cleanText)) {
+      const match = cleanText.match(winPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (losePattern.test(cleanText)) {
+      const match = cleanText.match(losePattern);
+      return { first: 0, second: Number(match![1]) };
+    }
+    
+    // Bracket & Quote patterns: [10/50], {10by50}, <10=50>, '10/50', "10/50", 41[10/50], etc.
+    const bracketPattern = /^[\[{<('"]?(\d+(?:\.\d+)?)[\s.]*[\/=+:|by|x][\s.]*(\d+(?:\.\d+)?)[\]}>)'"]+$/i;
+    
+    if (bracketPattern.test(cleanText)) {
+      const match = cleanText.match(/(\d+(?:\.\d+)?)[\s.]*[\/=+:|][\s.]*(\d+(?:\.\d+)?)/);
+      if (match) {
+        return { first: Number(match[1]), second: Number(match[2]) };
+      }
+      const byMatch = cleanText.match(/(\d+(?:\.\d+)?)[\s.]*(by|x)[\s.]*(\d+(?:\.\d+)?)/i);
+      if (byMatch) {
+        return { first: Number(byMatch[1]), second: Number(byMatch[3]) };
+      }
+    }
+    
+    // Range/Span patterns: 100~200, 100..200, 100to200, from100to200, etc.
+    const rangePattern = /^(?:from)?[\s.]*(\d+(?:\.\d+)?)[\s.]*(?:~|\.{2,3}|to|-to-|→|->)[\s.]*(?:to)?[\s.]*(\d+(?:\.\d+)?)$/i;
+    
+    if (rangePattern.test(cleanText)) {
+      const match = cleanText.match(rangePattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    // Multiplication patterns: 10times20, 10mul20, 10xx20, multiply10by20, etc.
+    const timesPattern = /^(\d+(?:\.\d+)?)[\s.]*(?:times|xx|mul|multiply)[\s.]*(?:by)?[\s.]*(\d+(?:\.\d+)?)$/i;
+    
+    if (timesPattern.test(cleanText)) {
+      const match = cleanText.match(timesPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    // Conditional/Logic patterns: if100then200, 100or200, 100and200, 100&200
+    const conditionalPattern = /^(?:if)?[\s.]*(\d+(?:\.\d+)?)[\s.]*(?:then|or|and|&)[\s.]*(\d+(?:\.\d+)?)$/i;
+    
+    if (conditionalPattern.test(cleanText)) {
+      const match = cleanText.match(conditionalPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    // Sequential patterns: 100next200, 100then200, 100after200
+    const sequentialPattern = /^(\d+(?:\.\d+)?)[\s.]*(?:next|then|after)[\s.]*(\d+(?:\.\d+)?)$/i;
+    
+    if (sequentialPattern.test(cleanText)) {
+      const match = cleanText.match(sequentialPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    // Currency symbols: $100, ₹100, €100, £100, ¥100, 100$, 100₹, $100/$200, etc.
+    const currencyPrefixPattern = /^[$₹€£¥@#~^%][\s.]*(\d+(?:\.\d+)?)$/;
+    const currencySuffixPattern = /^(\d+(?:\.\d+)?)[$₹€£¥]$/;
+    const currencyBothPattern = /^[$₹€£¥][\s.]*(\d+(?:\.\d+)?)[\s.]*[\/=+:|][\s.]*[$₹€£¥]?[\s.]*(\d+(?:\.\d+)?)$/;
+    
+    if (currencyPrefixPattern.test(cleanText)) {
+      const match = cleanText.match(/(\d+(?:\.\d+)?)/);
+      if (match) return { first: Number(match[1]), second: 0 };
+    }
+    
+    if (currencySuffixPattern.test(cleanText)) {
+      const match = cleanText.match(currencySuffixPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (currencyBothPattern.test(cleanText)) {
+      const match = cleanText.match(/(\d+(?:\.\d+)?)[\s.]*[\/=+:|][\s.]*(\d+(?:\.\d+)?)/);
+      if (match) {
+        return { first: Number(match[1]), second: Number(match[2]) };
+      }
+    }
+    
+    // Percentage & Ratio: 10%, 10%20, 100÷2, etc.
+    const percentagePattern = /^(\d+(?:\.\d+)?)%[\s.]*(\d+(?:\.\d+)?)?$/;
+    const dividePattern = /^(\d+(?:\.\d+)?)[\s.]*[÷][\s.]*(\d+(?:\.\d+)?)$/;
+    const atPattern = /^(\d+(?:\.\d+)?)[@](\d+(?:\.\d+)?)$/;
+    
+    if (percentagePattern.test(cleanText)) {
+      const match = cleanText.match(percentagePattern);
+      const second = match![2] ? Number(match![2]) : 0;
+      return { first: Number(match![1]), second: second };
+    }
+    
+    if (dividePattern.test(cleanText)) {
+      const match = cleanText.match(dividePattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (atPattern.test(cleanText)) {
+      const match = cleanText.match(atPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    // Abbreviated game types: pk100, rg100, ak100, op100, pkt100
+    const pkPattern = /^(?:pk|pkt|packet)[\s.]*(\d+(?:\.\d+)?)$/i;
+    const rgPattern = /^(?:rg|ring)[\s.]*(\d+(?:\.\d+)?)$/i;
+    const akPattern = /^(?:ak|akra)[\s.]*(\d+(?:\.\d+)?)$/i;
+    const opPattern = /^(?:op|open)[\s.]*(\d+(?:\.\d+)?)$/i;
+    
+    if (pkPattern.test(cleanText)) {
+      const match = cleanText.match(pkPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (rgPattern.test(cleanText)) {
+      const match = cleanText.match(rgPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (akPattern.test(cleanText)) {
+      const match = cleanText.match(akPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    if (opPattern.test(cleanText)) {
+      const match = cleanText.match(opPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    
+    // Emoji patterns: 💰100, 🎰100, 🎲100
+    const emojiPattern = /^[💰🎰🎲][\s.]*(\d+(?:\.\d+)?)$/;
+    
+    if (emojiPattern.test(cleanText)) {
+      const match = cleanText.match(/(\d+(?:\.\d+)?)/);
+      if (match) return { first: Number(match[1]), second: 0 };
+    }
+    
+    // Positive/Negative: +100, -100, +100/-200
+    const positivePattern = /^\+(\d+(?:\.\d+)?)$/;
+    const posNegPattern = /^\+(\d+(?:\.\d+)?)[\s.]*\/[\s.]*-(\d+(?:\.\d+)?)$/;
+    
+    if (posNegPattern.test(cleanText)) {
+      const match = cleanText.match(posNegPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    if (positivePattern.test(cleanText)) {
+      const match = cleanText.match(positivePattern);
+      return { first: Number(match![1]), second: 0 };
     }
     
     return null;
@@ -206,32 +561,111 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       const lineNum = i + 1;
       const normalized = line.trim().replace(/\s+/g, ' ');
       
+      console.log(`\n📝 Processing Line ${lineNum}: "${normalized}"`);
+      console.log(`  📊 Current accumulated numbers: [${currentNumberGroup.join(', ')}]`);
+      
       // FIRST: Find and extract pattern from the line BEFORE splitting by dots
       let amountPattern: { first: number; second: number } | null = null;
       let isOnlyPattern = false;
       let lineWithoutPattern = normalized;
       
       // Check if the entire line is just a pattern (like "ff.10" alone or ".ff.10")
+      // BUT: If it's a parentheses pattern with a number prefix (like "41(10//50)"), it's NOT pattern-only
       const cleanedLine = normalized.replace(/^[.,\s]+/, '').trim(); // Remove leading dots/commas
       const wholeLineParsed = parseAmountPattern(cleanedLine);
-      if (wholeLineParsed) {
+      const hasNumberPrefix = /^\d+\([^)]+\)$/.test(cleanedLine); // Check for "41(10//50)" format
+      
+      if (wholeLineParsed && !hasNumberPrefix) {
+        // Pure pattern without number prefix
         amountPattern = wholeLineParsed;
         isOnlyPattern = true;
       } else {
+        // Check if line has multiple slashes (chain of numbers like 180/185/367/368)
+        // If so, treat / as a NUMBER SEPARATOR, not an amount pattern
+        const slashCount = (normalized.match(/\//g) || []).length;
+        const equalsCount = (normalized.match(/=/g) || []).length;
+        const hasSlashChain = slashCount >= 2; // 2+ slashes means it's a number chain
+        const hasEqualsChain = equalsCount >= 2; // 2+ equals means it's a number chain
+        
         // Try to find patterns embedded in the line using comprehensive regex
-        // Matches: ff.10, ff10, 100ff, 100-ff, ss.20, ss20, 200ss, 200-ss, n+100, 100+n, 50/450, 10=10, 10by20, 10x20, 100f, 200s, f20, s20, etc.
-        // NOTE: Dash "-" in numbers like "905-906" is a separator, NOT an amount pattern
-        const patternRegex = /(?:ff\.?\d+|\d+ff|\d+-ff|ss\.?\d+|\d+ss|\d+-ss|(?:n|nil)\+\d+|\d+\+(?:n|nil|ff|ss)|\d+\/\d+|\d+=\d+|\d+(?:by|x)\d+|\d+f(?:\s+\d+s)?|\d+s|[fF]\d+|[sS]\d+)/gi;
-        const patternMatches = normalized.match(patternRegex);
+        // Matches: ALL SEPARATORS + F/S patterns + ff/ss + nil + parentheses + WORD-BASED + BRACKETS + CURRENCY + EMOJIS + etc.
+        // NOTE: Dash "-" and asterisk "*" in numbers like "905-906" or "3657*365" are separators (UNLESS standalone like "100-200")
+        // NOTE: When multiple "/" or "=" appear in a line, they're treated as number separators, not patterns
+        // Pattern must have keywords (by, x, ff, ss, nil, f, s, fst, fast, first, second, to, times, or, and, etc.) OR special chars
+        // Allow dots and/or spaces around patterns
+        const patternRegex = /(?:\d+\([^)]+\)|[\[{<('"]?\d+[\s.]*[\/=+:|by|x][\s.]*\d+[\]}>)'"]+|ff\.+\d+\.+|\d+\.+ff\.+|\d+-ff\.+|ss\.+\d+\.+|\d+\.+ss\.+|\d+-ss\.+|(?:n|nil)\.+\+?\d+\.+|\d+[\s.]*(by|x)[\s.]*(n|nil)|(n|nil)[\s.]*(by|x)[\s.]*\d+|[-=]*\d+\.+\+\d+\.+|\d+[\s.]*[\/=+:|\-~][\s.]*\d+|[fF][\s.]*\d+[sS][\s.]*\d+|[fF][\s.]*\d+[\s.]*[=\/+:|\\-][\s.]*[sS][\s.]*\d+|[fF][\s.]*[\/=+:|\\-][\s.]*\d+|[sS][\s.]*[\/=+:|\\-][\s.]*\d+|\d+[\s.]*(by|x)[\s.]*\d+|[fF][\s.]*[sS][\s.]*\d+(?:by|x)\d+|[\s.]*f(?:a)?st[\s.]*\d+[\s.]*|(?:first|1st|f1rst|fir)[\s.]*\d+|(?:second|2nd|sec|snd)[\s.]*\d+|\d+[\s.]*(?:first|second|1st|2nd)|(?:from)?[\s.]*\d+[\s.]*(?:~|\.{2,3}|to|-to-|→|->)[\s.]*(?:to)?[\s.]*\d+|\d+[\s.]*(?:times|xx|mul|multiply)[\s.]*(?:by)?[\s.]*\d+|(?:if)?[\s.]*\d+[\s.]*(?:then|or|and|&)[\s.]*\d+|\d+[\s.]*(?:next|then|after)[\s.]*\d+|[$₹€£¥@#~^%💰🎰🎲][\s.]*\d+|\d+[$₹€£¥]|\d+%[\s.]*\d*|\d+[÷@]\d+|(?:pk|pkt|rg|ring|ak|akra|op|open|amt|a|bet|b|win|w|lose|loss|l)[\s.]*\d+|\+\d+|\+\d+\/\-\d+|\d+f(?:\s+\d+s)?|\d+s|[fF][\s.]*\d+|[sS][\s.]*\d+)/gi;
+        let patternMatches: RegExpMatchArray | null = normalized.match(patternRegex);
+        
+        // Filter out slash and equals patterns if they're part of chains
+        if (patternMatches && (hasSlashChain || hasEqualsChain)) {
+          const filteredMatches = patternMatches.filter(match => {
+            // Keep F/S patterns even in chains: F.100/S.400, F/100, S/200, F.100=S.400, F.100+S.400
+            const isFSPattern = /^[fF][\s.]*(\d+[\s.]*)?[\/=+][\s.]*([sS][\s.]*)?\d+$/i.test(match) || /^[sS][\s.]*\/[\s.]*\d+$/i.test(match);
+            
+            if (isFSPattern) {
+              return true; // Always keep F/S patterns
+            }
+            
+            const isSlashPattern = /^\d+[\s.]*\/[\s.]*\d+$/.test(match);
+            const isEqualsPattern = /^\d+[\s.]*=[\s.]*\d+$/.test(match);
+            
+            if (hasSlashChain && isSlashPattern) {
+              console.log(`  ⚠️  Ignoring slash pattern "${match}" because line has ${slashCount} slashes (number chain)`);
+              return false;
+            }
+            if (hasEqualsChain && isEqualsPattern) {
+              console.log(`  ⚠️  Ignoring equals pattern "${match}" because line has ${equalsCount} equals (number chain)`);
+              return false;
+            }
+            return true;
+          });
+          patternMatches = filteredMatches.length > 0 ? filteredMatches as RegExpMatchArray : null;
+        }
         
         if (patternMatches && patternMatches.length > 0) {
+          console.log(`  🔍 Found ${patternMatches.length} potential pattern(s): [${patternMatches.join(', ')}]`);
+          
           // Try each match to see if it's a valid pattern
-          for (const match of patternMatches) {
-            const parsed = parseAmountPattern(match);
+          // Process from RIGHT to LEFT (last match first) to prioritize the rightmost pattern
+          for (let j = patternMatches.length - 1; j >= 0; j--) {
+            const match = patternMatches[j];
+            
+            // Clean leading/trailing dots and numbers from the match to extract pure pattern
+            // e.g., "485.50by50" → "50by50", ".50by100.." → "50by100"
+            // For parentheses pattern "41(10//50)", extract number separately
+            let extractedNumber: string | null = null;
+            let cleanMatch = match;
+            
+            // Check if pattern has parentheses (like "41(10//50)")
+            if (/^\d+\([^)]+\)$/.test(match)) {
+              const parenMatch = match.match(/^(\d+)(\([^)]+\))$/);
+              if (parenMatch) {
+                extractedNumber = parenMatch[1]; // Extract "41"
+                cleanMatch = parenMatch[2];       // Keep "(10//50)" as pattern
+                console.log(`  🔢 Extracted number from parentheses pattern: "${extractedNumber}" + "${cleanMatch}"`);
+              }
+            } else {
+              // For non-parentheses patterns, clean as before
+              cleanMatch = match
+                .replace(/^\d+\./, '')  // Remove leading numbers and dot (485.)
+                .replace(/^[-=]+/, '')  // Remove leading dashes and equals (handle -200+300, ===200+800)
+                .replace(/^[.,;:]+/, '')  // Remove leading punctuation
+                .replace(/[.,;:]+$/, ''); // Remove trailing punctuation
+            }
+            
+            console.log(`  🧪 Testing match "${match}" → cleaned: "${cleanMatch}"`);
+            const parsed = parseAmountPattern(cleanMatch);
             if (parsed) {
               amountPattern = parsed;
-              // Remove the pattern from the line to extract numbers
-              lineWithoutPattern = normalized.replace(match, '').trim();
+              console.log(`  ✅ Using pattern "${cleanMatch}" → F ${parsed.first}, S ${parsed.second}`);
+              
+              // If we extracted a number from the pattern, add it back to the line
+              if (extractedNumber) {
+                lineWithoutPattern = normalized.replace(match, extractedNumber).replace(/[.,;:?]+/g, '.').trim();
+              } else {
+                lineWithoutPattern = normalized.replace(match, '').replace(/[.,;:?]+/g, '.').trim();
+              }
+              console.log(`  📄 Line after pattern removal: "${lineWithoutPattern}"`);
               break;
             }
           }
@@ -241,8 +675,8 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         if (!amountPattern) {
           const tokens = normalized.split(/\s+/);
           for (const token of tokens) {
-            // Remove leading dots/commas from token
-            const cleanToken = token.replace(/^[.,]+/, '').replace(/[.,]+$/, '');
+            // Remove leading/trailing dots, commas, and other punctuation
+            const cleanToken = token.replace(/^[.,;:?]+/, '').replace(/[.,;:?]+$/, '');
             
             // Skip if it's a pure number (could be a game number)
             if (/^\d+$/.test(cleanToken) && cleanToken.length <= 4) {
@@ -252,8 +686,10 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
             const parsed = parseAmountPattern(cleanToken);
             if (parsed) {
               amountPattern = parsed;
-              // Remove this token from the line
-              lineWithoutPattern = normalized.replace(cleanToken, '').trim();
+              console.log(`  ✅ Found pattern (token) "${cleanToken}" → F ${parsed.first}, S ${parsed.second}`);
+              // Remove this token from the line (and clean punctuation)
+              lineWithoutPattern = normalized.replace(token, '').replace(/[.,;:?]+/g, '.').trim();
+              console.log(`  📄 Line after pattern removal: "${lineWithoutPattern}"`);
               break;
             }
           }
@@ -261,8 +697,8 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       }
       
       // SECOND: Extract numbers (only if line is not purely a pattern)
-      // Split by common separators: spaces, dots, commas, equals, plus, dash, slash, etc.
-      const numberMatches = lineWithoutPattern.split(/[\s.,+=\-\/|;:]+/);
+      // Split by common separators: spaces, dots, commas, equals, plus, dash, asterisk, slash, etc.
+      const numberMatches = lineWithoutPattern.split(/[\s.,+=\-*\/|;:]+/);
       const validNumbers: string[] = [];
       
       // Only extract numbers if this line is not purely an amount pattern
@@ -276,12 +712,18 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         }
       }
       
-      // CASE 1: Line has both numbers AND amount pattern (horizontal format + vertical grouping)
+      console.log(`  🔢 Valid numbers extracted: [${validNumbers.join(', ')}]`);
+      console.log(`  💰 Pattern detected: ${amountPattern ? `F ${amountPattern.first}, S ${amountPattern.second}` : 'None'}`);
+      
+      // CASE 1: Line has both numbers AND amount pattern (on the SAME line)
       if (validNumbers.length > 0 && amountPattern) {
+        console.log(`  ➡️  CASE 1: Same-line numbers + pattern - Apply to accumulated + current line`);
+        
         // Combine accumulated numbers from previous lines with current line's numbers
         const allNumbers = [...currentNumberGroup, ...validNumbers];
+        console.log(`  🔗 Combining: accumulated [${currentNumberGroup.join(', ')}] + current [${validNumbers.join(', ')}]`);
         
-        // Apply pattern to ALL numbers (accumulated + current line)
+        // Apply pattern to ALL numbers (accumulated + current)
         for (const num of allNumbers) {
           const detectedType = detectEntryType(num);
           const paddedNumber = padNumber(num, detectedType);
@@ -299,17 +741,20 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
           });
         }
         
-        // Reset the accumulator
+        // Reset accumulator after applying pattern
         currentNumberGroup = [];
         currentNumberLineNums = [];
       }
       // CASE 2: Line has ONLY numbers (vertical format - accumulate)
       else if (validNumbers.length > 0 && !amountPattern) {
+        console.log(`  ➡️  CASE 2: Numbers only - Accumulate for next pattern`);
         currentNumberGroup.push(...validNumbers);
         currentNumberLineNums.push(lineNum);
+        console.log(`  📦 Accumulated so far: [${currentNumberGroup.join(', ')}]`);
       }
       // CASE 3: Line has ONLY amount pattern (applies to accumulated numbers)
       else if (validNumbers.length === 0 && amountPattern) {
+        console.log(`  ➡️  CASE 3: Pattern only - Apply to accumulated numbers from lines ${currentNumberLineNums.join(',')}`);
         if (currentNumberGroup.length === 0) {
           parseErrors.push(`Line ${lineNum}: Amount pattern without numbers`);
           continue;
@@ -620,7 +1065,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         </div>
       )}
 
-      {/* Preview */}
+      {/* Preview - Shows ALL entries with scrolling and edit ability */}
       {showPreview && parsedEntries.length > 0 && (
         <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
@@ -648,28 +1093,129 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
               </button>
             </div>
           </div>
-          <div className="max-h-32 overflow-y-auto space-y-2">
-            {parsedEntries.slice(0, 5).map((entry, idx) => (
+          {/* Scrollable list showing ALL entries */}
+          <div className="max-h-96 overflow-y-auto space-y-2 pr-2">
+            {parsedEntries.map((entry, idx) => (
               <div
                 key={idx}
-                className="bg-white dark:bg-gray-800 rounded-lg p-3 flex justify-between items-center border border-gray-200 dark:border-gray-600"
+                className="bg-white dark:bg-gray-800 rounded-lg p-3 flex justify-between items-center border border-gray-200 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-500 transition-colors group"
               >
-                <div className="flex items-center gap-2">
-                <span className="font-mono font-bold text-gray-900 dark:text-gray-100 text-sm">
+                <div className="flex items-center gap-3 flex-1">
+                  <span className="font-mono font-bold text-gray-900 dark:text-gray-100 text-base">
                   {entry.number}
                 </span>
-                  <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded uppercase font-semibold">
+                  <span className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded uppercase font-semibold">
                     {entry.entryType}
                   </span>
                 </div>
-                <span className="text-gray-600 dark:text-gray-400 text-sm">
+                <div className="flex items-center gap-4">
+                  <span className="text-gray-600 dark:text-gray-400 text-sm font-medium">
                   F:{entry.first} S:{entry.second}
                 </span>
+                  {/* Edit button */}
+                  <button
+                    type="button"
+                    onClick={() => setEditingEntry({ index: idx, entry })}
+                    className="opacity-0 group-hover:opacity-100 p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-all"
+                    title="Edit amounts"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             ))}
-            {parsedEntries.length > 5 && (
-              <div className="text-sm text-gray-500 text-center py-2">... and {parsedEntries.length - 5} more entries</div>
-            )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Entry Modal */}
+      {editingEntry && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 border-2 border-gray-200 dark:border-gray-600">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                Edit Entry: {editingEntry.entry.number}
+              </h3>
+              <button
+                onClick={() => setEditingEntry(null)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Entry Type Badge */}
+              <div className="flex items-center gap-2 pb-4 border-b border-gray-200 dark:border-gray-600">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Type:</span>
+                <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg uppercase font-semibold text-sm">
+                  {editingEntry.entry.entryType}
+                </span>
+              </div>
+
+              {/* First Amount */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  First Amount
+                </label>
+                <input
+                  type="number"
+                  defaultValue={editingEntry.entry.first}
+                  id="edit-first"
+                  className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-mono"
+                  min="0"
+                />
+              </div>
+
+              {/* Second Amount */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Second Amount
+                </label>
+                <input
+                  type="number"
+                  defaultValue={editingEntry.entry.second}
+                  id="edit-second"
+                  className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-mono"
+                  min="0"
+                />
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 mt-6 pt-6 border-t border-gray-200 dark:border-gray-600">
+              <button
+                onClick={() => setEditingEntry(null)}
+                className="flex-1 px-4 py-3 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 font-semibold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const firstInput = document.getElementById('edit-first') as HTMLInputElement;
+                  const secondInput = document.getElementById('edit-second') as HTMLInputElement;
+                  
+                  const newFirst = Number(firstInput.value) || 0;
+                  const newSecond = Number(secondInput.value) || 0;
+                  
+                  const updated = [...parsedEntries];
+                  updated[editingEntry.index] = {
+                    ...editingEntry.entry,
+                    first: newFirst,
+                    second: newSecond
+                  };
+                  setParsedEntries(updated);
+                  setEditingEntry(null);
+                }}
+                className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg font-semibold shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all"
+              >
+                Save Changes
+              </button>
+            </div>
           </div>
         </div>
       )}
