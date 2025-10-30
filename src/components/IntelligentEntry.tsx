@@ -129,9 +129,15 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return { first: 0, second: Number(match![1]) };
     }
     
-    // Check for by, x patterns ONLY (explicit amount indicators): 10by20, 10x20
-    // Note: Simple dash/slash like "905-906" or "50/450" are treated as NUMBER SEPARATORS, not amount patterns
+    // Check for /, by, x patterns (explicit amount indicators): 50/450, 10by20, 10x20
+    // Note: Dash "-" is treated as NUMBER SEPARATOR, not an amount pattern
+    const slashPattern = /^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/;
     const byPattern = /^(\d+(?:\.\d+)?)(by|x)(\d+(?:\.\d+)?)$/i;
+    
+    if (slashPattern.test(cleanText)) {
+      const match = cleanText.match(slashPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
     
     if (byPattern.test(cleanText)) {
       const match = cleanText.match(byPattern);
@@ -207,9 +213,9 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         isOnlyPattern = true;
       } else {
         // Try to find patterns embedded in the line using comprehensive regex
-        // Matches: ff.10, ff10, 100ff, 100-ff, ss.20, ss20, 200ss, 200-ss, n+100, 100+n, 10by20, 10x20, 100f, 200s, f20, s20, etc.
-        // NOTE: Simple patterns like 10/20 or 10-20 are NOT treated as amount patterns - they are number separators
-        const patternRegex = /(?:ff\.?\d+|\d+ff|\d+-ff|ss\.?\d+|\d+ss|\d+-ss|(?:n|nil)\+\d+|\d+\+(?:n|nil|ff|ss)|\d+(?:by|x)\d+|\d+f(?:\s+\d+s)?|\d+s|[fF]\d+|[sS]\d+)/gi;
+        // Matches: ff.10, ff10, 100ff, 100-ff, ss.20, ss20, 200ss, 200-ss, n+100, 100+n, 50/450, 10by20, 10x20, 100f, 200s, f20, s20, etc.
+        // NOTE: Dash "-" in numbers like "905-906" is a separator, NOT an amount pattern
+        const patternRegex = /(?:ff\.?\d+|\d+ff|\d+-ff|ss\.?\d+|\d+ss|\d+-ss|(?:n|nil)\+\d+|\d+\+(?:n|nil|ff|ss)|\d+\/\d+|\d+(?:by|x)\d+|\d+f(?:\s+\d+s)?|\d+s|[fF]\d+|[sS]\d+)/gi;
         const patternMatches = normalized.match(patternRegex);
         
         if (patternMatches && patternMatches.length > 0) {
