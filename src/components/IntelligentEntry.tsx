@@ -144,9 +144,17 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return { first: 0, second: Number(match![1]) };
     }
     
-    // Check for f/s patterns: 10f 20s, 10F 20S, f20, f 20, F.. 50, F 300, s20, s 20, S20, F. S. 25x50, F.100=s.400, F/100, F.100/S.400, F.100+S.400, f100s200, or single: 100f, 200s
+    // Check for f/s patterns: ALL VARIATIONS including single f, s, ff, ss, FFF, SSS, etc.
     const fsSingleFirst = /^(\d+)[fF]$/;
     const fsSingleSecond = /^(\d+)[sS]$/;
+    const fAlonePattern = /^[\s.]*[fF][\s.]*$/; // f alone, F alone, .f., f. = F 0, S 0
+    const sAlonePattern = /^[\s.]*[sS][\s.]*$/; // s alone, S alone, .s., s. = F 0, S 0
+    const ffAlonePattern = /^[\s.]*[fF]{2}[\s.]*$/; // ff alone, FF alone = F 0, S 0
+    const ssAlonePattern = /^[\s.]*[sS]{2}[\s.]*$/; // ss alone, SS alone = F 0, S 0
+    const fffPattern = /^[\s.]*[fF]{3,}[\s.]*$/; // FFF, FFFF = first/nil (F 0, S 0)
+    const sssPattern = /^[\s.]*[sS]{3,}[\s.]*$/; // SSS, SSSS = second/nil (F 0, S 0)
+    const numberXFFFPattern = /^(\d+(?:\.\d+)?)[\s.]*[xX][\s.]*[fF]+$/; // 10xF, 100xFF, 100xFFF = F 100, S 0
+    const numberXSSSPattern = /^(\d+(?:\.\d+)?)[\s.]*[xX][\s.]*[sS]+$/; // 10xS, 100xSS, 100xSSS = F 0, S 100
     const fPrefixPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)$/; // Allow dots/spaces: f20, F 300, F.. 50
     const sPrefixPattern = /^[sS][\s.]*(\d+(?:\.\d+)?)$/; // Allow dots/spaces: s20, S 300, S.. 50
     const fSlashPattern = /^[fF][\s.]*\/[\s.]*(\d+(?:\.\d+)?)$/i; // F/100, f/200
@@ -167,6 +175,41 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     const fsDashPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*-[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100-S.400, F100-S200
     const fsDotSpacePattern = /^[fF][\s.]*([sS])[\s.]*(\d+(?:\.\d+)?)(?:[xX]|by)(\d+(?:\.\d+)?)$/i; // F. S. 25x50
     const fstPattern = /^[\s.]*f(?:a)?st[\s.]*(\d+(?:\.\d+)?)[\s.]*$/i; // fst.50, fast.50, ..fst..50, ..fast..50
+    
+    // Check ALL f/s/ff/ss/FFF/SSS variations (pattern order matters - check longer patterns first!)
+    if (fffPattern.test(cleanText)) {
+      return { first: 0, second: 0 }; // FFF = first/nil
+    }
+    
+    if (sssPattern.test(cleanText)) {
+      return { first: 0, second: 0 }; // SSS = second/nil
+    }
+    
+    if (ffAlonePattern.test(cleanText)) {
+      return { first: 0, second: 0 }; // ff alone = first/nil
+    }
+    
+    if (ssAlonePattern.test(cleanText)) {
+      return { first: 0, second: 0 }; // ss alone = second/nil
+    }
+    
+    if (fAlonePattern.test(cleanText)) {
+      return { first: 0, second: 0 }; // f alone = first/nil
+    }
+    
+    if (sAlonePattern.test(cleanText)) {
+      return { first: 0, second: 0 }; // s alone = second/nil
+    }
+    
+    if (numberXFFFPattern.test(cleanText)) {
+      const match = cleanText.match(numberXFFFPattern);
+      return { first: Number(match![1]), second: 0 }; // 10xF, 100xFF, 100xFFF = F amount, S 0
+    }
+    
+    if (numberXSSSPattern.test(cleanText)) {
+      const match = cleanText.match(numberXSSSPattern);
+      return { first: 0, second: Number(match![1]) }; // 10xS, 100xSS, 100xSSS = F 0, S amount
+    }
     
     if (fsPattern.test(cleanText)) {
       const match = cleanText.match(fsPattern);
@@ -593,7 +636,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         // NOTE: When multiple "/" or "=" appear in a line, they're treated as number separators, not patterns
         // Pattern must have keywords (by, x, ff, ss, nil, f, s, fst, fast, first, second, to, times, or, and, etc.) OR special chars
         // Allow dots and/or spaces around patterns
-        const patternRegex = /(?:\d+\([^)]+\)|[\[{<('"]?\d+[\s.]*[\/=+:|by|x][\s.]*\d+[\]}>)'"]+|ff\.+\d+\.+|\d+\.+ff\.+|\d+-ff\.+|ss\.+\d+\.+|\d+\.+ss\.+|\d+-ss\.+|(?:n|nil)\.+\+?\d+\.+|\d+[\s.]*(by|x)[\s.]*(n|nil)|(n|nil)[\s.]*(by|x)[\s.]*\d+|[-=]*\d+\.+\+\d+\.+|\d+[\s.]*[\/=+:|\-~][\s.]*\d+|[fF][\s.]*\d+[sS][\s.]*\d+|[fF][\s.]*\d+[\s.]*[=\/+:|\\-][\s.]*[sS][\s.]*\d+|[fF][\s.]*[\/=+:|\\-][\s.]*\d+|[sS][\s.]*[\/=+:|\\-][\s.]*\d+|\d+[\s.]*(by|x)[\s.]*\d+|[fF][\s.]*[sS][\s.]*\d+(?:by|x)\d+|[\s.]*f(?:a)?st[\s.]*\d+[\s.]*|(?:first|1st|f1rst|fir)[\s.]*\d+|(?:second|2nd|sec|snd)[\s.]*\d+|\d+[\s.]*(?:first|second|1st|2nd)|(?:from)?[\s.]*\d+[\s.]*(?:~|\.{2,3}|to|-to-|→|->)[\s.]*(?:to)?[\s.]*\d+|\d+[\s.]*(?:times|xx|mul|multiply)[\s.]*(?:by)?[\s.]*\d+|(?:if)?[\s.]*\d+[\s.]*(?:then|or|and|&)[\s.]*\d+|\d+[\s.]*(?:next|then|after)[\s.]*\d+|[$₹€£¥@#~^%💰🎰🎲][\s.]*\d+|\d+[$₹€£¥]|\d+%[\s.]*\d*|\d+[÷@]\d+|(?:pk|pkt|rg|ring|ak|akra|op|open|amt|a|bet|b|win|w|lose|loss|l)[\s.]*\d+|\+\d+|\+\d+\/\-\d+|\d+f(?:\s+\d+s)?|\d+s|[fF][\s.]*\d+|[sS][\s.]*\d+)/gi;
+        const patternRegex = /(?:\d+\([^)]+\)|[\[{<('"]?\d+[\s.]*[\/=+:|by|x][\s.]*\d+[\]}>)'"]+|[\s.]*[fF]{3,}[\s.]*|[\s.]*[sS]{3,}[\s.]*|[\s.]*[fF]{2}[\s.]*|[\s.]*[sS]{2}[\s.]*|[\s.]*[fF][\s.]*|[\s.]*[sS][\s.]*|\d+[\s.]*[xX][\s.]*[fF]+|\d+[\s.]*[xX][\s.]*[sS]+|ff\.+\d+\.+|\d+\.+ff\.+|\d+-ff\.+|ss\.+\d+\.+|\d+\.+ss\.+|\d+-ss\.+|(?:n|nil)\.+\+?\d+\.+|\d+[\s.]*(by|x)[\s.]*(n|nil)|(n|nil)[\s.]*(by|x)[\s.]*\d+|[-=]*\d+\.+\+\d+\.+|\d+[\s.]*[\/=+:|\-~][\s.]*\d+|[fF][\s.]*\d+[sS][\s.]*\d+|[fF][\s.]*\d+[\s.]*[=\/+:|\\-][\s.]*[sS][\s.]*\d+|[fF][\s.]*[\/=+:|\\-][\s.]*\d+|[sS][\s.]*[\/=+:|\\-][\s.]*\d+|\d+[\s.]*(by|x)[\s.]*\d+|[fF][\s.]*[sS][\s.]*\d+(?:by|x)\d+|[\s.]*f(?:a)?st[\s.]*\d+[\s.]*|(?:first|1st|f1rst|fir)[\s.]*\d+|(?:second|2nd|sec|snd)[\s.]*\d+|\d+[\s.]*(?:first|second|1st|2nd)|(?:from)?[\s.]*\d+[\s.]*(?:~|\.{2,3}|to|-to-|→|->)[\s.]*(?:to)?[\s.]*\d+|\d+[\s.]*(?:times|xx|mul|multiply)[\s.]*(?:by)?[\s.]*\d+|(?:if)?[\s.]*\d+[\s.]*(?:then|or|and|&)[\s.]*\d+|\d+[\s.]*(?:next|then|after)[\s.]*\d+|[$₹€£¥@#~^%💰🎰🎲][\s.]*\d+|\d+[$₹€£¥]|\d+%[\s.]*\d*|\d+[÷@]\d+|(?:pk|pkt|rg|ring|ak|akra|op|open|amt|a|bet|b|win|w|lose|loss|l)[\s.]*\d+|\+\d+|\+\d+\/\-\d+|\d+f(?:\s+\d+s)?|\d+s|[fF]\s+\d+|[sS]\s+\d+|[fF][\s.]+\d+|[sS][\s.]+\d+)/gi;
         let patternMatches: RegExpMatchArray | null = normalized.match(patternRegex);
         
         // Filter out slash and equals patterns if they're part of chains
