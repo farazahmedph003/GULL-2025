@@ -191,8 +191,20 @@ export const useTransactions = (projectId: string) => {
   // Delete transaction with balance refund
   const deleteTransaction = useCallback(async (transactionId: string) => {
     try {
+      // First, check if transaction exists and get it
       const transactionToDelete = transactions.find(t => t.id === transactionId);
-      if (!transactionToDelete) return false;
+      if (!transactionToDelete) {
+        console.log('Transaction already deleted:', transactionId);
+        return false;
+      }
+
+      // Update state immediately to prevent duplicate deletions
+      setTransactions(prevTransactions => {
+        const updated = prevTransactions.filter(t => t.id !== transactionId);
+        // Update localStorage with the new state
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+        return updated;
+      });
 
       // Calculate refund amount
       const refundAmount = (transactionToDelete.first || 0) + (transactionToDelete.second || 0);
@@ -222,18 +234,13 @@ export const useTransactions = (projectId: string) => {
           console.warn('Failed to delete from Supabase:', dbError);
         }
       }
-
-      // Always update localStorage
-      localStorage.setItem(storageKey, JSON.stringify(transactions.filter(t => t.id !== transactionId)));
       
-      // Update state using functional update
-      setTransactions(prevTransactions => prevTransactions.filter(t => t.id !== transactionId));
       return true;
     } catch (error) {
       console.error('Error deleting transaction:', error);
       return false;
     }
-  }, [transactions, projectId, deductBalance, addBalance]);
+  }, [transactions, projectId, deductBalance, addBalance, storageKey, isImpersonating, originalAdminUser?.id]);
 
   // Bulk delete transactions with balance refunds
   const bulkDeleteTransactions = useCallback(async (transactionIds: string[]) => {

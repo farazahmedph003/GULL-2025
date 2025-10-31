@@ -29,6 +29,7 @@ const UserDashboard: React.FC = () => {
   const [entryTab, setEntryTab] = useState<'standard' | 'intelligent'>('standard');
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
   const { showSuccess, showError } = useNotifications();
   const { user } = useAuth();
@@ -217,8 +218,9 @@ const UserDashboard: React.FC = () => {
   };
 
   const handleDelete = async () => {
-    if (!deletingTransaction) return;
+    if (!deletingTransaction || isDeleting) return;
 
+    setIsDeleting(true);
     try {
 
       // Check if this is a batch delete (groupedIds array passed as metadata)
@@ -254,6 +256,7 @@ const UserDashboard: React.FC = () => {
       console.error('Delete error:', error);
       showError('Error', 'Failed to delete transaction');
     } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -353,6 +356,7 @@ const UserDashboard: React.FC = () => {
                 onExportPDF={handleExportPDF}
                 refreshTrigger={refreshTrigger}
                 isPartner={user?.isPartner || false}
+                isDeleting={isDeleting}
               />
 
               {/* Right Panel - Entry Panel (moved from bottom) */}
@@ -465,6 +469,7 @@ const UserDashboard: React.FC = () => {
           title="Delete Transaction"
           message="Are you sure you want to delete this transaction?"
           itemName={`Number: ${deletingTransaction.number} (${deletingTransaction.entryType})`}
+          isDeleting={isDeleting}
         />
       )}
 
