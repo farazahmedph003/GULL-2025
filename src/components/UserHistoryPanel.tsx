@@ -145,30 +145,71 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
       ? transactions 
       : transactions.filter(t => t.entryType === activeTab);
     
-    // Group transactions that were created together (bulk entries)
+    // Group transactions that were created together (bulk entries or filter deductions)
     const groupedTransactions: any[] = [];
     const processedIds = new Set<string>();
     
     filteredTransactions.forEach((transaction: any) => {
       if (processedIds.has(transaction.id)) return;
       
-      // Find all transactions with same timestamp (within 2 seconds), same amounts, same type
+      // Check if this is a filter deduction (negative amounts or has isFilterDeduction flag)
+      const isFilterDeduction = transaction.isFilterDeduction || 
+                                ((transaction.first_amount || transaction.first || 0) < 0) ||
+                                ((transaction.second_amount || transaction.second || 0) < 0) ||
+                                transaction.notes === 'Filter deduction';
+      
       const createdTime = new Date(transaction.created_at || transaction.createdAt).getTime();
-      const similarTransactions = filteredTransactions.filter((t: any) => {
-        if (processedIds.has(t.id)) return false;
-        const tTime = new Date(t.created_at || t.createdAt).getTime();
-        const timeDiff = Math.abs(createdTime - tTime);
-        const sameTime = timeDiff < 2000; // Within 2 seconds
-        const sameFirst = (t.first_amount || t.first) === (transaction.first_amount || transaction.first);
-        const sameSecond = (t.second_amount || t.second) === (transaction.second_amount || transaction.second);
-        const sameType = (t.entry_type || t.entryType) === (transaction.entry_type || transaction.entryType);
-        return sameTime && sameFirst && sameSecond && sameType;
-      });
+      
+      let similarTransactions: any[];
+      
+      if (isFilterDeduction) {
+        // For filter deductions, group by number, type, and timestamp (within 1 second)
+        // This groups all deductions for the same number from the same filter action
+        similarTransactions = filteredTransactions.filter((t: any) => {
+          if (processedIds.has(t.id)) return false;
+          
+          const tIsFilterDeduction = t.isFilterDeduction || 
+                                    ((t.first_amount || t.first || 0) < 0) ||
+                                    ((t.second_amount || t.second || 0) < 0) ||
+                                    t.notes === 'Filter deduction';
+          
+          if (!tIsFilterDeduction) return false;
+          
+          const tTime = new Date(t.created_at || t.createdAt).getTime();
+          const timeDiff = Math.abs(createdTime - tTime);
+          const sameTime = timeDiff < 1000; // Within 1 second for filter deductions
+          const sameNumber = t.number === transaction.number;
+          const sameType = (t.entry_type || t.entryType) === (transaction.entry_type || transaction.entryType);
+          
+          return sameTime && sameNumber && sameType;
+        });
+      } else {
+        // For regular entries, group by timestamp (within 2 seconds), same amounts, same type
+        similarTransactions = filteredTransactions.filter((t: any) => {
+          if (processedIds.has(t.id)) return false;
+          
+          const tIsFilterDeduction = t.isFilterDeduction || 
+                                    ((t.first_amount || t.first || 0) < 0) ||
+                                    ((t.second_amount || t.second || 0) < 0) ||
+                                    t.notes === 'Filter deduction';
+          
+          if (tIsFilterDeduction) return false;
+          
+          const tTime = new Date(t.created_at || t.createdAt).getTime();
+          const timeDiff = Math.abs(createdTime - tTime);
+          const sameTime = timeDiff < 2000; // Within 2 seconds for regular entries
+          const sameFirst = (t.first_amount || t.first) === (transaction.first_amount || transaction.first);
+          const sameSecond = (t.second_amount || t.second) === (transaction.second_amount || transaction.second);
+          const sameType = (t.entry_type || t.entryType) === (transaction.entry_type || transaction.entryType);
+          
+          return sameTime && sameFirst && sameSecond && sameType;
+        });
+      }
       
       // Sort similar transactions by creation time to preserve entry order
       similarTransactions.sort((a, b) => {
-        const timeA = new Date(a.createdAt).getTime();
-        const timeB = new Date(b.createdAt).getTime();
+        const timeA = new Date(a.created_at || a.createdAt).getTime();
+        const timeB = new Date(b.created_at || b.createdAt).getTime();
         return timeA - timeB; // Oldest first = entry order
       });
       
@@ -177,17 +218,33 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
       
       // If multiple transactions, group them
       if (similarTransactions.length > 1) {
-        const numbers = similarTransactions.map(t => t.number).join(', ');
+        // Calculate total amounts for grouped transactions
+        const totalFirst = similarTransactions.reduce((sum, t) => 
+          sum + Math.abs(t.first_amount || t.first || 0), 0
+        );
+        const totalSecond = similarTransactions.reduce((sum, t) => 
+          sum + Math.abs(t.second_amount || t.second || 0), 0
+        );
+        
+        // For filter deductions, show total on the number itself
+        // For regular entries, join all numbers
+        const displayNumber = isFilterDeduction 
+          ? transaction.number 
+          : similarTransactions.map(t => t.number).join(', ');
+        
         groupedTransactions.push({
           ...transaction,
-          number: numbers,
+          number: displayNumber,
+          first: isFilterDeduction ? -totalFirst : transaction.first,
+          second: isFilterDeduction ? -totalSecond : transaction.second,
           isEntry: true,
           isGrouped: true,
           groupedIds: similarTransactions.map(t => t.id),
           groupedTransactions: similarTransactions,
+          isFilterDeduction: isFilterDeduction,
         });
       } else {
-        groupedTransactions.push({ ...transaction, isEntry: true });
+        groupedTransactions.push({ ...transaction, isEntry: true, isFilterDeduction: isFilterDeduction });
       }
     });
     
@@ -325,13 +382,20 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
       const entryType = getEntryType(item);
       const isGrouped = item.isGrouped;
       const groupCount = item.groupedTransactions?.length || 0;
+      const isFilterDeduction = item.isFilterDeduction;
+
+      // Determine border color based on type
+      let borderColor = 'border-l-4 border-blue-500';
+      if (isFilterDeduction) {
+        borderColor = 'border-l-4 border-red-500';
+      } else if (isGrouped) {
+        borderColor = 'border-l-4 border-blue-600';
+      }
 
       return (
         <div
           key={item.id}
-          className={`px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors rounded-lg ${
-            isGrouped ? 'border-l-4 border-blue-600' : 'border-l-4 border-blue-500'
-          }`}
+          className={`px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors rounded-lg ${borderColor}`}
         >
           <div className="flex items-start justify-between">
             <div className="flex-1">
@@ -342,20 +406,25 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
                 <span className="text-xs text-gray-600 dark:text-gray-400 uppercase tracking-wide bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
                   {entryType}
                 </span>
+                {isFilterDeduction && (
+                  <span className="text-xs text-red-600 dark:text-red-400 font-semibold bg-red-100 dark:bg-red-900/50 px-2 py-1 rounded">
+                    Deduction
+                  </span>
+                )}
                 {isGrouped && (
                   <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold bg-blue-100 dark:bg-blue-900/50 px-2 py-1 rounded">
-                    {groupCount} entries
+                    {groupCount} deductions
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-3 text-sm">
-                {firstAmount > 0 && (
-                  <div className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                {(firstAmount > 0 || firstAmount < 0) && (
+                  <div className={`font-semibold ${firstAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                     F {firstAmount.toLocaleString()}
                   </div>
                 )}
-                {secondAmount > 0 && (
-                  <div className="text-amber-600 dark:text-amber-400 font-semibold">
+                {(secondAmount > 0 || secondAmount < 0) && (
+                  <div className={`font-semibold ${secondAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
                     S {secondAmount.toLocaleString()}
                   </div>
                 )}
@@ -368,7 +437,7 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
             {/* Edit and Delete Actions - Only visible for partner users */}
             {isPartner && !isGrouped && (
               <div className="flex items-center gap-2 ml-4">
-                {onEdit && (
+                {onEdit && !isFilterDeduction && (
                   <button
                     onClick={() => {
                       const transaction: Transaction = {
@@ -416,7 +485,7 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
                     }
                   }}
                   className="p-2.5 rounded-lg bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 transition-colors"
-                  title={`Delete all ${groupCount} entries at once`}
+                  title={`Delete all ${groupCount} deductions at once`}
                 >
                   <div className="flex items-center gap-1">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
