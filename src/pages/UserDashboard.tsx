@@ -12,6 +12,7 @@ import { useNotifications } from '../contexts/NotificationContext';
 import { useAuth } from '../contexts/AuthContext';
 // formatDate import removed - not needed
 import { playReloadSound } from '../utils/audioFeedback';
+import { formatCurrency } from '../utils/helpers';
 import { exportUserTransactionsToPDF } from '../utils/pdfExport';
 import type { Project, EntryType, Transaction } from '../types';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
@@ -38,6 +39,7 @@ const UserDashboard: React.FC = () => {
     getStatistics: _getStatistics, 
     addTransaction, 
     deleteTransaction,
+    bulkDeleteTransactions,
     updateTransaction,
   } = useTransactions('user-scope');
   
@@ -223,29 +225,30 @@ const UserDashboard: React.FC = () => {
       const groupedIds = (deletingTransaction as any).groupedIds;
       
       if (groupedIds && Array.isArray(groupedIds) && groupedIds.length > 1) {
-        // Batch delete - delete all transactions in the group
+        // Batch delete - use bulkDeleteTransactions to refund total amount correctly
         console.log(`🗑️ Batch deleting ${groupedIds.length} entries...`);
         
-        let successCount = 0;
-        for (const id of groupedIds) {
-          try {
-            await deleteTransaction(id);
-            successCount++;
-          } catch (err) {
-            console.error(`Failed to delete transaction ${id}:`, err);
-          }
+        const success = await bulkDeleteTransactions(groupedIds);
+        
+        if (success) {
+          setDeletingTransaction(null);
+          silentRefresh();
+          
+          // Calculate total refund for user feedback
+          const deletedTransactions = transactions.filter(t => groupedIds.includes(t.id));
+          const totalRefund = deletedTransactions.reduce((sum, t) => sum + (t.first || 0) + (t.second || 0), 0);
+          
+          showSuccess('Batch Delete Success', `Deleted ${groupedIds.length} entries and refunded ${formatCurrency(totalRefund)}`);
+        } else {
+          throw new Error('Failed to delete transactions');
         }
+      } else {
+        // Single delete
+        await deleteTransaction(deletingTransaction.id);
         
         setDeletingTransaction(null);
         silentRefresh();
-        showSuccess('Batch Delete Success', `Deleted ${successCount} of ${groupedIds.length} entries and refunded balance`);
-      } else {
-        // Single delete
-      await deleteTransaction(deletingTransaction.id);
-      
-      setDeletingTransaction(null);
-      silentRefresh();
-      showSuccess('Success', 'Transaction deleted successfully and balance refunded');
+        showSuccess('Success', 'Transaction deleted successfully and balance refunded');
       }
     } catch (error) {
       console.error('Delete error:', error);
