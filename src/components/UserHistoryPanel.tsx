@@ -32,6 +32,8 @@ interface HistoryItem {
   isGrouped?: boolean;
   groupedIds?: string[];
   groupedTransactions?: any[];
+  // Filter deduction flag
+  isFilterDeduction?: boolean;
 }
 
 interface UserHistoryPanelProps {
@@ -42,12 +44,14 @@ interface UserHistoryPanelProps {
   onExportPDF?: () => void;
   refreshTrigger?: number; // Timestamp to trigger refresh from parent
   isPartner?: boolean; // Show edit/delete buttons only for partner users
+  isDeleting?: boolean; // Flag to disable delete buttons during deletion
 }
 
-const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activeTab = 'all', onEdit, onDelete, onExportPDF, refreshTrigger, isPartner = false }) => {
+const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activeTab = 'all', onEdit, onDelete, onExportPDF, refreshTrigger, isPartner = false, isDeleting = false }) => {
   const { user } = useAuth();
   const [adminActions, setAdminActions] = useState<any[]>([]);
   const [topUps, setTopUps] = useState<any[]>([]);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const historyEndRef = React.useRef<HTMLDivElement>(null);
   const prevHistoryLengthRef = React.useRef<number>(0);
 
@@ -163,8 +167,8 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
       let similarTransactions: any[];
       
       if (isFilterDeduction) {
-        // For filter deductions, group by number, type, and timestamp (within 1 second)
-        // This groups all deductions for the same number from the same filter action
+        // For filter deductions, group ALL deductions by type and timestamp (within 2 seconds)
+        // This groups ALL deductions from the same filter action, regardless of number
         similarTransactions = filteredTransactions.filter((t: any) => {
           if (processedIds.has(t.id)) return false;
           
@@ -177,11 +181,10 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
           
           const tTime = new Date(t.created_at || t.createdAt).getTime();
           const timeDiff = Math.abs(createdTime - tTime);
-          const sameTime = timeDiff < 1000; // Within 1 second for filter deductions
-          const sameNumber = t.number === transaction.number;
+          const sameTime = timeDiff < 2000; // Within 2 seconds for filter deductions
           const sameType = (t.entry_type || t.entryType) === (transaction.entry_type || transaction.entryType);
           
-          return sameTime && sameNumber && sameType;
+          return sameTime && sameType;
         });
       } else {
         // For regular entries, group by timestamp (within 2 seconds), same amounts, same type
@@ -226,11 +229,8 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
           sum + Math.abs(t.second_amount || t.second || 0), 0
         );
         
-        // For filter deductions, show total on the number itself
-        // For regular entries, join all numbers
-        const displayNumber = isFilterDeduction 
-          ? transaction.number 
-          : similarTransactions.map(t => t.number).join(', ');
+        // For both filter deductions and regular entries, join all numbers
+        const displayNumber = similarTransactions.map(t => t.number).join(', ');
         
         groupedTransactions.push({
           ...transaction,
@@ -303,6 +303,31 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
   const getSecondAmount = (item: HistoryItem) => {
     return item.second_amount || item.second || 0;
   };
+
+  // Safe delete handler that prevents multiple rapid clicks
+  const handleDeleteClick = useCallback((transactionId: string, groupedIds?: string[]) => {
+    // Check if parent is deleting or if this transaction is already being deleted
+    if (isDeleting || deletingIds.has(transactionId)) {
+      return; // Prevent duplicate clicks
+    }
+    
+    // Add to deleting set
+    setDeletingIds(prev => new Set(prev).add(transactionId));
+    
+    // Call the parent delete handler
+    if (onDelete) {
+      onDelete(transactionId, groupedIds);
+    }
+    
+    // Remove from deleting set after a short delay (in case modal closes without confirm)
+    setTimeout(() => {
+      setDeletingIds(prev => {
+        const next = new Set(prev);
+        next.delete(transactionId);
+        return next;
+      });
+    }, 1000);
+  }, [isDeleting, deletingIds, onDelete]);
 
   const renderHistoryItem = (item: HistoryItem) => {
     // Admin Action
@@ -462,13 +487,21 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
                 )}
                 {onDelete && (
                   <button
-                    onClick={() => onDelete(item.id)}
-                    className="p-2.5 rounded-lg bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 transition-colors"
+                    onClick={() => handleDeleteClick(item.id)}
+                    disabled={isDeleting || deletingIds.has(item.id)}
+                    className="p-2.5 rounded-lg bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Delete entry"
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
+                    {isDeleting || deletingIds.has(item.id) ? (
+                      <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    )}
                   </button>
                 )}
               </div>
@@ -481,16 +514,24 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
                     if (item.groupedIds && item.groupedIds.length > 0) {
                       // Pass the first ID - the delete handler will handle it as a grouped deletion
                       // Or we can create a batch delete by calling with special format
-                      onDelete(item.id, item.groupedIds);
+                      handleDeleteClick(item.id, item.groupedIds);
                     }
                   }}
-                  className="p-2.5 rounded-lg bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 transition-colors"
+                  disabled={isDeleting || deletingIds.has(item.id)}
+                  className="p-2.5 rounded-lg bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   title={`Delete all ${groupCount} deductions at once`}
                 >
                   <div className="flex items-center gap-1">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
+                    {isDeleting || deletingIds.has(item.id) ? (
+                      <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    )}
                     <span className="text-xs font-semibold">{groupCount}</span>
                   </div>
                 </button>
