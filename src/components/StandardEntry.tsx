@@ -35,7 +35,9 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
     if (!numbers.trim()) {
       newErrors.numbers = 'Please enter at least one number';
     } else {
-      // Split by ANY non-digit characters to support symbols like = * + - ( ) ! ^ etc.
+      // Split by ANY non-digit characters - supports ALL Unicode symbols, emojis, and multiple occurrences
+      // Examples: "90-91-92--93---50/n" splits into [90, 91, 92, 93, 50]
+      // The regex [^0-9]+ matches one or more consecutive non-digit characters (supports 10,000+ symbols)
       const numberList = numbers.split(/[^0-9]+/).filter(n => n.length > 0);
       
       if (numberList.length === 0) {
@@ -91,7 +93,8 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         numbersText = numbersText.replace(/\bsecond\s+\d+(?:\.\d+)?\b/i, '').trim();
       }
 
-      // Parse numbers: split on any non-digit characters (all keyboard symbols)
+      // Parse numbers: split on any non-digit characters - supports ALL Unicode symbols and multiple occurrences
+      // The regex [^0-9]+ matches one or more consecutive non-digit characters (supports 10,000+ symbols)
       let numberList = numbersText.split(/[^0-9]+/).filter(n => n.length > 0);
       
       // Helper function to pad numbers to correct length based on entry type

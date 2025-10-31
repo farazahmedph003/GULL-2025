@@ -16,6 +16,7 @@ export const exportUserTransactionsToPDF = async (
   doc.text(projectName, 14, 20);
   
   // Group transactions by number and entry type, then aggregate
+  // Normalize numbers by parsing as integers first to combine same numbers in different formats (e.g., "0" and "00")
   const aggregatedMap = new Map<string, {
     number: string;
     entryType: string;
@@ -24,7 +25,11 @@ export const exportUserTransactionsToPDF = async (
   }>();
   
   transactions.forEach(t => {
-    const key = `${t.number}-${t.entryType}`;
+    // Parse number as integer to normalize, then format back to original length
+    const numValue = parseInt(t.number);
+    const normalizedNumber = isNaN(numValue) ? t.number : numValue.toString();
+    
+    const key = `${normalizedNumber}-${t.entryType}`;
     const existing = aggregatedMap.get(key);
     
     if (existing) {
@@ -32,7 +37,7 @@ export const exportUserTransactionsToPDF = async (
       existing.second += t.second;
     } else {
       aggregatedMap.set(key, {
-        number: t.number,
+        number: normalizedNumber, // Use normalized number
         entryType: t.entryType,
         first: t.first,
         second: t.second,

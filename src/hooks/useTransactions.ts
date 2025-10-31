@@ -32,14 +32,47 @@ export const useTransactions = (projectId: string) => {
           const userId = user?.id;
           dbTransactions = await db.getTransactions(projectId, userId);
           console.log('✅ Transactions loaded from database:', dbTransactions.length, userId ? `(filtered by user: ${userId})` : '(all users)');
+          
+          // Log if there's a discrepancy with cached data
+          const cachedData = localStorage.getItem(storageKey);
+          if (cachedData) {
+            const cachedTransactions = JSON.parse(cachedData);
+            if (cachedTransactions.length !== dbTransactions.length) {
+              console.log(`🔄 Cache update: Cached had ${cachedTransactions.length} entries, database has ${dbTransactions.length} entries - updating cache`);
+            }
+          }
         } catch (dbError) {
           console.error('❌ Database fetch failed:', dbError);
           throw dbError;
         }
 
-        // Update localStorage as cache (but don't rely on it)
-        localStorage.setItem(storageKey, JSON.stringify(dbTransactions));
-        setTransactions(dbTransactions);
+        // Merge with existing state to prevent losing transactions that were just added
+        // This prevents race conditions where database hasn't committed yet
+        setTransactions(prevTransactions => {
+          // Create a map of existing transactions by ID for fast lookup
+          const existingMap = new Map(prevTransactions.map(t => [t.id, t]));
+          
+          // Add all database transactions to the map
+          dbTransactions.forEach(t => {
+            existingMap.set(t.id, t);
+          });
+          
+          // Convert back to array and sort by creation date (newest first)
+          const mergedTransactions = Array.from(existingMap.values()).sort((a, b) => {
+            const dateA = new Date(a.createdAt).getTime();
+            const dateB = new Date(b.createdAt).getTime();
+            return dateB - dateA; // Newest first
+          });
+          
+          // Log if merge resulted in more transactions
+          if (mergedTransactions.length > dbTransactions.length) {
+            console.log(`🔄 Merge: Had ${prevTransactions.length} in state, ${dbTransactions.length} from DB, ${mergedTransactions.length} after merge`);
+          }
+          
+          // Update localStorage cache
+          localStorage.setItem(storageKey, JSON.stringify(mergedTransactions));
+          return mergedTransactions;
+        });
         
       } else if (isOfflineMode()) {
         // Offline mode: use localStorage

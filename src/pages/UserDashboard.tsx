@@ -415,7 +415,13 @@ const UserDashboard: React.FC = () => {
                         projectId={'user-scope'}
                         entryType={project.entryTypes[0] || 'akra'}
                         onSuccess={() => {
-                          refresh();
+                          // Refresh balance immediately, but delay transaction refresh to allow database commit
+                          refreshBalance();
+                          // Delay transaction refresh to ensure database has committed the new transaction
+                          setTimeout(() => {
+                            refreshTransactions();
+                            setRefreshTrigger(Date.now());
+                          }, 1000); // 1 second delay to allow database commit
                         }}
                       />
                     )}

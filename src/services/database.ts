@@ -519,7 +519,10 @@ export class DatabaseService {
         console.log('🔒 Filtering transactions by user ID:', userId);
       }
 
-      const { data, error } = await query.order('created_at', { ascending: true });
+      // Add explicit limit to ensure ALL transactions are loaded (no limit on Supabase queries)
+      const { data, error } = await query
+        .order('created_at', { ascending: true })
+        .limit(10000); // High limit to ensure all entries are loaded
 
       console.log('🔍 getTransactions result:', {
         projectId,
@@ -1701,12 +1704,13 @@ export class DatabaseService {
     });
 
     return this.withRetry(async () => {
-      // Get entries (use user_id for app_users)
+      // Get entries (use user_id for app_users) - Add explicit limit to ensure ALL entries are loaded
       const { data: entries, error: entriesError } = await client
         .from('transactions')
         .select('*')
         .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(10000); // High limit to ensure all entries are loaded
 
       if (entriesError) throw entriesError;
 
@@ -1717,7 +1721,8 @@ export class DatabaseService {
           .from('balance_history')
           .select('*')
           .eq('app_user_id', userId)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(10000); // High limit to ensure all entries are loaded
 
         if (!balanceError && balanceHistory) {
           balanceHistoryItems = balanceHistory.map((item: any) => ({
@@ -1736,7 +1741,8 @@ export class DatabaseService {
           .from('admin_actions')
           .select('*, admin_user:admin_user_id(username, email)')
           .eq('target_user_id', userId)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(10000); // High limit to ensure all entries are loaded
 
         if (!actionsError && actions) {
           adminActions = actions.map((action: any) => ({

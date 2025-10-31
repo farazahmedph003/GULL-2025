@@ -27,7 +27,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
   onSuccess,
 }) => {
   const { user } = useAuth();
-  const { balance, hasSufficientBalance } = useUserBalance();
+  const { balance, hasSufficientBalance, deductBalance, addBalance } = useUserBalance();
   const { addTransaction } = useTransactions(projectId);
   const { showSuccess, showError } = useNotifications();
   const isAdmin = user ? isAdminEmail(user.email) : false;
@@ -144,17 +144,28 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return { first: 0, second: Number(match![1]) };
     }
     
-    // Check for f/s patterns: ALL VARIATIONS including single f, s, ff, ss, FFF, SSS, etc.
-    const fsSingleFirst = /^(\d+)[fF]$/;
-    const fsSingleSecond = /^(\d+)[sS]$/;
-    const fAlonePattern = /^[\s.]*[fF][\s.]*$/; // f alone, F alone, .f., f. = F 0, S 0
-    const sAlonePattern = /^[\s.]*[sS][\s.]*$/; // s alone, S alone, .s., s. = F 0, S 0
-    const ffAlonePattern = /^[\s.]*[fF]{2}[\s.]*$/; // ff alone, FF alone = F 0, S 0
-    const ssAlonePattern = /^[\s.]*[sS]{2}[\s.]*$/; // ss alone, SS alone = F 0, S 0
-    const fffPattern = /^[\s.]*[fF]{3,}[\s.]*$/; // FFF, FFFF = first/nil (F 0, S 0)
-    const sssPattern = /^[\s.]*[sS]{3,}[\s.]*$/; // SSS, SSSS = second/nil (F 0, S 0)
+    // Check for f/s patterns: ONLY WITH NUMBERS (no standalone f/s/ff/ss that return 0/0)
+    const fsSingleFirst = /^(\d+)[fF]$/; // 100f, 200F = F 100, S 0
+    const fsSingleSecond = /^(\d+)[sS]$/; // 100s, 200S = F 0, S 100
+    
+    // NEW: Parentheses + f/s patterns: (700)ff, (700)ss, (700)fff, (700)sss
+    const parenFPattern = /^\((\d+(?:\.\d+)?)\)[\s.]*[fF]+$/; // (700)ff, (700)fff = F 700, S 0
+    const parenSPattern = /^\((\d+(?:\.\d+)?)\)[\s.]*[sS]+$/; // (700)ss, (700)sss = F 0, S 700
+    
+    // NEW: Single/double/triple f/s BEFORE number: f20, ff20, fff20, s20, ss20, sss20
+    const fBeforePattern = /^[fF]+[\s.]*(\d+(?:\.\d+)?)$/; // f20, ff20, fff20 = F 20, S 0
+    const sBeforePattern = /^[sS]+[\s.]*(\d+(?:\.\d+)?)$/; // s20, ss20, sss20 = F 0, S 20
+    
+    // NEW: Single/double/triple f/s AFTER number: 20f, 20ff, 20fff, 20s, 20ss, 20sss (NO spaces/dots between!)
+    const fAfterPattern = /^(\d+(?:\.\d+)?)[fF]+$/; // 20f, 20ff, 20fff = F 20, S 0 (NO spaces/dots)
+    const sAfterPattern = /^(\d+(?:\.\d+)?)[sS]+$/; // 20s, 20ss, 20sss = F 0, S 20 (NO spaces/dots)
+    
     const numberXFFFPattern = /^(\d+(?:\.\d+)?)[\s.]*[xX][\s.]*[fF]+$/; // 10xF, 100xFF, 100xFFF = F 100, S 0
     const numberXSSSPattern = /^(\d+(?:\.\d+)?)[\s.]*[xX][\s.]*[sS]+$/; // 10xS, 100xSS, 100xSSS = F 0, S 100
+    
+    // NEW: Slash with nil variations: 500/n, n/500
+    const numberSlashNilPattern = /^(\d+(?:\.\d+)?)[\s.]*\/[\s.]*(?:n|nil)$/i; // 500/n => F 500, S 0
+    const nilSlashNumberPattern = /^(?:n|nil)[\s.]*\/[\s.]*(\d+(?:\.\d+)?)$/i; // n/500 => F 0, S 500
     const fPrefixPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)$/; // Allow dots/spaces: f20, F 300, F.. 50
     const sPrefixPattern = /^[sS][\s.]*(\d+(?:\.\d+)?)$/; // Allow dots/spaces: s20, S 300, S.. 50
     const fSlashPattern = /^[fF][\s.]*\/[\s.]*(\d+(?:\.\d+)?)$/i; // F/100, f/200
@@ -167,6 +178,8 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     const sDashPattern = /^[sS][\s.]*-[\s.]*(\d+(?:\.\d+)?)$/i; // S-200, s-100
     const fsPattern = /^(\d+(?:\.\d+)?)[fF]\s+(\d+(?:\.\d+)?)[sS]$/;
     const fsCompactPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[sS][\s.]*(\d+(?:\.\d+)?)$/i; // f100s200, F100S200
+    // NEW: f300 s350 pattern - supports single/multiple f/s, with/without spaces: f300 s350, F300 S350, ff300 ss350, f 300 s 350
+    const fsSpacePattern = /^[fF]+[\s.]*(\d+(?:\.\d+)?)[\s.]+[sS]+[\s.]*(\d+(?:\.\d+)?)$/i; // f300 s350, F300 S350, ff300 ss350, f 300 s 350
     const fsEqualsPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*=[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100=s.400, f100=s400
     const fsSlashPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*\/[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100/S.400, F100/S200
     const fsPlusPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*\+[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100+S.400, F100+S200
@@ -176,31 +189,50 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     const fsDotSpacePattern = /^[fF][\s.]*([sS])[\s.]*(\d+(?:\.\d+)?)(?:[xX]|by)(\d+(?:\.\d+)?)$/i; // F. S. 25x50
     const fstPattern = /^[\s.]*f(?:a)?st[\s.]*(\d+(?:\.\d+)?)[\s.]*$/i; // fst.50, fast.50, ..fst..50, ..fast..50
     
-    // Check ALL f/s/ff/ss/FFF/SSS variations (pattern order matters - check longer patterns first!)
-    if (fffPattern.test(cleanText)) {
-      return { first: 0, second: 0 }; // FFF = first/nil
+    // Check parentheses + f/s patterns: (700)ff, (700)ss, (700)fff
+    if (parenFPattern.test(cleanText)) {
+      const match = cleanText.match(parenFPattern);
+      return { first: Number(match![1]), second: 0 }; // (700)ff = F 700, S 0
     }
     
-    if (sssPattern.test(cleanText)) {
-      return { first: 0, second: 0 }; // SSS = second/nil
+    if (parenSPattern.test(cleanText)) {
+      const match = cleanText.match(parenSPattern);
+      return { first: 0, second: Number(match![1]) }; // (700)ss = F 0, S 700
     }
     
-    if (ffAlonePattern.test(cleanText)) {
-      return { first: 0, second: 0 }; // ff alone = first/nil
+    // Check f/s BEFORE number: f20, ff20, fff20, s20, ss20, sss20
+    if (fBeforePattern.test(cleanText)) {
+      const match = cleanText.match(fBeforePattern);
+      return { first: Number(match![1]), second: 0 }; // f20, ff20, fff20 = F 20, S 0
     }
     
-    if (ssAlonePattern.test(cleanText)) {
-      return { first: 0, second: 0 }; // ss alone = second/nil
+    if (sBeforePattern.test(cleanText)) {
+      const match = cleanText.match(sBeforePattern);
+      return { first: 0, second: Number(match![1]) }; // s20, ss20, sss20 = F 0, S 20
     }
     
-    if (fAlonePattern.test(cleanText)) {
-      return { first: 0, second: 0 }; // f alone = first/nil
+    // Check f/s AFTER number: 20f, 20ff, 20fff, 20s, 20ss, 20sss
+    if (fAfterPattern.test(cleanText)) {
+      const match = cleanText.match(fAfterPattern);
+      return { first: Number(match![1]), second: 0 }; // 20f, 20ff, 20fff = F 20, S 0
     }
     
-    if (sAlonePattern.test(cleanText)) {
-      return { first: 0, second: 0 }; // s alone = second/nil
+    if (sAfterPattern.test(cleanText)) {
+      const match = cleanText.match(sAfterPattern);
+      return { first: 0, second: Number(match![1]) }; // 20s, 20ss, 20sss = F 0, S 20
     }
     
+    // Slash with nil patterns first
+    if (numberSlashNilPattern.test(cleanText)) {
+      const match = cleanText.match(numberSlashNilPattern);
+      return { first: Number(match![1]), second: 0 };
+    }
+    if (nilSlashNumberPattern.test(cleanText)) {
+      const match = cleanText.match(nilSlashNumberPattern);
+      return { first: 0, second: Number(match![1]) };
+    }
+    
+    // Check numberXF/S patterns: 10xF, 100xFF, etc.
     if (numberXFFFPattern.test(cleanText)) {
       const match = cleanText.match(numberXFFFPattern);
       return { first: Number(match![1]), second: 0 }; // 10xF, 100xFF, 100xFFF = F amount, S 0
@@ -218,6 +250,12 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     
     if (fsCompactPattern.test(cleanText)) {
       const match = cleanText.match(fsCompactPattern);
+      return { first: Number(match![1]), second: Number(match![2]) };
+    }
+    
+    // Check fsSpacePattern: f300 s350, F300 S350, ff300 ss350, f 300 s 350
+    if (fsSpacePattern.test(cleanText)) {
+      const match = cleanText.match(fsSpacePattern);
       return { first: Number(match![1]), second: Number(match![2]) };
     }
     
@@ -426,7 +464,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     }
     
     // Range/Span patterns: 100~200, 100..200, 100to200, from100to200, etc.
-    const rangePattern = /^(?:from)?[\s.]*(\d+(?:\.\d+)?)[\s.]*(?:~|\.{2,3}|to|-to-|→|->)[\s.]*(?:to)?[\s.]*(\d+(?:\.\d+)?)$/i;
+    const rangePattern = /^(?:from)?[\s.]*(\d+(?:\.\d+)?)[\s.]*(?:~|to|-to-|→|->)[\s.]*(?:to)?[\s.]*(\d+(?:\.\d+)?)$/i; // Removed \.{2,3} to prevent false matches
     
     if (rangePattern.test(cleanText)) {
       const match = cleanText.match(rangePattern);
@@ -578,6 +616,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         
         return trimmed;
       })
+      .map(line => line.replace(/Ø/gi, '')) // Clean Ø symbol (means zero/null)
       .filter(line => line.length > 0); // Remove empty lines after cleaning
 
     // Helper function to detect entry type from number length
@@ -602,7 +641,11 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const lineNum = i + 1;
-      const normalized = line.trim().replace(/\s+/g, ' ');
+      // Normalize unicode dashes to a standard hyphen so they act as separators
+      const normalized = line
+        .trim()
+        .replace(/[\u2012\u2013\u2014\u2015]/g, '-') // figure dash, en dash, em dash, horizontal bar
+        .replace(/\s+/g, ' ');
       
       console.log(`\n📝 Processing Line ${lineNum}: "${normalized}"`);
       console.log(`  📊 Current accumulated numbers: [${currentNumberGroup.join(', ')}]`);
@@ -618,7 +661,10 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       const wholeLineParsed = parseAmountPattern(cleanedLine);
       const hasNumberPrefix = /^\d+\([^)]+\)$/.test(cleanedLine); // Check for "41(10//50)" format
       
-      if (wholeLineParsed && !hasNumberPrefix) {
+      // REJECT patterns that return F:0 S:0 (useless entries!)
+      const isValidPattern = wholeLineParsed && !(wholeLineParsed.first === 0 && wholeLineParsed.second === 0);
+      
+      if (isValidPattern && !hasNumberPrefix) {
         // Pure pattern without number prefix
         amountPattern = wholeLineParsed;
         isOnlyPattern = true;
@@ -636,7 +682,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         // NOTE: When multiple "/" or "=" appear in a line, they're treated as number separators, not patterns
         // Pattern must have keywords (by, x, ff, ss, nil, f, s, fst, fast, first, second, to, times, or, and, etc.) OR special chars
         // Allow dots and/or spaces around patterns
-        const patternRegex = /(?:\d+\([^)]+\)|[\[{<('"]?\d+[\s.]*[\/=+:|by|x][\s.]*\d+[\]}>)'"]+|[\s.]*[fF]{3,}[\s.]*|[\s.]*[sS]{3,}[\s.]*|[\s.]*[fF]{2}[\s.]*|[\s.]*[sS]{2}[\s.]*|[\s.]*[fF][\s.]*|[\s.]*[sS][\s.]*|\d+[\s.]*[xX][\s.]*[fF]+|\d+[\s.]*[xX][\s.]*[sS]+|ff\.+\d+\.+|\d+\.+ff\.+|\d+-ff\.+|ss\.+\d+\.+|\d+\.+ss\.+|\d+-ss\.+|(?:n|nil)\.+\+?\d+\.+|\d+[\s.]*(by|x)[\s.]*(n|nil)|(n|nil)[\s.]*(by|x)[\s.]*\d+|[-=]*\d+\.+\+\d+\.+|\d+[\s.]*[\/=+:|\-~][\s.]*\d+|[fF][\s.]*\d+[sS][\s.]*\d+|[fF][\s.]*\d+[\s.]*[=\/+:|\\-][\s.]*[sS][\s.]*\d+|[fF][\s.]*[\/=+:|\\-][\s.]*\d+|[sS][\s.]*[\/=+:|\\-][\s.]*\d+|\d+[\s.]*(by|x)[\s.]*\d+|[fF][\s.]*[sS][\s.]*\d+(?:by|x)\d+|[\s.]*f(?:a)?st[\s.]*\d+[\s.]*|(?:first|1st|f1rst|fir)[\s.]*\d+|(?:second|2nd|sec|snd)[\s.]*\d+|\d+[\s.]*(?:first|second|1st|2nd)|(?:from)?[\s.]*\d+[\s.]*(?:~|\.{2,3}|to|-to-|→|->)[\s.]*(?:to)?[\s.]*\d+|\d+[\s.]*(?:times|xx|mul|multiply)[\s.]*(?:by)?[\s.]*\d+|(?:if)?[\s.]*\d+[\s.]*(?:then|or|and|&)[\s.]*\d+|\d+[\s.]*(?:next|then|after)[\s.]*\d+|[$₹€£¥@#~^%💰🎰🎲][\s.]*\d+|\d+[$₹€£¥]|\d+%[\s.]*\d*|\d+[÷@]\d+|(?:pk|pkt|rg|ring|ak|akra|op|open|amt|a|bet|b|win|w|lose|loss|l)[\s.]*\d+|\+\d+|\+\d+\/\-\d+|\d+f(?:\s+\d+s)?|\d+s|[fF]\s+\d+|[sS]\s+\d+|[fF][\s.]+\d+|[sS][\s.]+\d+)/gi;
+        const patternRegex = /(?:\d+\([^)]+\)|\([0-9.]+\)[fF]+|\([0-9.]+\)[sS]+|[\[{<('"]?\d+[\s.]*[\/=+:|by|x][\s.]*\d+[\]}>)'"]+|[fF]{1,3}[\s.]*\d+|[sS]{1,3}[\s.]*\d+|\d+[fF]{1,3}|\d+[sS]{1,3}|\d+[\s.]*[xX][\s.]*[fF]+|\d+[\s.]*[xX][\s.]*[sS]+|\d+[\s.]*\/[\s.]*(?:n|nil)|(?:n|nil)[\s.]*\/[\s.]*\d+|ff\.+\d+\.+|\d+\.+ff\.+|\d+-ff\.+|ss\.+\d+\.+|\d+\.+ss\.+|\d+-ss\.+|(?:n|nil)\.+\+?\d+\.+|\d+[\s.]*(by|x)[\s.]*(n|nil)|(n|nil)[\s.]*(by|x)[\s.]*\d+|[-=]*\d+\.+\+\d+\.+|\d+[\s.]*[\/=+:|\-~][\s.]*\d+|[fF]+[\s.]*\d+[\s.]+[sS]+[\s.]*\d+|[fF][\s.]*\d+[sS][\s.]*\d+|[fF][\s.]*\d+[\s.]*[=\/+:|\\-][\s.]*[sS][\s.]*\d+|[fF][\s.]*[\/=+:|\\-][\s.]*\d+|[sS][\s.]*[\/=+:|\\-][\s.]*\d+|\d+[\s.]*(by|x)[\s.]*\d+|[fF][\s.]*[sS][\s.]*\d+(?:by|x)\d+|[\s.]*f(?:a)?st[\s.]*\d+[\s.]*|(?:first|1st|f1rst|fir)[\s.]*\d+|(?:second|2nd|sec|snd)[\s.]*\d+|\d+[\s.]*(?:first|second|1st|2nd)|(?:from)?[\s.]*\d+[\s.]*(?:~|to|-to-|→|->)[\s.]*(?:to)?[\s.]*\d+|\d+[\s.]*(?:times|xx|mul|multiply)[\s.]*(?:by)?[\s.]*\d+|(?:if)?[\s.]*\d+[\s.]*(?:then|or|and|&)[\s.]*\d+|\d+[\s.]*(?:next|then|after)[\s.]*\d+|[${₹€£¥@#~^%💰🎰🎲][\s.]*\d+|\d+[${₹€£¥]|\d+%[\s.]*\d*|\d+[÷@]\d+|(?:pk|pkt|rg|ring|ak|akra|op|open|amt|a|bet|b|win|w|lose|loss|l)[\s.]*\d+|\+\d+|\+\d+\/\-\d+|\d+f(?:\s+\d+s)?|\d+s|[fF]\s+\d+|[sS]\s+\d+|[fF][\s.]+\d+|[sS][\s.]+\d+)/gi;
         let patternMatches: RegExpMatchArray | null = normalized.match(patternRegex);
         
         // Filter out slash and equals patterns if they're part of chains
@@ -668,80 +714,175 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         if (patternMatches && patternMatches.length > 0) {
           console.log(`  🔍 Found ${patternMatches.length} potential pattern(s): [${patternMatches.join(', ')}]`);
           
-          // Try each match to see if it's a valid pattern
-          // Process from RIGHT to LEFT (last match first) to prioritize the rightmost pattern
-          for (let j = patternMatches.length - 1; j >= 0; j--) {
-            const match = patternMatches[j];
-            
-            // Clean leading/trailing dots and numbers from the match to extract pure pattern
-            // e.g., "485.50by50" → "50by50", ".50by100.." → "50by100"
-            // For parentheses pattern "41(10//50)", extract number separately
-            let extractedNumber: string | null = null;
-            let cleanMatch = match;
-            
-            // Check if pattern has parentheses (like "41(10//50)")
-            if (/^\d+\([^)]+\)$/.test(match)) {
-              const parenMatch = match.match(/^(\d+)(\([^)]+\))$/);
-              if (parenMatch) {
-                extractedNumber = parenMatch[1]; // Extract "41"
-                cleanMatch = parenMatch[2];       // Keep "(10//50)" as pattern
-                console.log(`  🔢 Extracted number from parentheses pattern: "${extractedNumber}" + "${cleanMatch}"`);
+          // FILTER OUT FALSE POSITIVES: Remove dash patterns that are actually number separators
+          // e.g., "09-91" should NOT be a pattern - it's numbers separated by dash
+          const filteredMatches = patternMatches.filter(match => {
+            // Check if this looks like a number-number pattern (e.g., "09-91", "905-906")
+            const dashNumberPattern = /^\d+[\s.]*-[\s.]*\d+$/;
+            if (dashNumberPattern.test(match.trim())) {
+              // Only reject if BOTH numbers are valid game numbers (1-4 digits)
+              const parts = match.split(/[\s.]*-[\s.]*/);
+              if (parts.length === 2) {
+                const num1 = parts[0].trim();
+                const num2 = parts[1].trim();
+                // If both are 1-4 digit numbers, this is a number separator, not a pattern
+                if (/^\d{1,4}$/.test(num1) && /^\d{1,4}$/.test(num2)) {
+                  console.log(`  ⚠️  Ignoring "${match}" - this is a number separator, not an amount pattern`);
+                  return false;
+                }
               }
-            } else {
-              // For non-parentheses patterns, clean as before
-              cleanMatch = match
-                .replace(/^\d+\./, '')  // Remove leading numbers and dot (485.)
-                .replace(/^[-=]+/, '')  // Remove leading dashes and equals (handle -200+300, ===200+800)
-                .replace(/^[.,;:]+/, '')  // Remove leading punctuation
-                .replace(/[.,;:]+$/, ''); // Remove trailing punctuation
             }
+            return true;
+          });
+          
+          // PRIORITIZE multi-token F/S patterns: Check for "f40 s40" patterns FIRST
+          // Look for patterns that span multiple tokens (like "f40 s40")
+          let multiTokenPattern: RegExpMatchArray | null = null;
+          for (let i = 0; i < filteredMatches.length - 1; i++) {
+            // Check if current and next match form a complete F/S pattern
+            const current = filteredMatches[i];
+            const next = filteredMatches[i + 1];
+            const combined = `${current} ${next}`;
             
-            console.log(`  🧪 Testing match "${match}" → cleaned: "${cleanMatch}"`);
-            const parsed = parseAmountPattern(cleanMatch);
-            if (parsed) {
-              amountPattern = parsed;
-              console.log(`  ✅ Using pattern "${cleanMatch}" → F ${parsed.first}, S ${parsed.second}`);
-              
-              // If we extracted a number from the pattern, add it back to the line
-              if (extractedNumber) {
-                lineWithoutPattern = normalized.replace(match, extractedNumber).replace(/[.,;:?]+/g, '.').trim();
-              } else {
-                lineWithoutPattern = normalized.replace(match, '').replace(/[.,;:?]+/g, '.').trim();
+            // Check if combined matches fsSpacePattern
+            if (/^[fF]+[\s.]*\d+[\s.]+[sS]+[\s.]*\d+$/i.test(combined.replace(/^\s+|\s+$/g, ''))) {
+              const parsed = parseAmountPattern(combined);
+              if (parsed && !(parsed.first === 0 && parsed.second === 0)) {
+                multiTokenPattern = [combined, current, next] as any;
+                console.log(`  🎯 Found multi-token pattern: "${combined}" → F ${parsed.first}, S ${parsed.second}`);
+                amountPattern = parsed;
+                // Remove BOTH matches from the line
+                lineWithoutPattern = normalized.replace(new RegExp(current.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').replace(new RegExp(next.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').replace(/[.,;:?]+/g, ' ').trim();
+                console.log(`  📄 Line after pattern removal: "${lineWithoutPattern}"`);
+                break;
               }
-              console.log(`  📄 Line after pattern removal: "${lineWithoutPattern}"`);
-              break;
+            }
+          }
+          
+          // If multi-token pattern found, skip single pattern matching
+          if (!multiTokenPattern) {
+            // Try each match to see if it's a valid pattern
+            // Process from RIGHT to LEFT (last match first) to prioritize the rightmost pattern
+            for (let j = filteredMatches.length - 1; j >= 0; j--) {
+              const match = filteredMatches[j];
+              
+              // Skip if this match is part of a multi-token pattern we already processed
+              if (multiTokenPattern && (match === multiTokenPattern[1] || match === multiTokenPattern[2])) {
+                continue;
+              }
+              
+              // Clean leading/trailing dots and numbers from the match to extract pure pattern
+              // e.g., "485.50by50" → "50by50", ".50by100.." → "50by100"
+              // For parentheses pattern "41(10//50)", extract number separately
+              let extractedNumber: string | null = null;
+              let cleanMatch = match;
+              
+              // Check if pattern has parentheses (like "41(10//50)")
+              if (/^\d+\([^)]+\)$/.test(match)) {
+                const parenMatch = match.match(/^(\d+)(\([^)]+\))$/);
+                if (parenMatch) {
+                  extractedNumber = parenMatch[1]; // Extract "41"
+                  cleanMatch = parenMatch[2];       // Keep "(10//50)" as pattern
+                  console.log(`  🔢 Extracted number from parentheses pattern: "${extractedNumber}" + "${cleanMatch}"`);
+                }
+              } else {
+                // For non-parentheses patterns, clean as before
+                cleanMatch = match
+                  .replace(/^\d+\./, '')  // Remove leading numbers and dot (485.)
+                  .replace(/^[-=]+/, '')  // Remove leading dashes and equals (handle -200+300, ===200+800)
+                  .replace(/^[.,;:]+/, '')  // Remove leading punctuation
+                  .replace(/[.,;:]+$/, ''); // Remove trailing punctuation
+              }
+              
+              console.log(`  🧪 Testing match "${match}" → cleaned: "${cleanMatch}"`);
+              const parsed = parseAmountPattern(cleanMatch);
+              // REJECT patterns that return F:0 S:0 (useless entries!)
+              if (parsed && !(parsed.first === 0 && parsed.second === 0)) {
+                amountPattern = parsed;
+                console.log(`  ✅ Using pattern "${cleanMatch}" → F ${parsed.first}, S ${parsed.second}`);
+                
+                // If we extracted a number from the pattern, add it back to the line
+                if (extractedNumber) {
+                  lineWithoutPattern = normalized.replace(match, extractedNumber).replace(/[.,;:?]+/g, '.').trim();
+                } else {
+                  lineWithoutPattern = normalized.replace(match, '').replace(/[.,;:?]+/g, '.').trim();
+                }
+                console.log(`  📄 Line after pattern removal: "${lineWithoutPattern}"`);
+                break;
+              }
             }
           }
         }
         
-        // If still no pattern found, try space-separated tokens
+        // If still no pattern found, try multi-token patterns (e.g., "f40 s350" spans multiple tokens)
         if (!amountPattern) {
+          // First, try to match multi-token patterns like "f40 s350", "f 300 s 350"
           const tokens = normalized.split(/\s+/);
-          for (const token of tokens) {
-            // Remove leading/trailing dots, commas, and other punctuation
-            const cleanToken = token.replace(/^[.,;:?]+/, '').replace(/[.,;:?]+$/, '');
+          
+          // Try combinations of 2-3 consecutive tokens to catch patterns like "f40 s350" or "f 300 s 350"
+          for (let i = 0; i < tokens.length - 1; i++) {
+            // Try 2 tokens: "f40 s350"
+            const twoTokens = tokens.slice(i, i + 2).join(' ');
+            const cleanTwoTokens = twoTokens.replace(/^[.,;:?]+/, '').replace(/[.,;:?]+$/, '');
             
-            // Skip if it's a pure number (could be a game number)
-            if (/^\d+$/.test(cleanToken) && cleanToken.length <= 4) {
-              continue;
-            }
-            
-            const parsed = parseAmountPattern(cleanToken);
-            if (parsed) {
-              amountPattern = parsed;
-              console.log(`  ✅ Found pattern (token) "${cleanToken}" → F ${parsed.first}, S ${parsed.second}`);
-              // Remove this token from the line (and clean punctuation)
-              lineWithoutPattern = normalized.replace(token, '').replace(/[.,;:?]+/g, '.').trim();
+            const parsedTwo = parseAmountPattern(cleanTwoTokens);
+            if (parsedTwo && !(parsedTwo.first === 0 && parsedTwo.second === 0)) {
+              amountPattern = parsedTwo;
+              console.log(`  ✅ Found pattern (2 tokens) "${cleanTwoTokens}" → F ${parsedTwo.first}, S ${parsedTwo.second}`);
+              // Remove both tokens from the line
+              lineWithoutPattern = normalized.replace(new RegExp(twoTokens.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').replace(/[.,;:?]+/g, '.').trim();
               console.log(`  📄 Line after pattern removal: "${lineWithoutPattern}"`);
               break;
+            }
+            
+            // Try 3 tokens: "f 300 s 350"
+            if (i < tokens.length - 2) {
+              const threeTokens = tokens.slice(i, i + 3).join(' ');
+              const cleanThreeTokens = threeTokens.replace(/^[.,;:?]+/, '').replace(/[.,;:?]+$/, '');
+              
+              const parsedThree = parseAmountPattern(cleanThreeTokens);
+              if (parsedThree && !(parsedThree.first === 0 && parsedThree.second === 0)) {
+                amountPattern = parsedThree;
+                console.log(`  ✅ Found pattern (3 tokens) "${cleanThreeTokens}" → F ${parsedThree.first}, S ${parsedThree.second}`);
+                // Remove all three tokens from the line
+                lineWithoutPattern = normalized.replace(new RegExp(threeTokens.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').replace(/[.,;:?]+/g, '.').trim();
+                console.log(`  📄 Line after pattern removal: "${lineWithoutPattern}"`);
+                break;
+              }
+            }
+          }
+          
+          // If still no pattern, try single tokens
+          if (!amountPattern) {
+            for (const token of tokens) {
+              // Remove leading/trailing dots, commas, and other punctuation
+              const cleanToken = token.replace(/^[.,;:?]+/, '').replace(/[.,;:?]+$/, '');
+              
+              // Skip if it's a pure number (could be a game number)
+              if (/^\d+$/.test(cleanToken) && cleanToken.length <= 4) {
+                continue;
+              }
+              
+              const parsed = parseAmountPattern(cleanToken);
+              // REJECT patterns that return F:0 S:0 (useless entries!)
+              if (parsed && !(parsed.first === 0 && parsed.second === 0)) {
+                amountPattern = parsed;
+                console.log(`  ✅ Found pattern (token) "${cleanToken}" → F ${parsed.first}, S ${parsed.second}`);
+                // Remove this token from the line (and clean punctuation)
+                lineWithoutPattern = normalized.replace(token, '').replace(/[.,;:?]+/g, '.').trim();
+                console.log(`  📄 Line after pattern removal: "${lineWithoutPattern}"`);
+                break;
+              }
             }
           }
         }
       }
       
       // SECOND: Extract numbers (only if line is not purely a pattern)
-      // Split by common separators: spaces, dots, commas, equals, plus, dash, asterisk, slash, etc.
-      const numberMatches = lineWithoutPattern.split(/[\s.,+=\-*\/|;:]+/);
+      // Treat ANY non-digit character as a separator - supports ALL Unicode symbols, emojis, and multiple occurrences
+      // Examples: "90-91-92--93---50/n" splits into [90, 91, 92, 93, 50]
+      // The regex [^0-9]+ matches one or more consecutive non-digit characters (supports 10,000+ symbols)
+      const numberMatches = lineWithoutPattern.split(/[^0-9]+/);
       const validNumbers: string[] = [];
       
       // Only extract numbers if this line is not purely an amount pattern
@@ -878,6 +1019,18 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     }
 
     try {
+      // CRITICAL: Deduct total cost ONCE before adding transactions to prevent race condition
+      // When adding multiple transactions in parallel, each would deduct balance independently,
+      // causing incorrect deductions. Deduct the total upfront instead.
+      if (!isAdmin && totalCost > 0) {
+        console.log(`💰 Deducting total cost ${totalCost} upfront for ${parsedEntries.length} transactions`);
+        const deductionSuccess = await deductBalance(totalCost);
+        if (!deductionSuccess) {
+          setBalanceError('Failed to deduct balance. Please try again.');
+          return;
+        }
+      }
+
       // Add all transactions with incrementing timestamps to preserve exact entry order
       const baseTime = new Date();
       const transactionsToAdd = parsedEntries.map((entry, index) => ({
@@ -891,13 +1044,30 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         updatedAt: new Date(baseTime.getTime() + index).toISOString(),
       }));
 
-      const addPromises = transactionsToAdd.map(transaction => addTransaction(transaction));
+      // Skip balance deduction in addTransaction since we already deducted the total upfront
+      const addPromises = transactionsToAdd.map(transaction => addTransaction(transaction, true)); // skipBalanceDeduction=true
       const results = await Promise.all(addPromises);
       const successCount = results.filter(Boolean).length;
 
+      // If all transactions failed, refund the balance that was deducted
       if (successCount === 0) {
+        if (!isAdmin && totalCost > 0) {
+          console.log(`⚠️ All transactions failed, refunding ${totalCost} to balance`);
+          await addBalance(totalCost);
+        }
         setBalanceError('Failed to add transactions. Please try again.');
         return;
+      }
+
+      // If some transactions failed (partial success), calculate how much to refund
+      if (successCount < transactionsToAdd.length) {
+        const failedCount = transactionsToAdd.length - successCount;
+        const failedTransactions = transactionsToAdd.filter((_, index) => !results[index]);
+        const refundAmount = failedTransactions.reduce((sum, t) => sum + (t.first || 0) + (t.second || 0), 0);
+        if (refundAmount > 0 && !isAdmin) {
+          console.log(`⚠️ ${failedCount} transactions failed, refunding ${refundAmount} to balance`);
+          await addBalance(refundAmount);
+        }
       }
 
       // Reset form

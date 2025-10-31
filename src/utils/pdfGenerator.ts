@@ -166,7 +166,7 @@ export const generateUserReport = (data: UserReportData): void => {
   yPos = (doc as any).lastAutoTable.finalY + 15;
 
   // Function to add entry type table
-  const addEntryTable = (title: string, entries: Transaction[], summary: EntrySummary) => {
+  const addEntryTable = (title: string, entries: Transaction[], summary: EntrySummary, entryType: 'open' | 'akra' | 'ring' | 'packet') => {
     checkNewPage(50);
     
     doc.setFontSize(14);
@@ -182,34 +182,111 @@ export const generateUserReport = (data: UserReportData): void => {
       return;
     }
 
+    // Determine valid number range and format based on entry type
+    let maxNumber: number;
+    let numberLength: number;
+    
+    switch (entryType) {
+      case 'open':
+        maxNumber = 9;
+        numberLength = 1;
+        break;
+      case 'akra':
+        maxNumber = 99;
+        numberLength = 2;
+        break;
+      case 'ring':
+        maxNumber = 999;
+        numberLength = 3;
+        break;
+      case 'packet':
+        maxNumber = 9999;
+        numberLength = 4;
+        break;
+      default:
+        maxNumber = 9999;
+        numberLength = 4;
+    }
+
+    // Aggregate entries by number - normalize numbers FIRST (parse as integer) to combine "0" and "00", etc.
+    // Use integer as key so same numbers in different formats get aggregated together
+    const aggregatedMap = new Map<number, { first: number; second: number }>();
+    
+    entries.forEach(entry => {
+      // Parse number as integer to normalize (e.g., "0", "00", "000" all become 0)
+      const numValue = parseInt(entry.number);
+      
+      // Only process if valid number within range
+      if (!isNaN(numValue) && numValue >= 0 && numValue <= maxNumber) {
+        const existing = aggregatedMap.get(numValue);
+        
+        if (existing) {
+          existing.first += entry.first || 0;
+          existing.second += entry.second || 0;
+        } else {
+          aggregatedMap.set(numValue, {
+            first: entry.first || 0,
+            second: entry.second || 0
+          });
+        }
+      }
+    });
+
+    // Convert to formatted numbers map with leading zeros
+    const aggregatedNumbers = new Map<string, { first: number; second: number }>();
+    
+    aggregatedMap.forEach((amounts, numValue) => {
+      // Only include if it has non-zero amounts
+      if (amounts.first > 0 || amounts.second > 0) {
+        // Format number with leading zeros to ensure consistent format
+        const formattedNumber = numValue.toString().padStart(numberLength, '0');
+        aggregatedNumbers.set(formattedNumber, amounts);
+      }
+    });
+
     // Summary for this type
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Entries: ${summary.totalEntries} | First: ${summary.firstTotal} | Second: ${summary.secondTotal} | Total: ${summary.totalPKR} | Unique: ${summary.uniqueNumbers}`, margin + 5, yPos);
+    doc.text(`Entries: ${summary.totalEntries} | First: ${summary.firstTotal} | Second: ${summary.secondTotal} | Total: ${summary.totalPKR} | Unique: ${aggregatedNumbers.size}`, margin + 5, yPos);
     yPos += 6;
 
-    // Sort entries by number (numerically) before creating table
-    const sortedEntries = [...entries].sort((a, b) => {
-      const numA = parseInt(a.number);
-      const numB = parseInt(b.number);
-      if (!isNaN(numA) && !isNaN(numB)) {
-        return numA - numB; // Numeric sort (00-99)
-      }
-      return a.number.localeCompare(b.number); // Fallback to string sort
-    });
+    // Convert to array and sort numerically
+    const sortedAggregated = Array.from(aggregatedNumbers.entries())
+      .map(([number, amounts]) => ({
+        number,
+        first: amounts.first,
+        second: amounts.second,
+        total: amounts.first + amounts.second
+      }))
+      .sort((a, b) => {
+        const numA = parseInt(a.number);
+        const numB = parseInt(b.number);
+        return numA - numB;
+      });
 
-    // Table
-    const tableData = sortedEntries.map(entry => [
-      new Date(entry.createdAt || '').toLocaleDateString(),
-      entry.number,
-      entry.first || 0,
-      entry.second || 0,
-      (entry.first || 0) + (entry.second || 0)
+    // Table - only show aggregated numbers (no date column)
+    const tableData = sortedAggregated.map(item => [
+      item.number,
+      item.first.toLocaleString(),
+      item.second.toLocaleString(),
+      item.total.toLocaleString()
+    ]);
+
+    // Add totals row
+    const totalFirst = sortedAggregated.reduce((sum, item) => sum + item.first, 0);
+    const totalSecond = sortedAggregated.reduce((sum, item) => sum + item.second, 0);
+    const grandTotal = totalFirst + totalSecond;
+    
+    tableData.push([
+      'TOTAL',
+      totalFirst.toLocaleString(),
+      totalSecond.toLocaleString(),
+      grandTotal.toLocaleString()
     ]);
 
     autoTable(doc, {
       startY: yPos,
-      head: [['Date', 'Number', 'First', 'Second', 'Total']],
+      head: [['Number', 'First', 'Second', 'Total']],
       body: tableData,
       theme: 'striped',
       headStyles: {
@@ -222,13 +299,19 @@ export const generateUserReport = (data: UserReportData): void => {
         fontSize: 8
       },
       columnStyles: {
-        0: { cellWidth: 30 },
-        1: { cellWidth: 40, fontStyle: 'bold' },
-        2: { cellWidth: 25, halign: 'right' },
-        3: { cellWidth: 25, halign: 'right' },
-        4: { cellWidth: 25, halign: 'right', fontStyle: 'bold' }
+        0: { cellWidth: 40, fontStyle: 'bold' },
+        1: { cellWidth: 30, halign: 'right' },
+        2: { cellWidth: 30, halign: 'right' },
+        3: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }
       },
       margin: { left: margin, right: margin },
+      didParseCell: function(data: any) {
+        // Make the totals row bold and highlighted
+        if (data.row.index === tableData.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [220, 252, 231]; // Light green
+        }
+      },
       didDrawPage: (data) => {
         // Update yPos after table
         yPos = (data as any).cursor.y + 10;
@@ -240,10 +323,10 @@ export const generateUserReport = (data: UserReportData): void => {
   };
 
   // Add tables for each entry type
-  addEntryTable('Open Entries', data.entries.open, openSummary);
-  addEntryTable('Akra Entries', data.entries.akra, akraSummary);
-  addEntryTable('Ring Entries', data.entries.ring, ringSummary);
-  addEntryTable('Packet Entries', data.entries.packet, packetSummary);
+  addEntryTable('Open Entries', data.entries.open, openSummary, 'open');
+  addEntryTable('Akra Entries', data.entries.akra, akraSummary, 'akra');
+  addEntryTable('Ring Entries', data.entries.ring, ringSummary, 'ring');
+  addEntryTable('Packet Entries', data.entries.packet, packetSummary, 'packet');
 
   // Balance Deposit History
   if (data.topupHistory && data.topupHistory.length > 0) {
