@@ -75,16 +75,16 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       return;
     }
 
-    const updated: Transaction = {
-      ...transaction,
-      first: first.trim() ? Number(first) : 0,
-      second: second.trim() ? Number(second) : 0,
-      notes: notes.trim() || undefined,
-      updatedAt: new Date().toISOString(),
-    };
+      const updated: Transaction = {
+        ...transaction,
+        first: first.trim() ? Number(first) : 0,
+        second: second.trim() ? Number(second) : 0,
+        notes: notes.trim() || undefined,
+        updatedAt: new Date().toISOString(),
+      };
 
-    onSave(updated);
-    onClose();
+      onSave(updated);
+      onClose();
   };
 
   if (!isOpen || !transaction) return null;

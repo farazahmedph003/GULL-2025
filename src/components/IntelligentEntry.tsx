@@ -709,8 +709,8 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
             return true;
           });
           patternMatches = filteredMatches.length > 0 ? filteredMatches as RegExpMatchArray : null;
-        }
-        
+      }
+      
         if (patternMatches && patternMatches.length > 0) {
           console.log(`  🔍 Found ${patternMatches.length} potential pattern(s): [${patternMatches.join(', ')}]`);
           
@@ -765,7 +765,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
             // Process from RIGHT to LEFT (last match first) to prioritize the rightmost pattern
             for (let j = filteredMatches.length - 1; j >= 0; j--) {
               const match = filteredMatches[j];
-              
+        
               // Skip if this match is part of a multi-token pattern we already processed
               if (multiTokenPattern && (match === multiTokenPattern[1] || match === multiTokenPattern[2])) {
                 continue;
@@ -785,7 +785,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
                   cleanMatch = parenMatch[2];       // Keep "(10//50)" as pattern
                   console.log(`  🔢 Extracted number from parentheses pattern: "${extractedNumber}" + "${cleanMatch}"`);
                 }
-              } else {
+        } else {
                 // For non-parentheses patterns, clean as before
                 cleanMatch = match
                   .replace(/^\d+\./, '')  // Remove leading numbers and dot (485.)
@@ -1193,8 +1193,8 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       <div>
         <div className="flex items-center justify-between mb-2">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Paste your data here
-          </label>
+          Paste your data here
+        </label>
           {/* WhatsApp Chat Upload Icon */}
           <div>
             <input

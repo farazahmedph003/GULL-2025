@@ -767,22 +767,22 @@ const UserManagement: React.FC = () => {
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                  <div className="flex items-center gap-2 text-sm">
-                                    {(item.first_amount || 0) > 0 && (
-                                      <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                                        F {item.first_amount.toLocaleString()}
-                                      </span>
-                                    )}
-                                    {(item.second_amount || 0) > 0 && (
-                                      <span className="font-semibold text-amber-600 dark:text-amber-400">
-                                        S {item.second_amount.toLocaleString()}
-                                      </span>
-                                    )}
-                                    {(item.first_amount || 0) <= 0 && (item.second_amount || 0) <= 0 && (
-                                      <span className="font-semibold text-red-600 dark:text-red-400">
-                                        Deduction
-                                      </span>
-                                    )}
+                                <div className="flex items-center gap-2 text-sm">
+                                  {(item.first_amount || 0) > 0 && (
+                                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                      F {item.first_amount.toLocaleString()}
+                                    </span>
+                                  )}
+                                  {(item.second_amount || 0) > 0 && (
+                                    <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                      S {item.second_amount.toLocaleString()}
+                                    </span>
+                                  )}
+                                  {(item.first_amount || 0) <= 0 && (item.second_amount || 0) <= 0 && (
+                                    <span className="font-semibold text-red-600 dark:text-red-400">
+                                      Deduction
+                                    </span>
+                                  )}
                                   </div>
                                   <div className="flex items-center gap-1">
                                     <button
