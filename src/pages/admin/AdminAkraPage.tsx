@@ -120,6 +120,61 @@ const AdminAkraPage: React.FC = () => {
     return groups;
   }, [filteredEntries]);
 
+  // Group deductions by timestamp (within 2 seconds)
+  const groupedDeductions = React.useMemo(() => {
+    const groups: { deductions: DeductionRecord[], displayData: any }[] = [];
+    const processedIds = new Set<string>();
+    
+    deductions.forEach(deduction => {
+      if (processedIds.has(deduction.id)) return;
+      
+      const createdTime = new Date(deduction.created_at).getTime();
+      const similarDeductions = deductions.filter(d => {
+        if (processedIds.has(d.id)) return false;
+        const dTime = new Date(d.created_at).getTime();
+        const timeDiff = Math.abs(createdTime - dTime);
+        return timeDiff < 2000; // Within 2 seconds
+      });
+      
+      // Mark all similar deductions as processed
+      similarDeductions.forEach(d => processedIds.add(d.id));
+      
+      if (similarDeductions.length > 1) {
+        const totalFirst = similarDeductions.reduce((sum, d) => sum + d.deducted_first, 0);
+        const totalSecond = similarDeductions.reduce((sum, d) => sum + d.deducted_second, 0);
+        const displayNumbers = similarDeductions.map(d => d.transactions.number).join(', ');
+        
+        groups.push({
+          deductions: similarDeductions,
+          displayData: {
+            numbers: displayNumbers,
+            first: totalFirst,
+            second: totalSecond,
+            total: totalFirst + totalSecond,
+            count: similarDeductions.length,
+            timestamp: deduction.created_at,
+            admin: deduction.admin.username,
+          }
+        });
+      } else {
+        groups.push({
+          deductions: similarDeductions,
+          displayData: {
+            numbers: deduction.transactions.number,
+            first: deduction.deducted_first,
+            second: deduction.deducted_second,
+            total: deduction.deducted_first + deduction.deducted_second,
+            count: 1,
+            timestamp: deduction.created_at,
+            admin: deduction.admin.username,
+          }
+        });
+      }
+    });
+    
+    return groups;
+  }, [deductions]);
+
   useEffect(() => {
     // Register refresh callback for the refresh button
     setRefreshCallback(loadEntries);
@@ -234,6 +289,33 @@ const AdminAkraPage: React.FC = () => {
     } catch (error) {
       console.error('Delete deduction error:', error);
       showError('Error', 'Failed to delete deduction');
+    }
+  };
+
+  const handleDeleteDeductionGroup = async (deductions: DeductionRecord[]) => {
+    if (!confirm) return;
+
+    if (deductions.length === 1) {
+      await handleDeleteDeduction(deductions[0]);
+      return;
+    }
+
+    const result = await confirm(
+      `Are you sure you want to DELETE ${deductions.length} deductions?\n\nThis will restore the original amounts for all affected entries.`,
+      { type: 'danger', title: '🗑️ Delete Deductions' }
+    );
+
+    if (!result) return;
+
+    try {
+      for (const deduction of deductions) {
+        await db.deleteAdminDeduction(deduction.id);
+      }
+      await showSuccess('Success', `Successfully deleted ${deductions.length} deductions. Amounts have been restored.`);
+      loadEntries(true); // Force reload after delete
+    } catch (error) {
+      console.error('Delete deductions error:', error);
+      showError('Error', 'Failed to delete deductions');
     }
   };
 
@@ -489,54 +571,59 @@ const AdminAkraPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {/* Deduction Records - Show at TOP (most recent first) */}
-                {deductions
-                  .filter(d => !searchNumber.trim() || d.transactions.number.toLowerCase().includes(searchNumber.trim().toLowerCase()))
-                  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                  .map((deduction) => (
-                  <tr key={`deduction-${deduction.id}`} className="bg-orange-50 dark:bg-orange-900/10 hover:bg-orange-100 dark:hover:bg-orange-900/20 transition-colors border-l-4 border-orange-500">
+                {groupedDeductions
+                  .filter(g => !searchNumber.trim() || g.displayData.numbers.toLowerCase().includes(searchNumber.trim().toLowerCase()))
+                  .sort((a, b) => new Date(b.displayData.timestamp).getTime() - new Date(a.displayData.timestamp).getTime())
+                  .map((group, groupIndex) => (
+                  <tr key={`deduction-group-${groupIndex}`} className="bg-orange-50 dark:bg-orange-900/10 hover:bg-orange-100 dark:hover:bg-orange-900/20 transition-colors border-l-4 border-orange-500">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <span className="px-3 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
-                          {deduction.transactions.app_users.username}
+                          {group.deductions[0].transactions.app_users.username}
                         </span>
                         <span className="px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs rounded">
                           DEDUCTION
                         </span>
+                        {group.displayData.count > 1 && (
+                          <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-xs rounded font-semibold">
+                            {group.displayData.count} deductions
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="font-semibold text-gray-900 dark:text-white">
-                        {deduction.transactions.number}
+                        {group.displayData.numbers}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       <span className="text-red-600 dark:text-red-400 font-semibold">
-                        -{deduction.deducted_first.toLocaleString()}
+                        -{group.displayData.first.toLocaleString()}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       <span className="text-red-600 dark:text-red-400 font-semibold">
-                        -{deduction.deducted_second.toLocaleString()}
+                        -{group.displayData.second.toLocaleString()}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       <span className="text-red-600 dark:text-red-400 font-bold">
-                        -{(deduction.deducted_first + deduction.deducted_second).toLocaleString()}
+                        -{group.displayData.total.toLocaleString()}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
                       <div className="flex flex-col">
-                        <span>{new Date(deduction.created_at).toLocaleString()}</span>
+                        <span>{new Date(group.displayData.timestamp).toLocaleString()}</span>
                         <span className="text-xs text-gray-500 dark:text-gray-500">
-                          by {deduction.admin.username}
+                          by {group.displayData.admin}
                         </span>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       <button
-                        onClick={() => handleDeleteDeduction(deduction)}
+                        onClick={() => handleDeleteDeductionGroup(group.deductions)}
                         className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-sm font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors flex items-center gap-1"
-                        title="Delete Deduction"
+                        title={`Delete ${group.displayData.count > 1 ? 'All ' + group.displayData.count + ' Deductions' : 'Deduction'}`}
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
