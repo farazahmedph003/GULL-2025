@@ -1,1440 +1,983 @@
-import React, { useState, useRef } from 'react';
-import type { EntryType } from '../types';
-import { isValidNumber, formatCurrency } from '../utils/helpers';
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import type { EntryType, AddedEntrySummary, Transaction } from '../types';
+import { formatCurrency } from '../utils/helpers';
 import { useUserBalance } from '../hooks/useUserBalance';
-import { useTransactions } from '../hooks/useTransactions';
-import { useAuth } from '../contexts/AuthContext';
-import { isAdminEmail } from '../config/admin';
 import { useNotifications } from '../contexts/NotificationContext';
-import JSZip from 'jszip';
+import { playSuccessSound } from '../utils/audioFeedback';
+import { useAuth } from '../contexts/AuthContext';
+import { useSystemSettings } from '../hooks/useSystemSettings';
+import {
+  getExistingTotalsForNumber,
+  getLimitsForEntryType,
+  padNumberForEntryType,
+} from '../utils/amountLimits';
 
 interface IntelligentEntryProps {
   projectId: string;
   entryType: EntryType;
-  onSuccess: () => void;
+  addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<Transaction | null>;
+  transactions: Transaction[];
+  onSuccess?: (summary: AddedEntrySummary[]) => void;
 }
 
-interface ParsedEntry {
+type EntryGroup = 'open' | 'akra' | 'ring' | 'packet';
+type AmountType = 'first' | 'second';
+type NumberToken = Extract<Token, { type: 'number' }>;
+type AmountToken = Extract<Token, { type: 'amount' }>;
+
+type Token =
+  | {
+      type: 'number';
+      value: string;
+      entryType: EntryGroup;
+      startIndex: number;
+      endIndex: number;
+      line: number;
+      column: number;
+    }
+  | {
+      type: 'amount';
+      amountType: AmountType;
+      value: string;
+      startIndex: number;
+      endIndex: number;
+      line: number;
+      column: number;
+    }
+  | {
+      type: 'separator';
+      value: string;
+      startIndex: number;
+      endIndex: number;
+      line: number;
+      column: number;
+    }
+  | {
+      type: 'invalid';
+      value: string;
+      message: string;
+      startIndex: number;
+      endIndex: number;
+      line: number;
+      column: number;
+    };
+
+interface ParseResult {
+  tokens: Token[];
+  numbers: Array<{
+    value: string;
+    entryType: EntryGroup;
+    line: number;
+    column: number;
+    startIndex: number;
+    endIndex: number;
+  }>;
+  amounts: Array<{
+    value: string;
+    amountType: AmountType;
+    line: number;
+    column: number;
+    startIndex: number;
+    endIndex: number;
+  }>;
+  errors: Array<{
+    kind: 'number-length' | 'letter-sequence';
+    value: string;
+    line: number;
+    column: number;
+    startIndex: number;
+    endIndex: number;
+  }>;
+}
+
+interface Position {
+  index: number;
+  line: number;
+  column: number;
+}
+
+const isDigit = (char: string) => char >= '0' && char <= '9';
+
+const isLetter = (char: string) => /\p{L}/u.test(char);
+
+const determineEntryType = (length: number): EntryGroup | null => {
+  if (length === 1) return 'open';
+  if (length === 2) return 'akra';
+  if (length === 3) return 'ring';
+  if (length === 4) return 'packet';
+  return null;
+};
+
+const advancePosition = (text: string, start: Position, length: number): Position => {
+  let { index, line, column } = start;
+  for (let i = 0; i < length; i += 1) {
+    const char = text[index];
+    index += 1;
+    if (char === '\n') {
+      line += 1;
+      column = 0;
+    } else {
+      column += 1;
+    }
+  }
+  return { index, line, column };
+};
+
+const MIN_TEXTAREA_HEIGHT = 240;
+
+const parseText = (text: string): ParseResult => {
+  const tokens: Token[] = [];
+  const numbers: ParseResult['numbers'] = [];
+  const amounts: ParseResult['amounts'] = [];
+  const errors: ParseResult['errors'] = [];
+
+  let position: Position = { index: 0, line: 0, column: 0 };
+
+  while (position.index < text.length) {
+    const currentChar = text[position.index];
+    const lowerChar = currentChar.toLowerCase();
+    const tokenStart = position;
+    const remainingText = text.slice(position.index);
+
+    const byMatch = remainingText.match(/^(\d+)by(\d+)/);
+    if (byMatch) {
+      const [, firstValue, secondValue] = byMatch;
+
+      const firstEndPosition = advancePosition(text, position, firstValue.length);
+      tokens.push({
+        type: 'amount',
+        amountType: 'first',
+        value: firstValue,
+        startIndex: tokenStart.index,
+        endIndex: firstEndPosition.index,
+        line: tokenStart.line,
+        column: tokenStart.column,
+      });
+      amounts.push({
+        value: firstValue,
+        amountType: 'first',
+        line: tokenStart.line,
+        column: tokenStart.column,
+        startIndex: tokenStart.index,
+        endIndex: firstEndPosition.index,
+      });
+
+      const byStartPosition = firstEndPosition;
+      const byEndPosition = advancePosition(text, byStartPosition, 2);
+      const byValue = text.slice(byStartPosition.index, byEndPosition.index);
+      tokens.push({
+        type: 'separator',
+        value: byValue,
+        startIndex: byStartPosition.index,
+        endIndex: byEndPosition.index,
+        line: byStartPosition.line,
+        column: byStartPosition.column,
+      });
+
+      const secondStartPosition = byEndPosition;
+      const secondEndPosition = advancePosition(text, secondStartPosition, secondValue.length);
+      tokens.push({
+        type: 'amount',
+        amountType: 'second',
+        value: secondValue,
+        startIndex: secondStartPosition.index,
+        endIndex: secondEndPosition.index,
+        line: secondStartPosition.line,
+        column: secondStartPosition.column,
+      });
+      amounts.push({
+        value: secondValue,
+        amountType: 'second',
+        line: secondStartPosition.line,
+        column: secondStartPosition.column,
+        startIndex: secondStartPosition.index,
+        endIndex: secondEndPosition.index,
+      });
+
+      position = secondEndPosition;
+          continue;
+        }
+
+    if (isDigit(currentChar)) {
+      let end = position.index;
+      while (end < text.length && isDigit(text[end])) {
+        end += 1;
+      }
+      const value = text.slice(position.index, end);
+      const entryType = determineEntryType(value.length);
+      const nextPosition = advancePosition(text, position, value.length);
+
+      if (entryType) {
+        numbers.push({
+          value,
+          entryType,
+          line: tokenStart.line,
+          column: tokenStart.column,
+          startIndex: tokenStart.index,
+          endIndex: nextPosition.index,
+        });
+
+        tokens.push({
+          type: 'number',
+          value,
+          entryType,
+          startIndex: tokenStart.index,
+          endIndex: nextPosition.index,
+          line: tokenStart.line,
+          column: tokenStart.column,
+        });
+      } else {
+        errors.push({
+          kind: 'number-length',
+          value,
+          line: tokenStart.line,
+          column: tokenStart.column,
+          startIndex: tokenStart.index,
+          endIndex: nextPosition.index,
+        });
+
+        tokens.push({
+          type: 'invalid',
+          value,
+          message: `Invalid number "${value}" at line ${tokenStart.line + 1}, column ${
+            tokenStart.column + 1
+          }: numbers must be 1-4 digits.`,
+          startIndex: tokenStart.index,
+          endIndex: nextPosition.index,
+          line: tokenStart.line,
+          column: tokenStart.column,
+        });
+      }
+
+      position = nextPosition;
+          continue;
+        }
+
+    if ((lowerChar === 'f' || lowerChar === 's') && position.index + 1 < text.length) {
+      let end = position.index + 1;
+      while (end < text.length && isDigit(text[end])) {
+        end += 1;
+      }
+
+      if (end > position.index + 1) {
+        const value = text.slice(position.index, end);
+        const amountType: AmountType = lowerChar === 'f' ? 'first' : 'second';
+        const nextPosition = advancePosition(text, position, value.length);
+
+        amounts.push({
+          value,
+          amountType,
+          line: tokenStart.line,
+          column: tokenStart.column,
+          startIndex: tokenStart.index,
+          endIndex: nextPosition.index,
+        });
+
+        tokens.push({
+          type: 'amount',
+          amountType,
+          value,
+          startIndex: tokenStart.index,
+          endIndex: nextPosition.index,
+          line: tokenStart.line,
+          column: tokenStart.column,
+        });
+
+        position = nextPosition;
+          continue;
+        }
+    }
+
+    if (isLetter(currentChar)) {
+      let end = position.index;
+      while (end < text.length && isLetter(text[end])) {
+        end += 1;
+      }
+      const value = text.slice(position.index, end);
+      const nextPosition = advancePosition(text, position, value.length);
+
+      errors.push({
+        kind: 'letter-sequence',
+        value,
+        line: tokenStart.line,
+        column: tokenStart.column,
+        startIndex: tokenStart.index,
+        endIndex: nextPosition.index,
+      });
+
+      tokens.push({
+        type: 'invalid',
+        value,
+        message: `Invalid characters "${value}" at line ${tokenStart.line + 1}, column ${
+          tokenStart.column + 1
+        }: letters are not allowed between numbers.`,
+        startIndex: tokenStart.index,
+        endIndex: nextPosition.index,
+        line: tokenStart.line,
+        column: tokenStart.column,
+      });
+
+      position = nextPosition;
+          continue;
+        }
+
+    let end = position.index;
+    while (end < text.length && !isDigit(text[end]) && !isLetter(text[end])) {
+      end += 1;
+    }
+    const value = text.slice(position.index, end);
+    const nextPosition = advancePosition(text, position, value.length);
+
+    tokens.push({
+      type: 'separator',
+      value,
+      startIndex: tokenStart.index,
+      endIndex: nextPosition.index,
+      line: tokenStart.line,
+      column: tokenStart.column,
+    });
+
+    position = nextPosition;
+  }
+
+  return { tokens, numbers, amounts, errors };
+};
+
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const renderTokensAsHtml = (tokens: Token[]): string =>
+  tokens
+    .map((token) => {
+      let className = 'text-gray-900 dark:text-gray-100';
+
+      if (token.type === 'number') {
+        className = 'text-yellow-500 dark:text-yellow-400 font-semibold';
+      } else if (token.type === 'amount') {
+        className =
+          token.amountType === 'first'
+            ? 'text-green-500 dark:text-green-400 font-semibold'
+            : 'text-purple-500 dark:text-purple-400 font-semibold';
+      } else if (token.type === 'invalid') {
+        className = 'text-red-500 dark:text-red-400 font-semibold underline decoration-dotted';
+      }
+
+      return `<span class="${className}">${escapeHtml(token.value)}</span>`;
+    })
+    .join('');
+
+const autoResizeTextarea = (
+  textarea: HTMLTextAreaElement,
+  overlay: HTMLDivElement | null,
+  container: HTMLDivElement | null,
+) => {
+  textarea.style.height = 'auto';
+  const height = Math.max(textarea.scrollHeight, MIN_TEXTAREA_HEIGHT);
+  textarea.style.height = `${height}px`;
+
+  if (overlay) {
+    overlay.style.height = `${height}px`;
+  }
+
+  if (container) {
+    container.style.height = `${height}px`;
+  }
+};
+
+interface EntryCandidate {
   number: string;
+  entryType: EntryGroup;
   first: number;
   second: number;
-  entryType: EntryType; // Auto-detected from number length
 }
+
+interface EntryPreviewGroup {
+  numbers: Array<{ value: string; entryType: EntryGroup }>;
+  first: number;
+  second: number;
+}
+
+interface BuildEntriesResult {
+  entries: EntryCandidate[];
+  missingAmounts: NumberToken[];
+  orphanAmounts: AmountToken[];
+  groups: EntryPreviewGroup[];
+}
+
+const parseAmountValue = (token: AmountToken): number | null => {
+  const withoutPrefix = token.value.replace(/^[fFsS]+/, '');
+  const numericPortion = withoutPrefix.replace(/[^\d.]/g, '');
+  if (!numericPortion) {
+    return null;
+  }
+  const numericValue = Number(numericPortion);
+  if (Number.isNaN(numericValue)) {
+    return null;
+  }
+  return numericValue;
+};
+
+const buildEntries = (tokens: Token[]): BuildEntriesResult => {
+  const entries: EntryCandidate[] = [];
+  const missingAmounts: NumberToken[] = [];
+  const orphanAmounts: AmountToken[] = [];
+  const groups: EntryPreviewGroup[] = [];
+
+  let currentNumbers: NumberToken[] = [];
+  let currentFirst: number | null = null;
+  let currentSecond: number | null = null;
+
+  const flush = () => {
+    if (currentNumbers.length === 0) {
+      currentFirst = null;
+      currentSecond = null;
+      return;
+    }
+
+    if (currentFirst === null && currentSecond === null) {
+      missingAmounts.push(...currentNumbers);
+    } else {
+      currentNumbers.forEach((numberToken) => {
+        entries.push({
+          number: numberToken.value,
+          entryType: numberToken.entryType,
+          first: currentFirst ?? 0,
+          second: currentSecond ?? 0,
+        });
+      });
+    }
+
+    groups.push({
+      numbers: currentNumbers.map(({ value, entryType }) => ({ value, entryType })),
+      first: currentFirst ?? 0,
+      second: currentSecond ?? 0,
+    });
+
+    currentNumbers = [];
+    currentFirst = null;
+    currentSecond = null;
+  };
+
+  tokens.forEach((token) => {
+    if (token.type === 'number') {
+      if (
+        currentNumbers.length > 0 &&
+        (currentFirst !== null || currentSecond !== null)
+      ) {
+        flush();
+      }
+      currentNumbers.push(token);
+      return;
+    }
+
+    if (token.type === 'amount') {
+      if (currentNumbers.length === 0) {
+        orphanAmounts.push(token);
+        return;
+      }
+
+      const amountValue = parseAmountValue(token);
+      if (amountValue === null) {
+        return;
+      }
+
+      if (token.amountType === 'first') {
+        currentFirst = amountValue;
+          } else {
+        currentSecond = amountValue;
+      }
+      return;
+    }
+  });
+
+  flush();
+
+  return { entries, missingAmounts, orphanAmounts, groups };
+};
+
+const padNumberValue = (value: string, type: EntryGroup): string =>
+  padNumberForEntryType(value, type);
 
 const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
   projectId,
   entryType: _entryType,
-  onSuccess,
+  addTransaction,
+  transactions,
+  onSuccess: _onSuccess,
 }) => {
-  const { user } = useAuth();
-  const { balance, hasSufficientBalance, deductBalance, addBalance } = useUserBalance();
-  const { addTransaction } = useTransactions(projectId);
-  const { showSuccess, showError } = useNotifications();
-  const isAdmin = user ? isAdminEmail(user.email) : false;
-  
   const [inputText, setInputText] = useState('');
-  const [parsedEntries, setParsedEntries] = useState<ParsedEntry[]>([]);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [balanceError, setBalanceError] = useState<string | null>(null);
-  const [showPreview, setShowPreview] = useState(false);
+  const [submissionErrors, setSubmissionErrors] = useState<string[]>([]);
+  const [balanceMessage, setBalanceMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoadingFile, setIsLoadingFile] = useState(false);
-  const [editingEntry, setEditingEntry] = useState<{ index: number; entry: ParsedEntry } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { user } = useAuth();
+  const { balance, hasSufficientBalance, deductBalance } = useUserBalance();
+  const { showSuccess, showError } = useNotifications();
+  const { amountLimits } = useSystemSettings();
 
-  // Helper function to parse amount patterns
-  const parseAmountPattern = (text: string): { first: number; second: number } | null => {
-    const cleanText = text.trim();
-    
-    // Check for parentheses pattern FIRST: 41(10/50), 41(10//50), 41(10by50), 41(10=50), 41(10+50)
-    const parenPattern = /^\d*\((\d+(?:\.\d+)?)[\/]{1,2}(\d+(?:\.\d+)?)\)$/;
-    const parenByPattern = /^\d*\((\d+(?:\.\d+)?)(?:by|x)(\d+(?:\.\d+)?)\)$/i;
-    const parenEqualsPattern = /^\d*\((\d+(?:\.\d+)?)=(\d+(?:\.\d+)?)\)$/;
-    const parenPlusPattern = /^\d*\((\d+(?:\.\d+)?)\+(\d+(?:\.\d+)?)\)$/;
-    
-    if (parenPattern.test(cleanText)) {
-      const match = cleanText.match(parenPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (parenByPattern.test(cleanText)) {
-      const match = cleanText.match(parenByPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (parenEqualsPattern.test(cleanText)) {
-      const match = cleanText.match(parenEqualsPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (parenPlusPattern.test(cleanText)) {
-      const match = cleanText.match(parenPlusPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    // Check for nil/n patterns FIRST: N+200, n+200, NIL+200, nil+200, 300+N, 300+nil, 300+ff, 20.nil, 20nil, nil.20, 20xnil, 100bynil, nilx20, nilby100
-    const nilPlusNumber = /^(n|nil)\.?\+?(\d+(?:\.\d+)?)$/i;
-    const numberPlusNil = /^(\d+(?:\.\d+)?)\.?\+?(n|nil|ff)$/i;
-    const numberByNil = /^(\d+(?:\.\d+)?)[\s.]*(by|x)[\s.]*(n|nil)$/i; // 20xnil, 100bynil
-    const nilByNumber = /^(n|nil)[\s.]*(by|x)[\s.]*(\d+(?:\.\d+)?)$/i; // nilx20, nilby100
-    
-    if (nilPlusNumber.test(cleanText)) {
-      const match = cleanText.match(nilPlusNumber);
-      return { first: 0, second: Number(match![2]) };
-    }
-    
-    if (numberPlusNil.test(cleanText)) {
-      const match = cleanText.match(numberPlusNil);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (numberByNil.test(cleanText)) {
-      const match = cleanText.match(numberByNil);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (nilByNumber.test(cleanText)) {
-      const match = cleanText.match(nilByNumber);
-      return { first: 0, second: Number(match![3]) };
-    }
-    
-    // Check for regular number+number pattern: 10+10, 50+100, etc.
-    const plusPattern = /^(\d+(?:\.\d+)?)\+(\d+(?:\.\d+)?)$/;
-    
-    if (plusPattern.test(cleanText)) {
-      const match = cleanText.match(plusPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    // Check for ff/ss patterns: ff10, FF10, ff.10, FF.10, 100ff, 100FF, 100-ff, 100-FF (prefix, suffix, and dash)
-    const ffPrefixPattern = /^ff\.?(\d+)$/i;
-    const fsSuffixPattern = /^(\d+)ff$/i;
-    const ffDashPattern = /^(\d+)-ff$/i;
-    const ssPrefixPattern = /^ss\.?(\d+)$/i;
-    const ssSuffixPattern = /^(\d+)ss$/i;
-    const ssDashPattern = /^(\d+)-ss$/i;
-    
-    if (ffPrefixPattern.test(cleanText)) {
-      const match = cleanText.match(ffPrefixPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (fsSuffixPattern.test(cleanText)) {
-      const match = cleanText.match(fsSuffixPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (ffDashPattern.test(cleanText)) {
-      const match = cleanText.match(ffDashPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (ssPrefixPattern.test(cleanText)) {
-      const match = cleanText.match(ssPrefixPattern);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    if (ssSuffixPattern.test(cleanText)) {
-      const match = cleanText.match(ssSuffixPattern);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    if (ssDashPattern.test(cleanText)) {
-      const match = cleanText.match(ssDashPattern);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    // Check for f/s patterns: ONLY WITH NUMBERS (no standalone f/s/ff/ss that return 0/0)
-    const fsSingleFirst = /^(\d+)[fF]$/; // 100f, 200F = F 100, S 0
-    const fsSingleSecond = /^(\d+)[sS]$/; // 100s, 200S = F 0, S 100
-    
-    // NEW: Parentheses + f/s patterns: (700)ff, (700)ss, (700)fff, (700)sss
-    const parenFPattern = /^\((\d+(?:\.\d+)?)\)[\s.]*[fF]+$/; // (700)ff, (700)fff = F 700, S 0
-    const parenSPattern = /^\((\d+(?:\.\d+)?)\)[\s.]*[sS]+$/; // (700)ss, (700)sss = F 0, S 700
-    
-    // NEW: Single/double/triple f/s BEFORE number: f20, ff20, fff20, s20, ss20, sss20
-    const fBeforePattern = /^[fF]+[\s.]*(\d+(?:\.\d+)?)$/; // f20, ff20, fff20 = F 20, S 0
-    const sBeforePattern = /^[sS]+[\s.]*(\d+(?:\.\d+)?)$/; // s20, ss20, sss20 = F 0, S 20
-    
-    // NEW: Single/double/triple f/s AFTER number: 20f, 20ff, 20fff, 20s, 20ss, 20sss (NO spaces/dots between!)
-    const fAfterPattern = /^(\d+(?:\.\d+)?)[fF]+$/; // 20f, 20ff, 20fff = F 20, S 0 (NO spaces/dots)
-    const sAfterPattern = /^(\d+(?:\.\d+)?)[sS]+$/; // 20s, 20ss, 20sss = F 0, S 20 (NO spaces/dots)
-    
-    const numberXFFFPattern = /^(\d+(?:\.\d+)?)[\s.]*[xX][\s.]*[fF]+$/; // 10xF, 100xFF, 100xFFF = F 100, S 0
-    const numberXSSSPattern = /^(\d+(?:\.\d+)?)[\s.]*[xX][\s.]*[sS]+$/; // 10xS, 100xSS, 100xSSS = F 0, S 100
-    
-    // NEW: Slash with nil variations: 500/n, n/500
-    const numberSlashNilPattern = /^(\d+(?:\.\d+)?)[\s.]*\/[\s.]*(?:n|nil)$/i; // 500/n => F 500, S 0
-    const nilSlashNumberPattern = /^(?:n|nil)[\s.]*\/[\s.]*(\d+(?:\.\d+)?)$/i; // n/500 => F 0, S 500
-    const fPrefixPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)$/; // Allow dots/spaces: f20, F 300, F.. 50
-    const sPrefixPattern = /^[sS][\s.]*(\d+(?:\.\d+)?)$/; // Allow dots/spaces: s20, S 300, S.. 50
-    const fSlashPattern = /^[fF][\s.]*\/[\s.]*(\d+(?:\.\d+)?)$/i; // F/100, f/200
-    const sSlashPattern = /^[sS][\s.]*\/[\s.]*(\d+(?:\.\d+)?)$/i; // S/200, s/100
-    const fColonPattern = /^[fF][\s.]*:[\s.]*(\d+(?:\.\d+)?)$/i; // F:100, f:200
-    const sColonPattern = /^[sS][\s.]*:[\s.]*(\d+(?:\.\d+)?)$/i; // S:200, s:100
-    const fPipePattern = /^[fF][\s.]*\|[\s.]*(\d+(?:\.\d+)?)$/i; // F|100, f|200
-    const sPipePattern = /^[sS][\s.]*\|[\s.]*(\d+(?:\.\d+)?)$/i; // S|200, s|100
-    const fDashPattern = /^[fF][\s.]*-[\s.]*(\d+(?:\.\d+)?)$/i; // F-100, f-200
-    const sDashPattern = /^[sS][\s.]*-[\s.]*(\d+(?:\.\d+)?)$/i; // S-200, s-100
-    const fsPattern = /^(\d+(?:\.\d+)?)[fF]\s+(\d+(?:\.\d+)?)[sS]$/;
-    const fsCompactPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[sS][\s.]*(\d+(?:\.\d+)?)$/i; // f100s200, F100S200
-    // NEW: f300 s350 pattern - supports single/multiple f/s, with/without spaces: f300 s350, F300 S350, ff300 ss350, f 300 s 350
-    const fsSpacePattern = /^[fF]+[\s.]*(\d+(?:\.\d+)?)[\s.]+[sS]+[\s.]*(\d+(?:\.\d+)?)$/i; // f300 s350, F300 S350, ff300 ss350, f 300 s 350
-    const fsEqualsPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*=[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100=s.400, f100=s400
-    const fsSlashPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*\/[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100/S.400, F100/S200
-    const fsPlusPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*\+[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100+S.400, F100+S200
-    const fsColonPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*:[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100:S.400, F100:S200
-    const fsPipePattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*\|[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100|S.400, F100|S200
-    const fsDashPattern = /^[fF][\s.]*(\d+(?:\.\d+)?)[\s.]*-[\s.]*[sS][\s.]*(\d+(?:\.\d+)?)$/i; // F.100-S.400, F100-S200
-    const fsDotSpacePattern = /^[fF][\s.]*([sS])[\s.]*(\d+(?:\.\d+)?)(?:[xX]|by)(\d+(?:\.\d+)?)$/i; // F. S. 25x50
-    const fstPattern = /^[\s.]*f(?:a)?st[\s.]*(\d+(?:\.\d+)?)[\s.]*$/i; // fst.50, fast.50, ..fst..50, ..fast..50
-    
-    // Check parentheses + f/s patterns: (700)ff, (700)ss, (700)fff
-    if (parenFPattern.test(cleanText)) {
-      const match = cleanText.match(parenFPattern);
-      return { first: Number(match![1]), second: 0 }; // (700)ff = F 700, S 0
-    }
-    
-    if (parenSPattern.test(cleanText)) {
-      const match = cleanText.match(parenSPattern);
-      return { first: 0, second: Number(match![1]) }; // (700)ss = F 0, S 700
-    }
-    
-    // Check f/s BEFORE number: f20, ff20, fff20, s20, ss20, sss20
-    if (fBeforePattern.test(cleanText)) {
-      const match = cleanText.match(fBeforePattern);
-      return { first: Number(match![1]), second: 0 }; // f20, ff20, fff20 = F 20, S 0
-    }
-    
-    if (sBeforePattern.test(cleanText)) {
-      const match = cleanText.match(sBeforePattern);
-      return { first: 0, second: Number(match![1]) }; // s20, ss20, sss20 = F 0, S 20
-    }
-    
-    // Check f/s AFTER number: 20f, 20ff, 20fff, 20s, 20ss, 20sss
-    if (fAfterPattern.test(cleanText)) {
-      const match = cleanText.match(fAfterPattern);
-      return { first: Number(match![1]), second: 0 }; // 20f, 20ff, 20fff = F 20, S 0
-    }
-    
-    if (sAfterPattern.test(cleanText)) {
-      const match = cleanText.match(sAfterPattern);
-      return { first: 0, second: Number(match![1]) }; // 20s, 20ss, 20sss = F 0, S 20
-    }
-    
-    // Slash with nil patterns first
-    if (numberSlashNilPattern.test(cleanText)) {
-      const match = cleanText.match(numberSlashNilPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    if (nilSlashNumberPattern.test(cleanText)) {
-      const match = cleanText.match(nilSlashNumberPattern);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    // Check numberXF/S patterns: 10xF, 100xFF, etc.
-    if (numberXFFFPattern.test(cleanText)) {
-      const match = cleanText.match(numberXFFFPattern);
-      return { first: Number(match![1]), second: 0 }; // 10xF, 100xFF, 100xFFF = F amount, S 0
-    }
-    
-    if (numberXSSSPattern.test(cleanText)) {
-      const match = cleanText.match(numberXSSSPattern);
-      return { first: 0, second: Number(match![1]) }; // 10xS, 100xSS, 100xSSS = F 0, S amount
-    }
-    
-    if (fsPattern.test(cleanText)) {
-      const match = cleanText.match(fsPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (fsCompactPattern.test(cleanText)) {
-      const match = cleanText.match(fsCompactPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    // Check fsSpacePattern: f300 s350, F300 S350, ff300 ss350, f 300 s 350
-    if (fsSpacePattern.test(cleanText)) {
-      const match = cleanText.match(fsSpacePattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (fsEqualsPattern.test(cleanText)) {
-      const match = cleanText.match(fsEqualsPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (fsSlashPattern.test(cleanText)) {
-      const match = cleanText.match(fsSlashPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (fsPlusPattern.test(cleanText)) {
-      const match = cleanText.match(fsPlusPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (fsColonPattern.test(cleanText)) {
-      const match = cleanText.match(fsColonPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (fsPipePattern.test(cleanText)) {
-      const match = cleanText.match(fsPipePattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (fsDashPattern.test(cleanText)) {
-      const match = cleanText.match(fsDashPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (fsDotSpacePattern.test(cleanText)) {
-      const match = cleanText.match(fsDotSpacePattern);
-      return { first: Number(match![2]), second: Number(match![3]) };
-    }
-    
-    if (fstPattern.test(cleanText)) {
-      const match = cleanText.match(fstPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (fSlashPattern.test(cleanText)) {
-      const match = cleanText.match(fSlashPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (sSlashPattern.test(cleanText)) {
-      const match = cleanText.match(sSlashPattern);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    if (fColonPattern.test(cleanText)) {
-      const match = cleanText.match(fColonPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (sColonPattern.test(cleanText)) {
-      const match = cleanText.match(sColonPattern);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    if (fPipePattern.test(cleanText)) {
-      const match = cleanText.match(fPipePattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (sPipePattern.test(cleanText)) {
-      const match = cleanText.match(sPipePattern);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    if (fDashPattern.test(cleanText)) {
-      const match = cleanText.match(fDashPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (sDashPattern.test(cleanText)) {
-      const match = cleanText.match(sDashPattern);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    if (fsSingleFirst.test(cleanText)) {
-      const match = cleanText.match(fsSingleFirst);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (fsSingleSecond.test(cleanText)) {
-      const match = cleanText.match(fsSingleSecond);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    if (fPrefixPattern.test(cleanText)) {
-      const match = cleanText.match(fPrefixPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (sPrefixPattern.test(cleanText)) {
-      const match = cleanText.match(sPrefixPattern);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    // Check for /, =, by, x, :, |, - patterns (explicit amount indicators): 50/450, 150/250, 10=10, 10by20, 10x20, 25x50, 50 by 350, 50.by.50, .10..by..50.., 10:20, 10|20, 100-200
-    // Note: Asterisk "*" is treated as NUMBER SEPARATOR, not amount pattern
-    // Allow dots and/or spaces around patterns
-    const slashPattern = /^[\s.]*(\d+(?:\.\d+)?)[\s.]*\/[\s.]*(\d+(?:\.\d+)?)[\s.]*$/; // Dots/spaces optional for 150/250
-    const equalsPattern = /^[\s.]*(\d+(?:\.\d+)?)[\s.]*=[\s.]*(\d+(?:\.\d+)?)[\s.]*$/; // Dots/spaces optional for 10=10
-    const byPattern = /^[\s.]*(\d+(?:\.\d+)?)[\s.]*(by|x)[\s.]*(\d+(?:\.\d+)?)[\s.]*$/i; // Dots/spaces optional for 50 by 350
-    const colonPattern = /^[\s.]*(\d+(?:\.\d+)?)[\s.]*:[\s.]*(\d+(?:\.\d+)?)[\s.]*$/; // 10:20, 100:200
-    const pipePattern = /^[\s.]*(\d+(?:\.\d+)?)[\s.]*\|[\s.]*(\d+(?:\.\d+)?)[\s.]*$/; // 10|20, 100|200
-    const dashPattern = /^[\s.]*(\d+(?:\.\d+)?)[\s.]*-[\s.]*(\d+(?:\.\d+)?)[\s.]*$/; // 100-200 (standalone only)
-    
-    if (slashPattern.test(cleanText)) {
-      const match = cleanText.match(slashPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (equalsPattern.test(cleanText)) {
-      const match = cleanText.match(equalsPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (byPattern.test(cleanText)) {
-      const match = cleanText.match(byPattern);
-      return { first: Number(match![1]), second: Number(match![3]) };
-    }
-    
-    if (colonPattern.test(cleanText)) {
-      const match = cleanText.match(colonPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (pipePattern.test(cleanText)) {
-      const match = cleanText.match(pipePattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (dashPattern.test(cleanText)) {
-      const match = cleanText.match(dashPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    // Word-based patterns: first100, second200, 1st100, 2nd200, etc.
-    const firstPattern = /^(?:first|1st|f1rst|fir|fst)[\s.]*(\d+(?:\.\d+)?)$/i;
-    const secondPattern = /^(?:second|2nd|sec|snd|scnd)[\s.]*(\d+(?:\.\d+)?)$/i;
-    const numberFirstPattern = /^(\d+(?:\.\d+)?)[\s.]*(?:first|1st|fir)$/i;
-    const numberSecondPattern = /^(\d+(?:\.\d+)?)[\s.]*(?:second|2nd|sec)$/i;
-    const amtPattern = /^(?:a|amt|amount)[\s.]*(\d+(?:\.\d+)?)$/i;
-    const betPattern = /^(?:b|bet|bett)[\s.]*(\d+(?:\.\d+)?)$/i;
-    const winPattern = /^(?:win|w)[\s.]*(\d+(?:\.\d+)?)$/i;
-    const losePattern = /^(?:lose|loss|l)[\s.]*(\d+(?:\.\d+)?)$/i;
-    
-    if (firstPattern.test(cleanText)) {
-      const match = cleanText.match(firstPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (secondPattern.test(cleanText)) {
-      const match = cleanText.match(secondPattern);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    if (numberFirstPattern.test(cleanText)) {
-      const match = cleanText.match(numberFirstPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (numberSecondPattern.test(cleanText)) {
-      const match = cleanText.match(numberSecondPattern);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    if (amtPattern.test(cleanText)) {
-      const match = cleanText.match(amtPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (betPattern.test(cleanText)) {
-      const match = cleanText.match(betPattern);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    if (winPattern.test(cleanText)) {
-      const match = cleanText.match(winPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (losePattern.test(cleanText)) {
-      const match = cleanText.match(losePattern);
-      return { first: 0, second: Number(match![1]) };
-    }
-    
-    // Bracket & Quote patterns: [10/50], {10by50}, <10=50>, '10/50', "10/50", 41[10/50], etc.
-    const bracketPattern = /^[\[{<('"]?(\d+(?:\.\d+)?)[\s.]*[\/=+:|by|x][\s.]*(\d+(?:\.\d+)?)[\]}>)'"]+$/i;
-    
-    if (bracketPattern.test(cleanText)) {
-      const match = cleanText.match(/(\d+(?:\.\d+)?)[\s.]*[\/=+:|][\s.]*(\d+(?:\.\d+)?)/);
-      if (match) {
-        return { first: Number(match[1]), second: Number(match[2]) };
-      }
-      const byMatch = cleanText.match(/(\d+(?:\.\d+)?)[\s.]*(by|x)[\s.]*(\d+(?:\.\d+)?)/i);
-      if (byMatch) {
-        return { first: Number(byMatch[1]), second: Number(byMatch[3]) };
-      }
-    }
-    
-    // Range/Span patterns: 100~200, 100..200, 100to200, from100to200, etc.
-    const rangePattern = /^(?:from)?[\s.]*(\d+(?:\.\d+)?)[\s.]*(?:~|to|-to-|→|->)[\s.]*(?:to)?[\s.]*(\d+(?:\.\d+)?)$/i; // Removed \.{2,3} to prevent false matches
-    
-    if (rangePattern.test(cleanText)) {
-      const match = cleanText.match(rangePattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    // Multiplication patterns: 10times20, 10mul20, 10xx20, multiply10by20, etc.
-    const timesPattern = /^(\d+(?:\.\d+)?)[\s.]*(?:times|xx|mul|multiply)[\s.]*(?:by)?[\s.]*(\d+(?:\.\d+)?)$/i;
-    
-    if (timesPattern.test(cleanText)) {
-      const match = cleanText.match(timesPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    // Conditional/Logic patterns: if100then200, 100or200, 100and200, 100&200
-    const conditionalPattern = /^(?:if)?[\s.]*(\d+(?:\.\d+)?)[\s.]*(?:then|or|and|&)[\s.]*(\d+(?:\.\d+)?)$/i;
-    
-    if (conditionalPattern.test(cleanText)) {
-      const match = cleanText.match(conditionalPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    // Sequential patterns: 100next200, 100then200, 100after200
-    const sequentialPattern = /^(\d+(?:\.\d+)?)[\s.]*(?:next|then|after)[\s.]*(\d+(?:\.\d+)?)$/i;
-    
-    if (sequentialPattern.test(cleanText)) {
-      const match = cleanText.match(sequentialPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    // Currency symbols: $100, ₹100, €100, £100, ¥100, 100$, 100₹, $100/$200, etc.
-    const currencyPrefixPattern = /^[$₹€£¥@#~^%][\s.]*(\d+(?:\.\d+)?)$/;
-    const currencySuffixPattern = /^(\d+(?:\.\d+)?)[$₹€£¥]$/;
-    const currencyBothPattern = /^[$₹€£¥][\s.]*(\d+(?:\.\d+)?)[\s.]*[\/=+:|][\s.]*[$₹€£¥]?[\s.]*(\d+(?:\.\d+)?)$/;
-    
-    if (currencyPrefixPattern.test(cleanText)) {
-      const match = cleanText.match(/(\d+(?:\.\d+)?)/);
-      if (match) return { first: Number(match[1]), second: 0 };
-    }
-    
-    if (currencySuffixPattern.test(cleanText)) {
-      const match = cleanText.match(currencySuffixPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (currencyBothPattern.test(cleanText)) {
-      const match = cleanText.match(/(\d+(?:\.\d+)?)[\s.]*[\/=+:|][\s.]*(\d+(?:\.\d+)?)/);
-      if (match) {
-        return { first: Number(match[1]), second: Number(match[2]) };
-      }
-    }
-    
-    // Percentage & Ratio: 10%, 10%20, 100÷2, etc.
-    const percentagePattern = /^(\d+(?:\.\d+)?)%[\s.]*(\d+(?:\.\d+)?)?$/;
-    const dividePattern = /^(\d+(?:\.\d+)?)[\s.]*[÷][\s.]*(\d+(?:\.\d+)?)$/;
-    const atPattern = /^(\d+(?:\.\d+)?)[@](\d+(?:\.\d+)?)$/;
-    
-    if (percentagePattern.test(cleanText)) {
-      const match = cleanText.match(percentagePattern);
-      const second = match![2] ? Number(match![2]) : 0;
-      return { first: Number(match![1]), second: second };
-    }
-    
-    if (dividePattern.test(cleanText)) {
-      const match = cleanText.match(dividePattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (atPattern.test(cleanText)) {
-      const match = cleanText.match(atPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    // Abbreviated game types: pk100, rg100, ak100, op100, pkt100
-    const pkPattern = /^(?:pk|pkt|packet)[\s.]*(\d+(?:\.\d+)?)$/i;
-    const rgPattern = /^(?:rg|ring)[\s.]*(\d+(?:\.\d+)?)$/i;
-    const akPattern = /^(?:ak|akra)[\s.]*(\d+(?:\.\d+)?)$/i;
-    const opPattern = /^(?:op|open)[\s.]*(\d+(?:\.\d+)?)$/i;
-    
-    if (pkPattern.test(cleanText)) {
-      const match = cleanText.match(pkPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (rgPattern.test(cleanText)) {
-      const match = cleanText.match(rgPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (akPattern.test(cleanText)) {
-      const match = cleanText.match(akPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    if (opPattern.test(cleanText)) {
-      const match = cleanText.match(opPattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    // Emoji patterns: 💰100, 🎰100, 🎲100
-    const emojiPattern = /^[💰🎰🎲][\s.]*(\d+(?:\.\d+)?)$/;
-    
-    if (emojiPattern.test(cleanText)) {
-      const match = cleanText.match(/(\d+(?:\.\d+)?)/);
-      if (match) return { first: Number(match[1]), second: 0 };
-    }
-    
-    // Positive/Negative: +100, -100, +100/-200
-    const positivePattern = /^\+(\d+(?:\.\d+)?)$/;
-    const posNegPattern = /^\+(\d+(?:\.\d+)?)[\s.]*\/[\s.]*-(\d+(?:\.\d+)?)$/;
-    
-    if (posNegPattern.test(cleanText)) {
-      const match = cleanText.match(posNegPattern);
-      return { first: Number(match![1]), second: Number(match![2]) };
-    }
-    
-    if (positivePattern.test(cleanText)) {
-      const match = cleanText.match(positivePattern);
-      return { first: Number(match![1]), second: 0 };
-    }
-    
-    return null;
-  };
+  const parseResult = useMemo(() => parseText(inputText), [inputText]);
+  const parsedEntries = useMemo(
+    () => buildEntries(parseResult.tokens),
+    [parseResult.tokens],
+  );
 
-  const parseIntelligentInput = (text: string): { entries: ParsedEntry[]; errors: string[] } => {
-    const entries: ParsedEntry[] = [];
-    const parseErrors: string[] = [];
-    
-    // Clean WhatsApp timestamp lines
-    // Format 1: "[28/10/2025 11:16 pm] Username: 89"
-    // Format 2: "10/29/25, 7:40 PM - servant Of ALLAH: 3926."
-    const whatsappBracketPattern = /^\[.*?\].*?:\s*/;
-    const whatsappDashPattern = /^\d{1,2}\/\d{1,2}\/\d{2,4},?\s+\d{1,2}:\d{2}\s+(?:AM|PM|am|pm)?\s*-\s*.*?:\s*/;
-    
-    const lines = text.split('\n')
-      .filter(line => line.trim())
-      .map(line => {
-        const trimmed = line.trim();
-        
-        // Remove WhatsApp timestamp (bracketed format)
-        if (whatsappBracketPattern.test(trimmed)) {
-          return trimmed.replace(whatsappBracketPattern, '');
-        }
-        
-        // Remove WhatsApp timestamp (dash format)
-        if (whatsappDashPattern.test(trimmed)) {
-          return trimmed.replace(whatsappDashPattern, '');
-        }
-        
-        return trimmed;
-      })
-      .map(line => line.replace(/Ø/gi, '')) // Clean Ø symbol (means zero/null)
-      .filter(line => line.length > 0); // Remove empty lines after cleaning
-
-    // Helper function to detect entry type from number length
-    const detectEntryType = (num: string): EntryType => {
-      const len = num.length;
-      if (len === 1) return 'open';
-      if (len === 2) return 'akra';
-      if (len === 3) return 'ring';
-      return 'packet';
-    };
-
-    // Helper function to pad numbers to correct length based on entry type
-    const padNumber = (num: string, type: EntryType): string => {
-      const lengths = { open: 1, akra: 2, ring: 3, packet: 4 };
-      return num.padStart(lengths[type], '0');
-    };
-
-    // Process lines to support both horizontal and vertical grouping
-    let currentNumberGroup: string[] = [];
-    let currentNumberLineNums: number[] = [];
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const lineNum = i + 1;
-      // Normalize unicode dashes to a standard hyphen so they act as separators
-      const normalized = line
-        .trim()
-        .replace(/[\u2012\u2013\u2014\u2015]/g, '-') // figure dash, en dash, em dash, horizontal bar
-        .replace(/\s+/g, ' ');
-      
-      console.log(`\n📝 Processing Line ${lineNum}: "${normalized}"`);
-      console.log(`  📊 Current accumulated numbers: [${currentNumberGroup.join(', ')}]`);
-      
-      // FIRST: Find and extract pattern from the line BEFORE splitting by dots
-      let amountPattern: { first: number; second: number } | null = null;
-      let isOnlyPattern = false;
-      let lineWithoutPattern = normalized;
-      
-      // Check if the entire line is just a pattern (like "ff.10" alone or ".ff.10")
-      // BUT: If it's a parentheses pattern with a number prefix (like "41(10//50)"), it's NOT pattern-only
-      const cleanedLine = normalized.replace(/^[.,\s]+/, '').trim(); // Remove leading dots/commas
-      const wholeLineParsed = parseAmountPattern(cleanedLine);
-      const hasNumberPrefix = /^\d+\([^)]+\)$/.test(cleanedLine); // Check for "41(10//50)" format
-      
-      // REJECT patterns that return F:0 S:0 (useless entries!)
-      const isValidPattern = wholeLineParsed && !(wholeLineParsed.first === 0 && wholeLineParsed.second === 0);
-      
-      if (isValidPattern && !hasNumberPrefix) {
-        // Pure pattern without number prefix
-        amountPattern = wholeLineParsed;
-        isOnlyPattern = true;
-      } else {
-        // Check if line has multiple slashes (chain of numbers like 180/185/367/368)
-        // If so, treat / as a NUMBER SEPARATOR, not an amount pattern
-        const slashCount = (normalized.match(/\//g) || []).length;
-        const equalsCount = (normalized.match(/=/g) || []).length;
-        const hasSlashChain = slashCount >= 2; // 2+ slashes means it's a number chain
-        const hasEqualsChain = equalsCount >= 2; // 2+ equals means it's a number chain
-        
-        // Try to find patterns embedded in the line using comprehensive regex
-        // Matches: ALL SEPARATORS + F/S patterns + ff/ss + nil + parentheses + WORD-BASED + BRACKETS + CURRENCY + EMOJIS + etc.
-        // NOTE: Dash "-" and asterisk "*" in numbers like "905-906" or "3657*365" are separators (UNLESS standalone like "100-200")
-        // NOTE: When multiple "/" or "=" appear in a line, they're treated as number separators, not patterns
-        // Pattern must have keywords (by, x, ff, ss, nil, f, s, fst, fast, first, second, to, times, or, and, etc.) OR special chars
-        // Allow dots and/or spaces around patterns
-        const patternRegex = /(?:\d+\([^)]+\)|\([0-9.]+\)[fF]+|\([0-9.]+\)[sS]+|[\[{<('"]?\d+[\s.]*[\/=+:|by|x][\s.]*\d+[\]}>)'"]+|[fF]{1,3}[\s.]*\d+|[sS]{1,3}[\s.]*\d+|\d+[fF]{1,3}|\d+[sS]{1,3}|\d+[\s.]*[xX][\s.]*[fF]+|\d+[\s.]*[xX][\s.]*[sS]+|\d+[\s.]*\/[\s.]*(?:n|nil)|(?:n|nil)[\s.]*\/[\s.]*\d+|ff\.+\d+\.+|\d+\.+ff\.+|\d+-ff\.+|ss\.+\d+\.+|\d+\.+ss\.+|\d+-ss\.+|(?:n|nil)\.+\+?\d+\.+|\d+[\s.]*(by|x)[\s.]*(n|nil)|(n|nil)[\s.]*(by|x)[\s.]*\d+|[-=]*\d+\.+\+\d+\.+|\d+[\s.]*[\/=+:|\-~][\s.]*\d+|[fF]+[\s.]*\d+[\s.]+[sS]+[\s.]*\d+|[fF][\s.]*\d+[sS][\s.]*\d+|[fF][\s.]*\d+[\s.]*[=\/+:|\\-][\s.]*[sS][\s.]*\d+|[fF][\s.]*[\/=+:|\\-][\s.]*\d+|[sS][\s.]*[\/=+:|\\-][\s.]*\d+|\d+[\s.]*(by|x)[\s.]*\d+|[fF][\s.]*[sS][\s.]*\d+(?:by|x)\d+|[\s.]*f(?:a)?st[\s.]*\d+[\s.]*|(?:first|1st|f1rst|fir)[\s.]*\d+|(?:second|2nd|sec|snd)[\s.]*\d+|\d+[\s.]*(?:first|second|1st|2nd)|(?:from)?[\s.]*\d+[\s.]*(?:~|to|-to-|→|->)[\s.]*(?:to)?[\s.]*\d+|\d+[\s.]*(?:times|xx|mul|multiply)[\s.]*(?:by)?[\s.]*\d+|(?:if)?[\s.]*\d+[\s.]*(?:then|or|and|&)[\s.]*\d+|\d+[\s.]*(?:next|then|after)[\s.]*\d+|[${₹€£¥@#~^%💰🎰🎲][\s.]*\d+|\d+[${₹€£¥]|\d+%[\s.]*\d*|\d+[÷@]\d+|(?:pk|pkt|rg|ring|ak|akra|op|open|amt|a|bet|b|win|w|lose|loss|l)[\s.]*\d+|\+\d+|\+\d+\/\-\d+|\d+f(?:\s+\d+s)?|\d+s|[fF]\s+\d+|[sS]\s+\d+|[fF][\s.]+\d+|[sS][\s.]+\d+)/gi;
-        let patternMatches: RegExpMatchArray | null = normalized.match(patternRegex);
-        
-        // Filter out slash and equals patterns if they're part of chains
-        if (patternMatches && (hasSlashChain || hasEqualsChain)) {
-          const filteredMatches = patternMatches.filter(match => {
-            // Keep F/S patterns even in chains: F.100/S.400, F/100, S/200, F.100=S.400, F.100+S.400
-            const isFSPattern = /^[fF][\s.]*(\d+[\s.]*)?[\/=+][\s.]*([sS][\s.]*)?\d+$/i.test(match) || /^[sS][\s.]*\/[\s.]*\d+$/i.test(match);
-            
-            if (isFSPattern) {
-              return true; // Always keep F/S patterns
-            }
-            
-            const isSlashPattern = /^\d+[\s.]*\/[\s.]*\d+$/.test(match);
-            const isEqualsPattern = /^\d+[\s.]*=[\s.]*\d+$/.test(match);
-            
-            if (hasSlashChain && isSlashPattern) {
-              console.log(`  ⚠️  Ignoring slash pattern "${match}" because line has ${slashCount} slashes (number chain)`);
-              return false;
-            }
-            if (hasEqualsChain && isEqualsPattern) {
-              console.log(`  ⚠️  Ignoring equals pattern "${match}" because line has ${equalsCount} equals (number chain)`);
-              return false;
-            }
-            return true;
-          });
-          patternMatches = filteredMatches.length > 0 ? filteredMatches as RegExpMatchArray : null;
-      }
-      
-        if (patternMatches && patternMatches.length > 0) {
-          console.log(`  🔍 Found ${patternMatches.length} potential pattern(s): [${patternMatches.join(', ')}]`);
-          
-          // FILTER OUT FALSE POSITIVES: Remove dash patterns that are actually number separators
-          // e.g., "09-91" should NOT be a pattern - it's numbers separated by dash
-          const filteredMatches = patternMatches.filter(match => {
-            // Check if this looks like a number-number pattern (e.g., "09-91", "905-906")
-            const dashNumberPattern = /^\d+[\s.]*-[\s.]*\d+$/;
-            if (dashNumberPattern.test(match.trim())) {
-              // Only reject if BOTH numbers are valid game numbers (1-4 digits)
-              const parts = match.split(/[\s.]*-[\s.]*/);
-              if (parts.length === 2) {
-                const num1 = parts[0].trim();
-                const num2 = parts[1].trim();
-                // If both are 1-4 digit numbers, this is a number separator, not a pattern
-                if (/^\d{1,4}$/.test(num1) && /^\d{1,4}$/.test(num2)) {
-                  console.log(`  ⚠️  Ignoring "${match}" - this is a number separator, not an amount pattern`);
-                  return false;
-                }
-              }
-            }
-            return true;
-          });
-          
-          // PRIORITIZE multi-token F/S patterns: Check for "f40 s40" patterns FIRST
-          // Look for patterns that span multiple tokens (like "f40 s40")
-          let multiTokenPattern: RegExpMatchArray | null = null;
-          for (let i = 0; i < filteredMatches.length - 1; i++) {
-            // Check if current and next match form a complete F/S pattern
-            const current = filteredMatches[i];
-            const next = filteredMatches[i + 1];
-            const combined = `${current} ${next}`;
-            
-            // Check if combined matches fsSpacePattern
-            if (/^[fF]+[\s.]*\d+[\s.]+[sS]+[\s.]*\d+$/i.test(combined.replace(/^\s+|\s+$/g, ''))) {
-              const parsed = parseAmountPattern(combined);
-              if (parsed && !(parsed.first === 0 && parsed.second === 0)) {
-                multiTokenPattern = [combined, current, next] as any;
-                console.log(`  🎯 Found multi-token pattern: "${combined}" → F ${parsed.first}, S ${parsed.second}`);
-                amountPattern = parsed;
-                // Remove BOTH matches from the line
-                lineWithoutPattern = normalized.replace(new RegExp(current.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').replace(new RegExp(next.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').replace(/[.,;:?]+/g, ' ').trim();
-                console.log(`  📄 Line after pattern removal: "${lineWithoutPattern}"`);
-                break;
-              }
-            }
-          }
-          
-          // If multi-token pattern found, skip single pattern matching
-          if (!multiTokenPattern) {
-            // Try each match to see if it's a valid pattern
-            // Process from RIGHT to LEFT (last match first) to prioritize the rightmost pattern
-            for (let j = filteredMatches.length - 1; j >= 0; j--) {
-              const match = filteredMatches[j];
-        
-              // Skip if this match is part of a multi-token pattern we already processed
-              if (multiTokenPattern && (match === multiTokenPattern[1] || match === multiTokenPattern[2])) {
-                continue;
-              }
-              
-              // Clean leading/trailing dots and numbers from the match to extract pure pattern
-              // e.g., "485.50by50" → "50by50", ".50by100.." → "50by100"
-              // For parentheses pattern "41(10//50)", extract number separately
-              let extractedNumber: string | null = null;
-              let cleanMatch = match;
-              
-              // Check if pattern has parentheses (like "41(10//50)")
-              if (/^\d+\([^)]+\)$/.test(match)) {
-                const parenMatch = match.match(/^(\d+)(\([^)]+\))$/);
-                if (parenMatch) {
-                  extractedNumber = parenMatch[1]; // Extract "41"
-                  cleanMatch = parenMatch[2];       // Keep "(10//50)" as pattern
-                  console.log(`  🔢 Extracted number from parentheses pattern: "${extractedNumber}" + "${cleanMatch}"`);
-                }
-        } else {
-                // For non-parentheses patterns, clean as before
-                cleanMatch = match
-                  .replace(/^\d+\./, '')  // Remove leading numbers and dot (485.)
-                  .replace(/^[-=]+/, '')  // Remove leading dashes and equals (handle -200+300, ===200+800)
-                  .replace(/^[.,;:]+/, '')  // Remove leading punctuation
-                  .replace(/[.,;:]+$/, ''); // Remove trailing punctuation
-              }
-              
-              console.log(`  🧪 Testing match "${match}" → cleaned: "${cleanMatch}"`);
-              const parsed = parseAmountPattern(cleanMatch);
-              // REJECT patterns that return F:0 S:0 (useless entries!)
-              if (parsed && !(parsed.first === 0 && parsed.second === 0)) {
-                amountPattern = parsed;
-                console.log(`  ✅ Using pattern "${cleanMatch}" → F ${parsed.first}, S ${parsed.second}`);
-                
-                // If we extracted a number from the pattern, add it back to the line
-                if (extractedNumber) {
-                  lineWithoutPattern = normalized.replace(match, extractedNumber).replace(/[.,;:?]+/g, '.').trim();
-                } else {
-                  lineWithoutPattern = normalized.replace(match, '').replace(/[.,;:?]+/g, '.').trim();
-                }
-                console.log(`  📄 Line after pattern removal: "${lineWithoutPattern}"`);
-                break;
-              }
-            }
-          }
-        }
-        
-        // If still no pattern found, try multi-token patterns (e.g., "f40 s350" spans multiple tokens)
-        if (!amountPattern) {
-          // First, try to match multi-token patterns like "f40 s350", "f 300 s 350"
-          const tokens = normalized.split(/\s+/);
-          
-          // Try combinations of 2-3 consecutive tokens to catch patterns like "f40 s350" or "f 300 s 350"
-          for (let i = 0; i < tokens.length - 1; i++) {
-            // Try 2 tokens: "f40 s350"
-            const twoTokens = tokens.slice(i, i + 2).join(' ');
-            const cleanTwoTokens = twoTokens.replace(/^[.,;:?]+/, '').replace(/[.,;:?]+$/, '');
-            
-            const parsedTwo = parseAmountPattern(cleanTwoTokens);
-            if (parsedTwo && !(parsedTwo.first === 0 && parsedTwo.second === 0)) {
-              amountPattern = parsedTwo;
-              console.log(`  ✅ Found pattern (2 tokens) "${cleanTwoTokens}" → F ${parsedTwo.first}, S ${parsedTwo.second}`);
-              // Remove both tokens from the line
-              lineWithoutPattern = normalized.replace(new RegExp(twoTokens.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').replace(/[.,;:?]+/g, '.').trim();
-              console.log(`  📄 Line after pattern removal: "${lineWithoutPattern}"`);
-              break;
-            }
-            
-            // Try 3 tokens: "f 300 s 350"
-            if (i < tokens.length - 2) {
-              const threeTokens = tokens.slice(i, i + 3).join(' ');
-              const cleanThreeTokens = threeTokens.replace(/^[.,;:?]+/, '').replace(/[.,;:?]+$/, '');
-              
-              const parsedThree = parseAmountPattern(cleanThreeTokens);
-              if (parsedThree && !(parsedThree.first === 0 && parsedThree.second === 0)) {
-                amountPattern = parsedThree;
-                console.log(`  ✅ Found pattern (3 tokens) "${cleanThreeTokens}" → F ${parsedThree.first}, S ${parsedThree.second}`);
-                // Remove all three tokens from the line
-                lineWithoutPattern = normalized.replace(new RegExp(threeTokens.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').replace(/[.,;:?]+/g, '.').trim();
-                console.log(`  📄 Line after pattern removal: "${lineWithoutPattern}"`);
-                break;
-              }
-            }
-          }
-          
-          // If still no pattern, try single tokens
-          if (!amountPattern) {
-            for (const token of tokens) {
-              // Remove leading/trailing dots, commas, and other punctuation
-              const cleanToken = token.replace(/^[.,;:?]+/, '').replace(/[.,;:?]+$/, '');
-              
-              // Skip if it's a pure number (could be a game number)
-              if (/^\d+$/.test(cleanToken) && cleanToken.length <= 4) {
-                continue;
-              }
-              
-              const parsed = parseAmountPattern(cleanToken);
-              // REJECT patterns that return F:0 S:0 (useless entries!)
-              if (parsed && !(parsed.first === 0 && parsed.second === 0)) {
-                amountPattern = parsed;
-                console.log(`  ✅ Found pattern (token) "${cleanToken}" → F ${parsed.first}, S ${parsed.second}`);
-                // Remove this token from the line (and clean punctuation)
-                lineWithoutPattern = normalized.replace(token, '').replace(/[.,;:?]+/g, '.').trim();
-                console.log(`  📄 Line after pattern removal: "${lineWithoutPattern}"`);
-                break;
-              }
-            }
-          }
-        }
-      }
-      
-      // SECOND: Extract numbers (only if line is not purely a pattern)
-      // Treat ANY non-digit character as a separator - supports ALL Unicode symbols, emojis, and multiple occurrences
-      // Examples: "90-91-92--93---50/n" splits into [90, 91, 92, 93, 50]
-      // The regex [^0-9]+ matches one or more consecutive non-digit characters (supports 10,000+ symbols)
-      const numberMatches = lineWithoutPattern.split(/[^0-9]+/);
-      const validNumbers: string[] = [];
-      
-      // Only extract numbers if this line is not purely an amount pattern
-      if (!isOnlyPattern) {
-        // Filter to only valid game numbers (1-4 digits, pure numbers only)
-        for (const num of numberMatches) {
-          const trimmed = num.trim();
-          if (/^\d+$/.test(trimmed) && trimmed.length >= 1 && trimmed.length <= 4) {
-            validNumbers.push(trimmed);
-          }
-        }
-      }
-      
-      console.log(`  🔢 Valid numbers extracted: [${validNumbers.join(', ')}]`);
-      console.log(`  💰 Pattern detected: ${amountPattern ? `F ${amountPattern.first}, S ${amountPattern.second}` : 'None'}`);
-      
-      // CASE 1: Line has both numbers AND amount pattern (on the SAME line)
-      if (validNumbers.length > 0 && amountPattern) {
-        console.log(`  ➡️  CASE 1: Same-line numbers + pattern - Apply to accumulated + current line`);
-        
-        // Combine accumulated numbers from previous lines with current line's numbers
-        const allNumbers = [...currentNumberGroup, ...validNumbers];
-        console.log(`  🔗 Combining: accumulated [${currentNumberGroup.join(', ')}] + current [${validNumbers.join(', ')}]`);
-        
-        // Apply pattern to ALL numbers (accumulated + current)
-        for (const num of allNumbers) {
-          const detectedType = detectEntryType(num);
-          const paddedNumber = padNumber(num, detectedType);
-          
-          if (!isValidNumber(paddedNumber, detectedType)) {
-            parseErrors.push(`Line ${lineNum}: Invalid number "${num}" for ${detectedType} type`);
-            continue;
-          }
-          
-          entries.push({
-            number: paddedNumber,
-            first: amountPattern.first,
-            second: amountPattern.second,
-            entryType: detectedType,
-          });
-        }
-        
-        // Reset accumulator after applying pattern
-        currentNumberGroup = [];
-        currentNumberLineNums = [];
-      }
-      // CASE 2: Line has ONLY numbers (vertical format - accumulate)
-      else if (validNumbers.length > 0 && !amountPattern) {
-        console.log(`  ➡️  CASE 2: Numbers only - Accumulate for next pattern`);
-        currentNumberGroup.push(...validNumbers);
-        currentNumberLineNums.push(lineNum);
-        console.log(`  📦 Accumulated so far: [${currentNumberGroup.join(', ')}]`);
-      }
-      // CASE 3: Line has ONLY amount pattern (applies to accumulated numbers)
-      else if (validNumbers.length === 0 && amountPattern) {
-        console.log(`  ➡️  CASE 3: Pattern only - Apply to accumulated numbers from lines ${currentNumberLineNums.join(',')}`);
-        if (currentNumberGroup.length === 0) {
-          parseErrors.push(`Line ${lineNum}: Amount pattern without numbers`);
-          continue;
-        }
-        
-        // Apply pattern to all accumulated numbers
-        for (const num of currentNumberGroup) {
-          const detectedType = detectEntryType(num);
-          const paddedNumber = padNumber(num, detectedType);
-          
-          if (!isValidNumber(paddedNumber, detectedType)) {
-            parseErrors.push(`Lines ${currentNumberLineNums.join(',')}: Invalid number "${num}" for ${detectedType} type`);
-            continue;
-          }
-          
-          entries.push({
-            number: paddedNumber,
-            first: amountPattern.first,
-            second: amountPattern.second,
-            entryType: detectedType,
-          });
-        }
-        
-        // Reset the group
-        currentNumberGroup = [];
-        currentNumberLineNums = [];
-      }
-      // CASE 4: Line has neither (error)
-      else {
-        parseErrors.push(`Line ${lineNum}: Could not parse "${line}"`);
-      }
+  useEffect(() => {
+    if (!overlayRef.current) {
+      return;
     }
-    
-    // Check for any remaining numbers without pattern
-    if (currentNumberGroup.length > 0) {
-      parseErrors.push(`Lines ${currentNumberLineNums.join(',')}: Numbers without amount pattern: ${currentNumberGroup.join(', ')}`);
+    overlayRef.current.innerHTML = renderTokensAsHtml(parseResult.tokens);
+  }, [parseResult.tokens]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
     }
+    autoResizeTextarea(textarea, overlayRef.current, containerRef.current);
+  }, [inputText]);
 
-    return { entries, errors: parseErrors };
-  };
-
-  const handleProcess = () => {
-    if (!inputText.trim()) {
-      setErrors(['Please enter some text to process']);
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || !overlayRef.current) {
       return;
     }
 
-    setErrors([]);
-    setParsedEntries([]);
+    const handleScroll = () => {
+      if (!overlayRef.current) return;
+        overlayRef.current.scrollTop = textarea.scrollTop;
+        overlayRef.current.scrollLeft = textarea.scrollLeft;
+    };
 
-    // Parse immediately without delay for instant feedback
-      const result = parseIntelligentInput(inputText);
-      setParsedEntries(result.entries);
-      setErrors(result.errors);
-      setShowPreview(true);
-  };
+    textarea.addEventListener('scroll', handleScroll);
+    return () => {
+      textarea.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
 
-  const handleSubmit = async () => {
-    if (parsedEntries.length === 0 || isSubmitting) {
+  const handleAdd = async () => {
+    setSubmissionErrors([]);
+    setBalanceMessage(null);
+
+    if (!inputText.trim()) {
+      setSubmissionErrors(['Please paste numbers and amounts before adding entries.']);
+      return;
+    }
+
+    if (parseResult.errors.length > 0) {
+      setSubmissionErrors(['Fix the highlighted issues above before adding entries.']);
+      return;
+    }
+
+    const { entries, missingAmounts, orphanAmounts } = parsedEntries;
+
+    const issues: string[] = [];
+
+    if (orphanAmounts.length > 0) {
+      const orphanList = orphanAmounts
+        .map(
+          (token) =>
+            `${token.value} (line ${token.line + 1}, column ${token.column + 1})`,
+        )
+        .join(', ');
+      issues.push(
+        `Amounts ${orphanList} appear before any numbers. Place numbers before the amount values.`,
+      );
+    }
+
+    if (missingAmounts.length > 0) {
+      const missingList = missingAmounts
+        .map(
+          (token) =>
+            `${token.value} (line ${token.line + 1}, column ${token.column + 1})`,
+        )
+        .join(', ');
+      issues.push(
+        `Numbers ${missingList} do not have any F or S amounts after them. Add at least one amount for each number.`,
+      );
+    }
+
+    if (entries.length === 0 && issues.length === 0) {
+      issues.push('No valid entries found. Add numbers followed by F and/or S amounts.');
+    }
+
+    if (issues.length > 0) {
+      setSubmissionErrors(issues);
+      return;
+    }
+
+    const totalCost = entries.reduce((sum, entry) => sum + entry.first + entry.second, 0);
+
+    if (totalCost === 0) {
+      setSubmissionErrors(['Add at least one F or S amount before submitting.']);
+      return;
+    }
+
+    if (!hasSufficientBalance(totalCost)) {
+      setBalanceMessage(
+        `Insufficient balance. You need ${formatCurrency(totalCost)} but only have ${formatCurrency(balance)}.`,
+      );
       return;
     }
 
     setIsSubmitting(true);
-    setBalanceError(null);
-
-    // Calculate total cost (betting amounts only)
-    const totalCost = parsedEntries.reduce(
-      (sum, entry) => sum + entry.first + entry.second,
-      0
-    );
-
-    // Check balance for non-admin users
-    if (!isAdmin && !hasSufficientBalance(totalCost)) {
-      setBalanceError(
-        `Insufficient balance. You need ${formatCurrency(totalCost)} but only have ${formatCurrency(balance)}.`
-      );
-      return;
-    }
 
     try {
-      // CRITICAL: Deduct total cost ONCE before adding transactions to prevent race condition
-      // When adding multiple transactions in parallel, each would deduct balance independently,
-      // causing incorrect deductions. Deduct the total upfront instead.
-      if (!isAdmin && totalCost > 0) {
-        console.log(`💰 Deducting total cost ${totalCost} upfront for ${parsedEntries.length} transactions`);
-        const deductionSuccess = await deductBalance(totalCost);
-        if (!deductionSuccess) {
-          setBalanceError('Failed to deduct balance. Please try again.');
-          return;
+      if (totalCost > 0) {
+        const balanceSuccess = await deductBalance(totalCost);
+        if (!balanceSuccess) {
+          setBalanceMessage('Failed to deduct balance. Please try again.');
+      return;
         }
       }
 
-      // Add all transactions with incrementing timestamps to preserve exact entry order
-      const baseTime = new Date();
-      const transactionsToAdd = parsedEntries.map((entry, index) => ({
+      const now = new Date().toISOString();
+      const additionsByNumber = new Map<
+        string,
+        { entryType: EntryGroup; addFirst: number; addSecond: number }
+      >();
+
+      entries.forEach((entry) => {
+        const padded = padNumberValue(entry.number, entry.entryType);
+        const accumulator =
+          additionsByNumber.get(padded) || { entryType: entry.entryType, addFirst: 0, addSecond: 0 };
+        accumulator.addFirst += entry.first;
+        accumulator.addSecond += entry.second;
+        additionsByNumber.set(padded, accumulator);
+      });
+
+      for (const [paddedNumber, addition] of additionsByNumber.entries()) {
+        const entryType = addition.entryType as EntryType;
+        const limits = getLimitsForEntryType(amountLimits, entryType);
+        const existingTotals = getExistingTotalsForNumber(transactions, entryType, paddedNumber);
+
+        if (limits.first !== null && addition.addFirst > 0) {
+          const totalFirst = existingTotals.first + addition.addFirst;
+          if (totalFirst > limits.first) {
+            setSubmissionErrors([
+              `Number ${paddedNumber} exceeds First limit (${limits.first}). Current total is ${existingTotals.first}.`,
+            ]);
+            setIsSubmitting(false);
+            return;
+          }
+        }
+
+        if (limits.second !== null && addition.addSecond > 0) {
+          const totalSecond = existingTotals.second + addition.addSecond;
+          if (totalSecond > limits.second) {
+            setSubmissionErrors([
+              `Number ${paddedNumber} exceeds Second limit (${limits.second}). Current total is ${existingTotals.second}.`,
+            ]);
+          setIsSubmitting(false);
+          return;
+          }
+        }
+      }
+
+      const transactionsToAdd: Array<Omit<Transaction, 'id'>> = entries.map((entry) => ({
         projectId,
-        number: entry.number,
-        entryType: entry.entryType, // Use auto-detected type
+        userId: user?.id,
+        number: padNumberValue(entry.number, entry.entryType),
+        entryType: entry.entryType,
         first: entry.first,
         second: entry.second,
-        // Add milliseconds to preserve order (each entry gets +1ms)
-        createdAt: new Date(baseTime.getTime() + index).toISOString(),
-        updatedAt: new Date(baseTime.getTime() + index).toISOString(),
+        createdAt: now,
+        updatedAt: now,
       }));
 
-      // Skip balance deduction in addTransaction since we already deducted the total upfront
-      const addPromises = transactionsToAdd.map(transaction => addTransaction(transaction, true)); // skipBalanceDeduction=true
-      const results = await Promise.all(addPromises);
-      const successCount = results.filter(Boolean).length;
+      const results = await Promise.all(
+        transactionsToAdd.map((transaction) => addTransaction(transaction, true)),
+      );
 
-      // If all transactions failed, refund the balance that was deducted
-      if (successCount === 0) {
-        if (!isAdmin && totalCost > 0) {
-          console.log(`⚠️ All transactions failed, refunding ${totalCost} to balance`);
-          await addBalance(totalCost);
-        }
-        setBalanceError('Failed to add transactions. Please try again.');
+      const successfulResults = results.filter(
+        (transaction): transaction is Transaction => transaction !== null,
+      );
+
+      if (successfulResults.length === 0) {
+        setSubmissionErrors(['Failed to add entries. Please try again.']);
+        await showError(
+          'Error Adding Entry',
+          'An error occurred while adding the transaction. Please try again.',
+          { duration: 5000 },
+        );
         return;
       }
 
-      // If some transactions failed (partial success), calculate how much to refund
-      if (successCount < transactionsToAdd.length) {
-        const failedCount = transactionsToAdd.length - successCount;
-        const failedTransactions = transactionsToAdd.filter((_, index) => !results[index]);
-        const refundAmount = failedTransactions.reduce((sum, t) => sum + (t.first || 0) + (t.second || 0), 0);
-        if (refundAmount > 0 && !isAdmin) {
-          console.log(`⚠️ ${failedCount} transactions failed, refunding ${refundAmount} to balance`);
-          await addBalance(refundAmount);
-        }
-      }
-
-      // Reset form
       setInputText('');
-      setParsedEntries([]);
-      setErrors([]);
-      setShowPreview(false);
-      setBalanceError(null);
+      setSubmissionErrors([]);
+      setBalanceMessage(null);
 
-      // Success notification
+      playSuccessSound();
+
+      const entryCounts = entries.reduce<Record<string, number>>((acc, entry) => {
+        acc[entry.entryType] = (acc[entry.entryType] || 0) + 1;
+        return acc;
+      }, {});
+
+      const entryTypesAdded = Object.entries(entryCounts)
+        .map(([type, count]) => `${count} ${type}`)
+        .join(', ');
+
       await showSuccess(
         'Entries Added Successfully',
-        `Added ${successCount} ${successCount === 1 ? 'entry' : 'entries'} for ${formatCurrency(totalCost)}`,
-        { duration: 2000 }
+        `Added ${entries.length} entries (${entryTypesAdded}) for ${formatCurrency(totalCost)}`,
+        { duration: 2000 },
       );
 
-      // Focus back to input for next entry (don't close panel)
-      setTimeout(() => {
-        const textarea = document.querySelector('textarea');
-        if (textarea) textarea.focus();
-      }, 50); // Reduced for instant feel
+      _onSuccess?.(
+        successfulResults.map<AddedEntrySummary>((transaction) => ({
+          id: transaction.id,
+          number: transaction.number,
+          entryType: transaction.entryType,
+          first: transaction.first,
+          second: transaction.second,
+        })),
+      );
 
-      onSuccess();
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 50);
     } catch (error) {
-      console.error('Error adding transactions:', error);
+      console.error('Error adding entries:', error);
+      setSubmissionErrors(['An unexpected error occurred while adding entries. Please try again.']);
       await showError(
-        'Error Adding Entries',
-        'An error occurred while adding transactions. Please try again.',
-        { duration: 5000 }
+        'Error Adding Entry',
+        'An error occurred while adding the transaction. Please try again.',
+        { duration: 5000 },
       );
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleWhatsAppUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setIsLoadingFile(true);
-    
-    try {
-      let text = '';
-      
-      // Handle .zip files (WhatsApp exports as .zip)
-      if (file.name.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed') {
-        const arrayBuffer = await file.arrayBuffer();
-        const zip = await JSZip.loadAsync(arrayBuffer);
-        
-        // Find the .txt file inside the zip
-        const txtFile = Object.keys(zip.files).find(filename => filename.endsWith('.txt'));
-        
-        if (!txtFile) {
-          await showError(
-            'No Text File Found',
-            'Could not find a .txt file inside the zip. Please ensure you exported "Without Media".',
-            { duration: 5000 }
-          );
-          return;
-        }
-        
-        // Extract and read the .txt file
-        text = await zip.files[txtFile].async('text');
-      }
-      // Handle direct .txt files
-      else if (file.name.endsWith('.txt') || file.type === 'text/plain') {
-        text = await file.text();
-      }
-      // Invalid file type
-      else {
-        await showError(
-          'Invalid File', 
-          'Please upload a WhatsApp chat export (.txt or .zip file). Go to WhatsApp → Chat → ⋮ → Export Chat → Without Media',
-          { duration: 5000 }
-        );
-        return;
-      }
-      
-      if (text.trim()) {
-        // Set the text to input (WhatsApp timestamps will be auto-removed by parser)
-        setInputText(text);
-        
-        const lineCount = text.split('\n').filter(l => l.trim()).length;
-        
-        await showSuccess(
-          'WhatsApp Chat Loaded',
-          `Loaded ${lineCount} lines! Timestamps will be auto-removed. Click "Process Data".`,
-          { duration: 3000 }
-        );
-        
-        // Focus textarea
-        setTimeout(() => {
-          const textarea = document.querySelector('textarea');
-          if (textarea) textarea.focus();
-        }, 100);
-      } else {
-        await showError(
-          'Empty File',
-          'The file appears to be empty. Please export a valid WhatsApp chat.',
-          { duration: 5000 }
-        );
-      }
-      
-    } catch (error) {
-      console.error('File Read Error:', error);
-      await showError(
-        'Loading Failed',
-        'Could not read the file. Make sure it\'s a valid WhatsApp export (.txt or .zip).',
-        { duration: 5000 }
-      );
-    } finally {
-      setIsLoadingFile(false);
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
-
   return (
-    <div className="space-y-4">
-      {/* Input Area with Image Upload */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Paste your data here
-        </label>
-          {/* WhatsApp Chat Upload Icon */}
-          <div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".txt,.zip,text/plain,application/zip,application/x-zip-compressed"
-              onChange={handleWhatsAppUpload}
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isLoadingFile}
-              className="p-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
-              title="Upload WhatsApp chat export (.txt or .zip)"
+    <div className="space-y-3">
+      <div className="w-full">
+        <div
+          ref={containerRef}
+          className="relative border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700"
+          style={{ minHeight: `${MIN_TEXTAREA_HEIGHT}px` }}
+        >
+        <div
+          ref={overlayRef}
+            className="absolute inset-0 px-6 py-5 text-xl leading-[1.6] font-mono whitespace-pre-wrap break-words pointer-events-none overflow-hidden text-gray-900 dark:text-gray-100"
+            style={{ zIndex: 0 }}
+          />
+
+        <textarea
+          ref={textareaRef}
+          value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onInput={(e) =>
+              autoResizeTextarea(
+                e.currentTarget,
+                overlayRef.current,
+                containerRef.current,
+              )
+            }
+            className="w-full px-6 py-5 text-xl leading-[1.6] font-mono border-none bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none relative z-10 overflow-hidden"
+          style={{
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+              minHeight: `${MIN_TEXTAREA_HEIGHT}px`,
+            color: 'transparent',
+              caretColor: '#60a5fa',
+            WebkitTextFillColor: 'transparent',
+          }}
+          autoComplete="off"
+          rows={1}
+          spellCheck={false}
+        />
+        </div>
+        </div>
+        
+      {parseResult.errors.length > 0 && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl px-4 py-3">
+          <div className="flex items-start space-x-3">
+            <svg
+              className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
             >
-              {isLoadingFile ? (
-                <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-              )}
-            </button>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200">
+                Input issues detected
+              </h4>
+              <ul className="space-y-2 text-sm text-yellow-700 dark:text-yellow-300">
+                {parseResult.errors.map((error) => (
+                  <li
+                    key={`${error.startIndex}-${error.endIndex}-${error.value}`}
+                    className="leading-relaxed"
+                  >
+                    <p className="font-medium">
+                      Line {error.line + 1}, column {error.column + 1}
+                    </p>
+                    {error.kind === 'letter-sequence' ? (
+                      <p>
+                        Letters like{' '}
+                        <code className="px-1 py-0.5 rounded bg-yellow-100 dark:bg-yellow-800/40">
+                          {error.value}
+                        </code>{' '}
+                        are not allowed between numbers. Use separators such as
+                        space or punctuation instead.
+                      </p>
+                    ) : (
+                      <p>
+                        Number{' '}
+                        <code className="px-1 py-0.5 rounded bg-yellow-100 dark:bg-yellow-800/40">
+                          {error.value}
+                        </code>{' '}
+                        has {error.value.length} digits. Only 1 to 4 digits are
+                        allowed.
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+        </div>
           </div>
         </div>
-        <textarea
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder={`Paste data here or upload WhatsApp chat export...`}
-          className="w-full px-6 py-5 text-xl border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono resize-none transition-all duration-200"
-          rows={15}
-          disabled={isLoadingFile}
-        />
-        <div className="flex items-center justify-between mt-3">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {inputText.split('\n').filter(l => l.trim()).length} lines
-          </p>
+      )}
+
+      {submissionErrors.length > 0 && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl px-4 py-3">
+          <div className="flex items-start space-x-3">
+            <svg
+              className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200">
+                Please fix these issues
+              </h4>
+              <ul className="space-y-2 text-sm text-yellow-700 dark:text-yellow-300">
+                {submissionErrors.map((error) => (
+                  <li key={error} className="leading-relaxed">
+                    {error}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {balanceMessage && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3">
+          <div className="flex items-start space-x-3">
+            <svg
+              className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <div>
+              <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">
+                Insufficient Balance
+              </h4>
+              <p className="text-sm text-red-600 dark:text-red-400">{balanceMessage}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {parsedEntries.groups.length > 0 && (
+        <div className="border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3 bg-gray-50 dark:bg-gray-800/40">
+          <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">
+            Parsed Preview
+          </h4>
+          <div className="space-y-2">
+            {parsedEntries.groups.map((group, index) => {
+              const hasFirst = group.first > 0;
+              const hasSecond = group.second > 0;
+              const isGroup = group.numbers.length > 1;
+              return (
+                <div
+                  key={index}
+                  className="flex items-center justify-between rounded-md bg-white dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 px-3 py-2 shadow-sm"
+                >
+                  <div className="flex items-center space-x-2">
+                    <span
+                      className={`text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-full ${
+                        isGroup
+                          ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
+                          : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                      }`}
+                    >
+                      {isGroup ? 'Group' : 'Single'}
+                    </span>
+                    <span className="font-mono text-sm text-gray-900 dark:text-gray-100">
+                      {group.numbers.map((n) => n.value).join(', ')}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center space-x-3 text-sm font-medium">
+                    {hasFirst ? (
+                      <span className="text-green-600 dark:text-green-400">F {group.first}</span>
+                    ) : null}
+                    {hasSecond ? (
+                      <span className="text-purple-600 dark:text-purple-400">
+                        S {group.second}
+                      </span>
+                    ) : null}
+                    {!hasFirst && !hasSecond ? (
+                      <span className="text-gray-500 dark:text-gray-400">--</span>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+        <div className="flex justify-end">
           <button
-            type="button"
-            onClick={handleProcess}
-            disabled={!inputText.trim()}
-            className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+          type="button"
+          onClick={handleAdd}
+          className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg shadow-md hover:shadow-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+            disabled={isSubmitting || !inputText.trim()}
           >
-            Process Data
+          {isSubmitting ? 'Processing...' : 'Add'}
           </button>
         </div>
       </div>
-
-      {/* Errors */}
-      {errors.length > 0 && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl p-3">
-          <h4 className="text-sm font-semibold text-red-900 dark:text-red-300 mb-2">
-            Errors ({errors.length})
-          </h4>
-          <div className="text-sm text-red-800 dark:text-red-400 max-h-24 overflow-y-auto space-y-1">
-            {errors.slice(0, 3).map((error, idx) => (
-              <div key={idx} className="flex items-start">
-                <span className="text-red-500 mr-2">•</span>
-                <span>{error}</span>
-              </div>
-            ))}
-            {errors.length > 3 && <div className="text-red-600 font-medium">... and {errors.length - 3} more errors</div>}
-          </div>
-        </div>
-      )}
-
-      {/* Balance Error */}
-      {balanceError && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
-          <div className="flex items-start space-x-3">
-            <svg className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <div className="flex-1">
-              <h4 className="text-sm font-semibold text-red-800 dark:text-red-200 mb-1">Insufficient Balance</h4>
-              <p className="text-sm text-red-600 dark:text-red-400">{balanceError}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Preview - Shows ALL entries with scrolling and edit ability */}
-      {showPreview && parsedEntries.length > 0 && (
-        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-semibold text-green-900 dark:text-green-300">
-              {parsedEntries.length} entries ready to add
-            </h4>
-            <div className="flex space-x-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setParsedEntries([]);
-                  setShowPreview(false);
-                }}
-                className="px-4 py-2 text-sm bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors min-h-[40px]"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={isSubmitting}
-                className="px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-lg shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 min-h-[40px] disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
-              >
-                Add {parsedEntries.length}
-              </button>
-            </div>
-          </div>
-          {/* Scrollable list showing ALL entries */}
-          <div className="max-h-96 overflow-y-auto space-y-2 pr-2">
-            {parsedEntries.map((entry, idx) => (
-              <div
-                key={idx}
-                className="bg-white dark:bg-gray-800 rounded-lg p-3 flex justify-between items-center border border-gray-200 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-500 transition-colors group"
-              >
-                <div className="flex items-center gap-3 flex-1">
-                  <span className="font-mono font-bold text-gray-900 dark:text-gray-100 text-base">
-                  {entry.number}
-                </span>
-                  <span className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded uppercase font-semibold">
-                    {entry.entryType}
-                  </span>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-gray-600 dark:text-gray-400 text-sm font-medium">
-                  F:{entry.first} S:{entry.second}
-                </span>
-                  {/* Edit button */}
-                  <button
-                    type="button"
-                    onClick={() => setEditingEntry({ index: idx, entry })}
-                    className="opacity-0 group-hover:opacity-100 p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-all"
-                    title="Edit amounts"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Edit Entry Modal */}
-      {editingEntry && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6 border-2 border-gray-200 dark:border-gray-600">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                Edit Entry: {editingEntry.entry.number}
-              </h3>
-              <button
-                onClick={() => setEditingEntry(null)}
-                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {/* Entry Type Badge */}
-              <div className="flex items-center gap-2 pb-4 border-b border-gray-200 dark:border-gray-600">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Type:</span>
-                <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg uppercase font-semibold text-sm">
-                  {editingEntry.entry.entryType}
-                </span>
-              </div>
-
-              {/* First Amount */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  First Amount
-                </label>
-                <input
-                  type="number"
-                  defaultValue={editingEntry.entry.first}
-                  id="edit-first"
-                  className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-mono"
-                  min="0"
-                />
-              </div>
-
-              {/* Second Amount */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Second Amount
-                </label>
-                <input
-                  type="number"
-                  defaultValue={editingEntry.entry.second}
-                  id="edit-second"
-                  className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-mono"
-                  min="0"
-                />
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3 mt-6 pt-6 border-t border-gray-200 dark:border-gray-600">
-              <button
-                onClick={() => setEditingEntry(null)}
-                className="flex-1 px-4 py-3 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 font-semibold transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const firstInput = document.getElementById('edit-first') as HTMLInputElement;
-                  const secondInput = document.getElementById('edit-second') as HTMLInputElement;
-                  
-                  const newFirst = Number(firstInput.value) || 0;
-                  const newSecond = Number(secondInput.value) || 0;
-                  
-                  const updated = [...parsedEntries];
-                  updated[editingEntry.index] = {
-                    ...editingEntry.entry,
-                    first: newFirst,
-                    second: newSecond
-                  };
-                  setParsedEntries(updated);
-                  setEditingEntry(null);
-                }}
-                className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg font-semibold shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all"
-              >
-                Save Changes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
   );
 };
 
 export default IntelligentEntry;
-

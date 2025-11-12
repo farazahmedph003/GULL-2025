@@ -32,6 +32,21 @@ export interface Transaction {
   isFilterDeduction?: boolean;
 }
 
+export interface AddedEntrySummary {
+  id: string;
+  number: string;
+  entryType: EntryType;
+  first: number;
+  second: number;
+}
+
+export interface AmountLimitConfig {
+  first: number | null;
+  second: number | null;
+}
+
+export type AmountLimitMap = Record<EntryType, AmountLimitConfig>;
+
 // Number summary for grid display
 export interface NumberSummary {
   number: string;

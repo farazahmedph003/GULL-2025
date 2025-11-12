@@ -39,6 +39,7 @@ const AdminRingPage = lazy(() => import('./pages/admin/AdminRingPage'));
 const AdminPacketPage = lazy(() => import('./pages/admin/AdminPacketPage'));
 const AdminFilterPage = lazy(() => import('./pages/admin/AdminFilterPage'));
 const AdminAdvancedFilterPage = lazy(() => import('./pages/admin/AdminAdvancedFilterPage'));
+const AdminAmountLimitsPage = lazy(() => import('./pages/admin/AdminAmountLimitsPage'));
 const TestAdminFeatures = lazy(() => import('./pages/admin/TestAdminFeatures'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
@@ -137,6 +138,7 @@ const AppWithNotifications: React.FC = () => {
             <Route path="packet" element={<AdminPacketPage />} />
             <Route path="filter" element={<AdminFilterPage />} />
             <Route path="advanced-filter" element={<AdminAdvancedFilterPage />} />
+            <Route path="amount-limits" element={<AdminAmountLimitsPage />} />
             <Route path="test-features" element={<TestAdminFeatures />} />
           </Route>
               

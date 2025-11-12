@@ -593,8 +593,9 @@ const AdvancedFilter: React.FC = () => {
         onClose={() => setEntryPanelOpen(false)}
         projectId={id || ''}
         entryType={selectedType}
+        transactions={transactions}
         addTransaction={addTransaction}
-        onEntryAdded={() => {
+        onEntryAdded={(_summary) => {
           refresh();
           setEntryPanelOpen(false);
         }}

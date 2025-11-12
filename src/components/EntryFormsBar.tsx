@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import StandardEntry from './StandardEntry';
 import IntelligentEntry from './IntelligentEntry';
-import type { Transaction } from '../types';
+import type { Transaction, AddedEntrySummary } from '../types';
 
 interface EntryFormsBarProps {
   projectId: string;
   entryType?: 'akra' | 'ring' | 'open' | 'packet';
-  onEntryAdded?: () => void;
-  addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<boolean>;
+  onEntryAdded?: (summary?: AddedEntrySummary[]) => void;
+  addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<Transaction | null>;
+  transactions: Transaction[];
 }
 
 const EntryFormsBar: React.FC<EntryFormsBarProps> = ({
@@ -15,6 +16,7 @@ const EntryFormsBar: React.FC<EntryFormsBarProps> = ({
   entryType = 'akra',
   onEntryAdded,
   addTransaction,
+  transactions,
 }) => {
   const [activeTab, setActiveTab] = useState<'standard' | 'intelligent'>('standard');
 
@@ -52,16 +54,19 @@ const EntryFormsBar: React.FC<EntryFormsBarProps> = ({
           <StandardEntry
             projectId={projectId}
             addTransaction={addTransaction}
-            onSuccess={() => {
-              onEntryAdded?.();
+            transactions={transactions}
+            onSuccess={(added) => {
+              onEntryAdded?.(added);
             }}
           />
         ) : (
           <IntelligentEntry
             projectId={projectId}
             entryType={entryType}
-            onSuccess={() => {
-              onEntryAdded?.();
+            addTransaction={addTransaction}
+            transactions={transactions}
+            onSuccess={(added) => {
+              onEntryAdded?.(added);
             }}
           />
         )}

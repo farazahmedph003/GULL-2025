@@ -14,7 +14,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { playReloadSound } from '../utils/audioFeedback';
 import { formatCurrency } from '../utils/helpers';
 import { exportUserTransactionsToPDF } from '../utils/pdfExport';
-import type { Project, EntryType, Transaction } from '../types';
+import type { Project, EntryType, Transaction, AddedEntrySummary } from '../types';
 import { groupTransactionsByNumber } from '../utils/transactionHelpers';
 import { useSystemSettings } from '../hooks/useSystemSettings';
 import { useUserRealtimeSubscriptions } from '../hooks/useRealtimeSubscriptions';
@@ -22,6 +22,7 @@ import { supabase } from '../lib/supabase';
 import { db } from '../services/database';
 
 type TabType = 'all' | 'open' | 'akra' | 'ring' | 'packet';
+type RecentHighlight = AddedEntrySummary;
 
 const UserDashboard: React.FC = () => {
   const [project, setProject] = useState<Project | null>(null);
@@ -31,6 +32,7 @@ const UserDashboard: React.FC = () => {
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
+  const [recentHighlights, setRecentHighlights] = useState<RecentHighlight[]>([]);
   const { showSuccess, showError } = useNotifications();
   const { user } = useAuth();
 
@@ -197,7 +199,15 @@ const UserDashboard: React.FC = () => {
 
   // Keyboard shortcuts removed for regular users
 
-  const handleEntryAdded = () => {
+  const registerHighlights = useCallback((summary?: AddedEntrySummary[]) => {
+    if (!summary || summary.length === 0) {
+      return;
+    }
+    setRecentHighlights(summary);
+  }, []);
+
+  const handleEntryAdded = (summary?: AddedEntrySummary[]) => {
+    registerHighlights(summary);
     refresh();
   };
 
@@ -357,6 +367,7 @@ const UserDashboard: React.FC = () => {
                 refreshTrigger={refreshTrigger}
                 isPartner={user?.isPartner || false}
                 isDeleting={isDeleting}
+                recentHighlights={recentHighlights}
               />
 
               {/* Right Panel - Entry Panel (moved from bottom) */}
@@ -412,7 +423,9 @@ const UserDashboard: React.FC = () => {
                       <StandardEntry
                         projectId={'user-scope'}
                         addTransaction={addTransaction}
-                        onSuccess={() => {
+                        transactions={transactions}
+                        onSuccess={(summary) => {
+                          registerHighlights(summary);
                           // Parent state is already updated via addTransaction. Keep a light refresh to sync balances.
                           refreshBalance();
                         }}
@@ -421,7 +434,10 @@ const UserDashboard: React.FC = () => {
                       <IntelligentEntry
                         projectId={'user-scope'}
                         entryType={project.entryTypes[0] || 'akra'}
-                        onSuccess={() => {
+                        addTransaction={addTransaction}
+                        transactions={transactions}
+                        onSuccess={(summary) => {
+                          registerHighlights(summary);
                           // Refresh balance immediately, but delay transaction refresh to allow database commit
                           refreshBalance();
                           // Delay transaction refresh to ensure database has committed the new transaction
@@ -446,6 +462,7 @@ const UserDashboard: React.FC = () => {
           projectId={'user-scope'}
           entryType={project?.entryTypes?.[0] || 'akra'}
           addTransaction={addTransaction}
+          transactions={transactions}
           onEntryAdded={handleEntryAdded}
         />
       </div>

@@ -14,7 +14,7 @@ import { useUserBalance } from '../hooks/useUserBalance';
 import { db } from '../services/database';
 import { formatDate } from '../utils/helpers';
 import { playReloadSound, playUndoSound, playRedoSound } from '../utils/audioFeedback';
-import type { EntryType, Project } from '../types';
+import type { EntryType, Project, AddedEntrySummary } from '../types';
 
 const Dashboard: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -24,7 +24,8 @@ const Dashboard: React.FC = () => {
   const [entryPanelOpen, setEntryPanelOpen] = useState(false);
   const [selectedEntryType, setSelectedEntryType] = useState<EntryType>('akra');
 
-  const { 
+  const {
+    transactions,
     refresh: refreshTransactions, 
     getStatistics, 
     addTransaction, 
@@ -178,7 +179,7 @@ const Dashboard: React.FC = () => {
 
   // Tabs moved to sidebar menu
 
-  const handleEntryAdded = () => {
+  const handleEntryAdded = (_summary?: AddedEntrySummary[]) => {
     refresh();
   };
 
@@ -446,6 +447,7 @@ const Dashboard: React.FC = () => {
         onClose={() => setEntryPanelOpen(false)}
         projectId={id || ''}
         entryType={selectedEntryType === 'akra' ? 'akra' : selectedEntryType === 'ring' ? 'ring' : 'akra'}
+        transactions={transactions}
         addTransaction={addTransaction}
         onEntryAdded={handleEntryAdded}
       />
@@ -456,6 +458,7 @@ const Dashboard: React.FC = () => {
           projectId={id || ''}
           entryType={project?.entryTypes?.[0] || 'akra'}
           addTransaction={addTransaction}
+        transactions={transactions}
           onEntryAdded={handleEntryAdded}
         />
       </div>

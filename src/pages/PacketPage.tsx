@@ -532,8 +532,9 @@ const PacketPage: React.FC = () => {
         onClose={() => setEntryPanelOpen(false)}
         projectId={id || ''}
         entryType={'packet'}
+        transactions={transactions}
         addTransaction={addTransaction}
-        onEntryAdded={() => {
+        onEntryAdded={(_summary) => {
           silentRefresh();
           setEntryPanelOpen(false);
         }}

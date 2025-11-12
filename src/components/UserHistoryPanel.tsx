@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import type { Transaction } from '../types';
+import type { Transaction, AddedEntrySummary } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 
 interface HistoryItem {
@@ -45,9 +45,20 @@ interface UserHistoryPanelProps {
   refreshTrigger?: number; // Timestamp to trigger refresh from parent
   isPartner?: boolean; // Show edit/delete buttons only for partner users
   isDeleting?: boolean; // Flag to disable delete buttons during deletion
+  recentHighlights?: AddedEntrySummary[];
 }
 
-const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activeTab = 'all', onEdit, onDelete, onExportPDF, refreshTrigger, isPartner = false, isDeleting = false }) => {
+const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({
+  transactions,
+  activeTab = 'all',
+  onEdit,
+  onDelete,
+  onExportPDF,
+  refreshTrigger,
+  isPartner = false,
+  isDeleting = false,
+  recentHighlights = [],
+}) => {
   const { user } = useAuth();
   const [adminActions, setAdminActions] = useState<any[]>([]);
   const [topUps, setTopUps] = useState<any[]>([]);
@@ -409,7 +420,12 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
       const groupCount = item.groupedTransactions?.length || 0;
       const isFilterDeduction = item.isFilterDeduction;
 
-      // Determine border color based on type
+      // Match highlight by unique transaction ID
+      const highlight = recentHighlights.find((h) => h.id === item.id) || null;
+
+      const highlightHasFirst = highlight ? (highlight.first || 0) > 0 : false;
+      const highlightHasSecond = highlight ? (highlight.second || 0) > 0 : false;
+
       let borderColor = 'border-l-4 border-blue-500';
       if (isFilterDeduction) {
         borderColor = 'border-l-4 border-red-500';
@@ -417,10 +433,33 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
         borderColor = 'border-l-4 border-blue-600';
       }
 
-      return (
+      if (highlight) {
+        if (highlightHasFirst && highlightHasSecond) {
+          borderColor = 'border-l-4 border-transparent';
+        } else if (highlightHasFirst) {
+          borderColor = 'border-l-4 border-emerald-500';
+        } else if (highlightHasSecond) {
+          borderColor = 'border-l-4 border-pink-500';
+        }
+      }
+
+      const innerHighlightClass = highlight
+        ? highlightHasFirst && highlightHasSecond
+          ? 'bg-white dark:bg-gray-800 rounded-lg'
+          : highlightHasFirst
+          ? 'ring-2 ring-emerald-500'
+          : highlightHasSecond
+          ? 'ring-2 ring-pink-500'
+          : ''
+        : '';
+
+      const wrapperHighlightClass = highlight && highlightHasFirst && highlightHasSecond
+        ? 'p-[2px] rounded-xl bg-gradient-to-r from-emerald-500 to-pink-500'
+        : '';
+
+      const entryCard = (
         <div
-          key={item.id}
-          className={`px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors rounded-lg ${borderColor}`}
+          className={`px-4 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors rounded-lg ${borderColor} ${innerHighlightClass}`}
         >
           <div className="flex items-start justify-between">
             <div className="flex-1">
@@ -458,8 +497,7 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
                 {formatDate(getItemDate(item))}
               </div>
             </div>
-            
-            {/* Edit and Delete Actions - Only visible for partner users */}
+
             {isPartner && !isGrouped && (
               <div className="flex items-center gap-2 ml-4">
                 {onEdit && !isFilterDeduction && (
@@ -506,14 +544,12 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
                 )}
               </div>
             )}
-            {/* For grouped entries, show delete all button - Only visible for partner users */}
+
             {isPartner && isGrouped && onDelete && (
               <div className="flex items-center gap-2 ml-4">
                 <button
                   onClick={() => {
                     if (item.groupedIds && item.groupedIds.length > 0) {
-                      // Pass the first ID - the delete handler will handle it as a grouped deletion
-                      // Or we can create a batch delete by calling with special format
                       handleDeleteClick(item.id, item.groupedIds);
                     }
                   }}
@@ -539,6 +575,20 @@ const UserHistoryPanel: React.FC<UserHistoryPanelProps> = ({ transactions, activ
             )}
           </div>
         </div>
+      );
+
+      if (highlight && highlightHasFirst && highlightHasSecond) {
+        return (
+          <div key={item.id} className={wrapperHighlightClass}>
+            {entryCard}
+          </div>
+        );
+      }
+
+      return (
+        <React.Fragment key={item.id}>
+          {entryCard}
+        </React.Fragment>
       );
     }
 

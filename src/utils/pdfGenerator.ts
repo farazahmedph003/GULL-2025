@@ -299,17 +299,21 @@ export const generateUserReport = (data: UserReportData): void => {
         fontSize: 8
       },
       columnStyles: {
-        0: { cellWidth: 40, fontStyle: 'bold' },
+        0: { cellWidth: 38, fontStyle: 'bold', halign: 'left' },
         1: { cellWidth: 30, halign: 'right' },
         2: { cellWidth: 30, halign: 'right' },
         3: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }
       },
       margin: { left: margin, right: margin },
       didParseCell: function(data: any) {
+        if (data.section === 'head') {
+          data.cell.styles.halign = data.column.index === 0 ? 'left' : 'right';
+        }
         // Make the totals row bold and highlighted
-        if (data.row.index === tableData.length - 1) {
+        if (data.section === 'body' && data.row.index === tableData.length - 1) {
           data.cell.styles.fontStyle = 'bold';
           data.cell.styles.fillColor = [220, 252, 231]; // Light green
+          data.cell.styles.textColor = [0, 85, 68];
         }
       },
       didDrawPage: (data) => {

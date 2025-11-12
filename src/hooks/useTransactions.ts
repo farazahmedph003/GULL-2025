@@ -294,7 +294,7 @@ export const useTransactions = (projectId: string) => {
   }, [transactions, projectId, deductBalance, addBalance]);
 
   // Add transaction with balance integration
-  const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction: boolean = false) => {
+  const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction: boolean = false): Promise<Transaction | null> => {
     console.log('🔍 Debug - addTransaction called with:', transaction, 'skipBalanceDeduction:', skipBalanceDeduction);
     try {
       // Calculate total cost for balance deduction
@@ -367,10 +367,10 @@ export const useTransactions = (projectId: string) => {
       });
       
       console.log('🔍 Debug - Transaction added successfully:', newTransaction.id);
-      return true;
+      return newTransaction;
     } catch (error) {
       console.error('🔍 Debug - Error adding transaction:', error);
-      return false;
+      return null;
     }
   }, [projectId, deductBalance, addBalance, user]);
 

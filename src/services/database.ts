@@ -1,6 +1,6 @@
 import { supabase, supabaseAdmin, isSupabaseConfigured, isSupabaseConnected } from '../lib/supabase';
 import { cacheUsers, getUsersWithStatsFromCache, getEntriesByTypeFromCache, clearTransactionsCache } from './localDb';
-import type { Project, Transaction, FilterPreset, ActionHistory, EntryType } from '../types';
+import type { Project, Transaction, FilterPreset, ActionHistory, EntryType, AmountLimitMap } from '../types';
 
 // Get service key from environment
 const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_KEY || '';
@@ -1772,10 +1772,74 @@ export class DatabaseService {
   /**
    * Get/Set system-wide settings
    */
-  async getSystemSettings(): Promise<{ entriesEnabled: boolean }> {
+  private readonly AMOUNT_LIMITS_STORAGE_KEY = 'gull_amount_limits';
+
+  private getDefaultAmountLimits(): AmountLimitMap {
+    return {
+      open: { first: null, second: null },
+      akra: { first: null, second: null },
+      ring: { first: null, second: null },
+      packet: { first: null, second: null },
+    };
+  }
+
+  private normalizeAmountLimits(raw: any): AmountLimitMap {
+    const defaults = this.getDefaultAmountLimits();
+    if (!raw || typeof raw !== 'object') {
+      return defaults;
+    }
+
+    const entryTypes: EntryType[] = ['open', 'akra', 'ring', 'packet'];
+    entryTypes.forEach((type) => {
+      const value = raw[type];
+      const firstValue = value?.first;
+      const secondValue = value?.second;
+
+      const parseLimit = (input: any): number | null => {
+        if (input === null || input === undefined || input === '') {
+          return null;
+        }
+        const num = Number(input);
+        return Number.isFinite(num) && num >= 0 ? num : null;
+      };
+
+      defaults[type] = {
+        first: parseLimit(firstValue),
+        second: parseLimit(secondValue),
+      };
+    });
+
+    return defaults;
+  }
+
+  private loadLocalAmountLimits(): AmountLimitMap {
+    try {
+      if (typeof window === 'undefined') return this.getDefaultAmountLimits();
+      const raw = window.localStorage.getItem(this.AMOUNT_LIMITS_STORAGE_KEY);
+      if (!raw) {
+        return this.getDefaultAmountLimits();
+      }
+      const parsed = JSON.parse(raw);
+      return this.normalizeAmountLimits(parsed);
+    } catch (err) {
+      console.warn('Failed to load local amount limits:', err);
+      return this.getDefaultAmountLimits();
+    }
+  }
+
+  private saveLocalAmountLimits(limits: AmountLimitMap) {
+    try {
+      if (typeof window === 'undefined') return;
+      window.localStorage.setItem(this.AMOUNT_LIMITS_STORAGE_KEY, JSON.stringify(limits));
+    } catch (err) {
+      console.warn('Failed to save local amount limits:', err);
+    }
+  }
+
+  async getSystemSettings(): Promise<{ entriesEnabled: boolean; amountLimits: AmountLimitMap }> {
     if (!isSupabaseConfigured() || !supabase) {
       console.log('🔍 Supabase not configured, using default: entriesEnabled = true');
-      return { entriesEnabled: true };
+      return { entriesEnabled: true, amountLimits: this.loadLocalAmountLimits() };
     }
 
     try {
@@ -1786,7 +1850,7 @@ export class DatabaseService {
       
       const { data, error } = await clientToUse
         .from('system_settings')
-        .select('entries_enabled')
+        .select('entries_enabled, amount_limits')
         .eq('id', 'global')
         .single();
 
@@ -1794,20 +1858,24 @@ export class DatabaseService {
 
       if (error && error.code !== 'PGRST116') {
         console.warn('Could not fetch system settings:', error);
-        return { entriesEnabled: true };
+        return { entriesEnabled: true, amountLimits: this.loadLocalAmountLimits() };
       }
 
       const entriesEnabled = data?.entries_enabled === true;
       console.log('🔍 Parsed entriesEnabled:', entriesEnabled);
+      const amountLimits = this.normalizeAmountLimits(
+        data?.amount_limits ?? this.loadLocalAmountLimits(),
+      );
+      this.saveLocalAmountLimits(amountLimits);
       
-      return { entriesEnabled };
+      return { entriesEnabled, amountLimits };
     } catch (err) {
       console.warn('System settings table not available:', err);
-      return { entriesEnabled: true };
+      return { entriesEnabled: true, amountLimits: this.loadLocalAmountLimits() };
     }
   }
 
-  async setSystemSettings(settings: { entriesEnabled: boolean }): Promise<void> {
+  async setSystemSettings(settings: Partial<{ entriesEnabled: boolean; amountLimits: AmountLimitMap }>): Promise<void> {
     if (!isSupabaseConfigured() || !supabase) {
       console.log('🔍 Supabase not configured, cannot save system settings');
       throw new Error('Database not available');
@@ -1819,20 +1887,49 @@ export class DatabaseService {
       const clientToUse = supabaseAdmin || supabase;
       console.log('🔍 Using client for save:', supabaseAdmin ? 'service role' : 'regular');
       
+      if (settings.amountLimits) {
+        this.saveLocalAmountLimits(settings.amountLimits);
+      }
+
+      const payload: Record<string, any> = {
+        id: 'global',
+        updated_at: new Date().toISOString(),
+      };
+
+      if (settings.entriesEnabled !== undefined) {
+        payload.entries_enabled = settings.entriesEnabled;
+      }
+
+      if (settings.amountLimits) {
+        payload.amount_limits = settings.amountLimits;
+      }
+
       const { error } = await clientToUse
         .from('system_settings')
         .upsert({
-          id: 'global',
-          entries_enabled: settings.entriesEnabled,
-          updated_at: new Date().toISOString(),
+          ...payload,
         });
       
       if (error) {
         console.error('❌ Error saving system settings:', error);
-        throw error;
+        if (settings.amountLimits && error.message && error.message.includes('amount_limits')) {
+          console.warn('amount_limits column missing. Falling back to local storage only.');
+          // Try to persist entriesEnabled without amount_limits if provided
+          if (settings.entriesEnabled !== undefined) {
+            await clientToUse
+              .from('system_settings')
+              .upsert({
+                id: 'global',
+                entries_enabled: settings.entriesEnabled,
+                updated_at: new Date().toISOString(),
+              });
+          }
+        } else {
+          throw error;
+        }
       }
       
-      console.log('✅ System settings saved to database');
+      console.log('✅ System settings saved');
     } catch (err) {
       console.error('❌ Failed to save system settings:', err);
       throw err;

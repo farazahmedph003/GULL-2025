@@ -1,26 +1,35 @@
 import React, { useState, useRef } from 'react';
-import type { Transaction } from '../types';
+import type { EntryType, Transaction, AddedEntrySummary } from '../types';
 import { formatCurrency } from '../utils/helpers';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { useNotifications } from '../contexts/NotificationContext';
 import { playSuccessSound } from '../utils/audioFeedback';
 import { useAuth } from '../contexts/AuthContext';
+import { useSystemSettings } from '../hooks/useSystemSettings';
+import {
+  getExistingTotalsForNumber,
+  getLimitsForEntryType,
+  padNumberForEntryType,
+} from '../utils/amountLimits';
 
 interface StandardEntryProps {
   projectId: string;
-  onSuccess: () => void;
-  addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<boolean>;
+  onSuccess?: (summary: AddedEntrySummary[]) => void;
+  addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<Transaction | null>;
+  transactions: Transaction[];
 }
 
 const StandardEntry: React.FC<StandardEntryProps> = ({
   projectId,
   onSuccess: _onSuccess,
   addTransaction,
+  transactions,
 }) => {
   const { user } = useAuth();
   const { balance, hasSufficientBalance, deductBalance } = useUserBalance();
   const { showSuccess, showError } = useNotifications();
   const numbersInputRef = useRef<HTMLInputElement>(null);
+  const { amountLimits } = useSystemSettings();
   
   const [numbers, setNumbers] = useState('');
   const [first, setFirst] = useState('');
@@ -97,23 +106,57 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
       // The regex [^0-9]+ matches one or more consecutive non-digit characters (supports 10,000+ symbols)
       let numberList = numbersText.split(/[^0-9]+/).filter(n => n.length > 0);
       
-      // Helper function to pad numbers to correct length based on entry type
-      const padNumber = (num: string, type: 'open' | 'akra' | 'ring' | 'packet'): string => {
-        const lengths = { open: 1, akra: 2, ring: 3, packet: 4 };
-        return num.padStart(lengths[type], '0');
-      };
-      
       // Categorize numbers based on digit length:
-      // 1 digit (0-9) → Open entries
-      // 2 digits (00-99) → Akra entries
-      // 3 digits (000-999) → Ring entries
-      // 4 digits (0000-9999) → Packet entries
       const categorizedNumbers = {
-        open: numberList.filter(n => n.length === 1),
-        akra: numberList.filter(n => n.length === 2),
-        ring: numberList.filter(n => n.length === 3),
-        packet: numberList.filter(n => n.length === 4),
+        open: numberList.filter((n) => n.length === 1),
+        akra: numberList.filter((n) => n.length === 2),
+        ring: numberList.filter((n) => n.length === 3),
+        packet: numberList.filter((n) => n.length === 4),
       };
+
+      const additionByNumber = new Map<
+        string,
+        { entryType: EntryType; addFirst: number; addSecond: number }
+      >();
+
+      Object.entries(categorizedNumbers).forEach(([type, numbers]) => {
+        const entryType = type as EntryType;
+        numbers.forEach((rawNumber) => {
+          const padded = padNumberForEntryType(rawNumber, entryType);
+          const existing = additionByNumber.get(padded) || { entryType, addFirst: 0, addSecond: 0 };
+          existing.addFirst += firstAmount;
+          existing.addSecond += secondAmount;
+          additionByNumber.set(padded, existing);
+        });
+      });
+
+      for (const [paddedNumber, addition] of additionByNumber.entries()) {
+        const { entryType } = addition;
+        const limits = getLimitsForEntryType(amountLimits, entryType);
+        const existingTotals = getExistingTotalsForNumber(transactions, entryType, paddedNumber);
+
+        if (limits.first !== null && addition.addFirst > 0) {
+          const totalFirst = existingTotals.first + addition.addFirst;
+          if (totalFirst > limits.first) {
+            setErrors({
+              numbers: `Number ${paddedNumber} exceeds First limit (${limits.first}). Current total is ${existingTotals.first}.`,
+            });
+            setIsSubmitting(false);
+            return;
+          }
+        }
+
+        if (limits.second !== null && addition.addSecond > 0) {
+          const totalSecond = existingTotals.second + addition.addSecond;
+          if (totalSecond > limits.second) {
+            setErrors({
+              numbers: `Number ${paddedNumber} exceeds Second limit (${limits.second}). Current total is ${existingTotals.second}.`,
+            });
+            setIsSubmitting(false);
+            return;
+          }
+        }
+      }
 
       // Calculate total cost
       const totalNumbers = categorizedNumbers.open.length + categorizedNumbers.akra.length + 
@@ -151,7 +194,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
           const transaction = {
             projectId,
             userId: user?.id,
-            number: padNumber(num, 'open'),
+            number: padNumberForEntryType(num, 'open'),
             entryType: 'open' as const,
             first: firstAmount,
             second: secondAmount,
@@ -168,7 +211,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
           const transaction = {
             projectId,
             userId: user?.id,
-            number: padNumber(num, 'akra'),
+            number: padNumberForEntryType(num, 'akra'),
             entryType: 'akra' as const,
             first: firstAmount,
             second: secondAmount,
@@ -185,7 +228,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
           const transaction = {
             projectId,
             userId: user?.id,
-            number: padNumber(num, 'ring'),
+            number: padNumberForEntryType(num, 'ring'),
             entryType: 'ring' as const,
             first: firstAmount,
             second: secondAmount,
@@ -202,7 +245,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
           const transaction = {
             projectId,
             userId: user?.id,
-            number: padNumber(num, 'packet'),
+            number: padNumberForEntryType(num, 'packet'),
             entryType: 'packet' as const,
             first: firstAmount,
             second: secondAmount,
@@ -216,7 +259,8 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
       // Add all transactions in parallel with balance deduction skipped (already done above)
       const addPromises = transactionsToAdd.map(transaction => addTransaction(transaction, true));
       const results = await Promise.all(addPromises);
-      const successCount = results.filter(Boolean).length;
+      const successfulResults = results.filter((result): result is Transaction => result !== null);
+      const successCount = successfulResults.length;
       
       if (successCount === 0) {
         setErrors(prev => ({
@@ -252,8 +296,16 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         numbersInputRef.current?.focus();
       }, 50);
 
-      // Call onSuccess to trigger silent refresh (form stays open)
-      _onSuccess();
+      // Call onSuccess with transaction IDs and amounts
+      _onSuccess?.(
+        successfulResults.map<AddedEntrySummary>((transaction) => ({
+          id: transaction.id,
+          number: transaction.number,
+          entryType: transaction.entryType,
+          first: transaction.first,
+          second: transaction.second,
+        }))
+      );
     } catch (error) {
       console.error('Error adding transaction:', error);
       await showError(

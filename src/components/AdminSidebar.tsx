@@ -136,6 +136,17 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose }) => {
       ),
     },
     {
+      id: 'amount-limits',
+      label: 'Amount Limits',
+      path: '/admin/amount-limits',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M5 6h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 14h6" />
+        </svg>
+      ),
+    },
+    {
       id: 'divider-1',
       isDivider: true,
     },

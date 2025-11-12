@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import StandardEntry from './StandardEntry';
 import IntelligentEntry from './IntelligentEntry';
-import type { EntryType, Transaction } from '../types';
+import type { EntryType, Transaction, AddedEntrySummary } from '../types';
 
 interface EntryPanelProps {
   isOpen: boolean;
   onClose: () => void;
   projectId: string;
   entryType: EntryType;
-  onEntryAdded?: () => void;
-  addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<boolean>;
+  transactions: Transaction[];
+  onEntryAdded?: (summary?: AddedEntrySummary[]) => void;
+  addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<Transaction | null>;
 }
 
 const EntryPanel: React.FC<EntryPanelProps> = ({
@@ -17,6 +18,7 @@ const EntryPanel: React.FC<EntryPanelProps> = ({
   onClose,
   projectId,
   entryType,
+  transactions,
   onEntryAdded,
   addTransaction,
 }) => {
@@ -110,8 +112,9 @@ const EntryPanel: React.FC<EntryPanelProps> = ({
               <StandardEntry
                 projectId={projectId}
                 addTransaction={addTransaction}
-                onSuccess={() => {
-                  onEntryAdded?.();
+                transactions={transactions}
+                onSuccess={(added) => {
+                  onEntryAdded?.(added);
                   // Don't close panel automatically - let user continue entering
                 }}
               />
@@ -119,8 +122,10 @@ const EntryPanel: React.FC<EntryPanelProps> = ({
               <IntelligentEntry
                 projectId={projectId}
                 entryType={entryType}
-                onSuccess={() => {
-                  onEntryAdded?.();
+                addTransaction={addTransaction}
+                transactions={transactions}
+                onSuccess={(added) => {
+                  onEntryAdded?.(added);
                   // Don't close panel automatically - let user continue entering
                 }}
               />
