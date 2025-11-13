@@ -1,4 +1,5 @@
 import React, {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -129,6 +130,21 @@ const advancePosition = (text: string, start: Position, length: number): Positio
 };
 
 const MIN_TEXTAREA_HEIGHT = 240;
+const SHARED_TEXT_CLASSNAMES = 'whitespace-pre-wrap break-words';
+const SHARED_TEXT_STYLE: React.CSSProperties = {
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+  overflowWrap: 'break-word',
+  WebkitTextSizeAdjust: '100%',
+  textSizeAdjust: '100%',
+  textRendering: 'geometricPrecision',
+  fontSize: '20px',
+  lineHeight: '32px',
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  boxSizing: 'border-box',
+  margin: '0',
+  padding: '20px 24px',
+};
 
 const parseText = (text: string): ParseResult => {
   const tokens: Token[] = [];
@@ -258,39 +274,48 @@ const parseText = (text: string): ParseResult => {
           continue;
         }
 
-    if ((lowerChar === 'f' || lowerChar === 's') && position.index + 1 < text.length) {
-      let end = position.index + 1;
-      while (end < text.length && isDigit(text[end])) {
-        end += 1;
-      }
+    if (lowerChar === 'f' || lowerChar === 's') {
+      const amountMatch = remainingText.match(/^([fF]+|[sS]+)\s*(\d+)/);
 
-      if (end > position.index + 1) {
-        const value = text.slice(position.index, end);
-        const amountType: AmountType = lowerChar === 'f' ? 'first' : 'second';
-        const nextPosition = advancePosition(text, position, value.length);
+      if (amountMatch) {
+        const [matched, letters] = amountMatch;
+        const normalizedLetters = letters.toLowerCase();
 
-        amounts.push({
-          value,
-          amountType,
-          line: tokenStart.line,
-          column: tokenStart.column,
-          startIndex: tokenStart.index,
-          endIndex: nextPosition.index,
-        });
+        let amountType: AmountType | null = null;
+        if (/^f+$/.test(normalizedLetters)) {
+          amountType = 'first';
+        } else if (/^s+$/.test(normalizedLetters)) {
+          amountType = 'second';
+        }
 
-        tokens.push({
-          type: 'amount',
-          amountType,
-          value,
-          startIndex: tokenStart.index,
-          endIndex: nextPosition.index,
-          line: tokenStart.line,
-          column: tokenStart.column,
-        });
+        if (amountType) {
+          const nextPosition = advancePosition(text, position, matched.length);
+          const value = text.slice(position.index, nextPosition.index);
 
-        position = nextPosition;
+          amounts.push({
+            value,
+            amountType,
+            line: tokenStart.line,
+            column: tokenStart.column,
+            startIndex: tokenStart.index,
+            endIndex: nextPosition.index,
+          });
+
+          tokens.push({
+            type: 'amount',
+            amountType,
+            value,
+            startIndex: tokenStart.index,
+            endIndex: nextPosition.index,
+            line: tokenStart.line,
+            column: tokenStart.column,
+          });
+
+          position = nextPosition;
           continue;
         }
+        // Fall back to letter parsing errors for mixed sequences.
+      }
     }
 
     if (isLetter(currentChar)) {
@@ -362,14 +387,14 @@ const renderTokensAsHtml = (tokens: Token[]): string =>
       let className = 'text-gray-900 dark:text-gray-100';
 
       if (token.type === 'number') {
-        className = 'text-yellow-500 dark:text-yellow-400 font-semibold';
+        className = 'text-yellow-500 dark:text-yellow-400';
       } else if (token.type === 'amount') {
         className =
           token.amountType === 'first'
-            ? 'text-green-500 dark:text-green-400 font-semibold'
-            : 'text-purple-500 dark:text-purple-400 font-semibold';
+            ? 'text-green-500 dark:text-green-400'
+            : 'text-purple-500 dark:text-purple-400';
       } else if (token.type === 'invalid') {
-        className = 'text-red-500 dark:text-red-400 font-semibold underline decoration-dotted';
+        className = 'text-red-500 dark:text-red-400 underline decoration-dotted';
       }
 
       return `<span class="${className}">${escapeHtml(token.value)}</span>`;
@@ -523,7 +548,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
   const overlayRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
-  const { balance, hasSufficientBalance, deductBalance } = useUserBalance();
+  const { balance, hasSufficientBalance, deductBalance, addBalance } = useUserBalance();
   const { showSuccess, showError } = useNotifications();
   const { amountLimits } = useSystemSettings();
 
@@ -532,6 +557,16 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     () => buildEntries(parseResult.tokens),
     [parseResult.tokens],
   );
+
+  const syncOverlayScroll = useCallback(() => {
+    const textarea = textareaRef.current;
+    const overlay = overlayRef.current;
+    if (!textarea || !overlay) {
+      return;
+    }
+    overlay.scrollTop = textarea.scrollTop;
+    overlay.scrollLeft = textarea.scrollLeft;
+  }, []);
 
   useEffect(() => {
     if (!overlayRef.current) {
@@ -550,21 +585,49 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
 
   useEffect(() => {
     const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    const handleResize = () => {
+      autoResizeTextarea(textarea, overlayRef.current, containerRef.current);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      autoResizeTextarea(textarea, overlayRef.current, containerRef.current);
+    });
+
+    observer.observe(textarea);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
     if (!textarea || !overlayRef.current) {
       return;
     }
 
     const handleScroll = () => {
-      if (!overlayRef.current) return;
-        overlayRef.current.scrollTop = textarea.scrollTop;
-        overlayRef.current.scrollLeft = textarea.scrollLeft;
+      syncOverlayScroll();
     };
 
     textarea.addEventListener('scroll', handleScroll);
     return () => {
       textarea.removeEventListener('scroll', handleScroll);
     };
-  }, []);
+  }, [syncOverlayScroll]);
 
   const handleAdd = async () => {
     setSubmissionErrors([]);
@@ -631,59 +694,60 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       return;
     }
 
+    const additionsByNumber = new Map<
+      string,
+      { entryType: EntryGroup; addFirst: number; addSecond: number }
+    >();
+
+    entries.forEach((entry) => {
+      const padded = padNumberValue(entry.number, entry.entryType);
+      const accumulator =
+        additionsByNumber.get(padded) || { entryType: entry.entryType, addFirst: 0, addSecond: 0 };
+      accumulator.addFirst += entry.first;
+      accumulator.addSecond += entry.second;
+      additionsByNumber.set(padded, accumulator);
+    });
+
+    for (const [paddedNumber, addition] of additionsByNumber.entries()) {
+      const entryType = addition.entryType as EntryType;
+      const limits = getLimitsForEntryType(amountLimits, entryType);
+      const existingTotals = getExistingTotalsForNumber(transactions, entryType, paddedNumber);
+
+      if (limits.first !== null && addition.addFirst > 0) {
+        const totalFirst = existingTotals.first + addition.addFirst;
+        if (totalFirst > limits.first) {
+          setSubmissionErrors([
+            `Number ${paddedNumber} exceeds First limit (${limits.first}). Current total is ${existingTotals.first}.`,
+          ]);
+          return;
+        }
+      }
+
+      if (limits.second !== null && addition.addSecond > 0) {
+        const totalSecond = existingTotals.second + addition.addSecond;
+        if (totalSecond > limits.second) {
+          setSubmissionErrors([
+            `Number ${paddedNumber} exceeds Second limit (${limits.second}). Current total is ${existingTotals.second}.`,
+          ]);
+          return;
+        }
+      }
+    }
+
     setIsSubmitting(true);
+    let balanceDeducted = false;
 
     try {
       if (totalCost > 0) {
         const balanceSuccess = await deductBalance(totalCost);
         if (!balanceSuccess) {
           setBalanceMessage('Failed to deduct balance. Please try again.');
-      return;
+          return;
         }
+        balanceDeducted = true;
       }
 
       const now = new Date().toISOString();
-      const additionsByNumber = new Map<
-        string,
-        { entryType: EntryGroup; addFirst: number; addSecond: number }
-      >();
-
-      entries.forEach((entry) => {
-        const padded = padNumberValue(entry.number, entry.entryType);
-        const accumulator =
-          additionsByNumber.get(padded) || { entryType: entry.entryType, addFirst: 0, addSecond: 0 };
-        accumulator.addFirst += entry.first;
-        accumulator.addSecond += entry.second;
-        additionsByNumber.set(padded, accumulator);
-      });
-
-      for (const [paddedNumber, addition] of additionsByNumber.entries()) {
-        const entryType = addition.entryType as EntryType;
-        const limits = getLimitsForEntryType(amountLimits, entryType);
-        const existingTotals = getExistingTotalsForNumber(transactions, entryType, paddedNumber);
-
-        if (limits.first !== null && addition.addFirst > 0) {
-          const totalFirst = existingTotals.first + addition.addFirst;
-          if (totalFirst > limits.first) {
-            setSubmissionErrors([
-              `Number ${paddedNumber} exceeds First limit (${limits.first}). Current total is ${existingTotals.first}.`,
-            ]);
-            setIsSubmitting(false);
-            return;
-          }
-        }
-
-        if (limits.second !== null && addition.addSecond > 0) {
-          const totalSecond = existingTotals.second + addition.addSecond;
-          if (totalSecond > limits.second) {
-            setSubmissionErrors([
-              `Number ${paddedNumber} exceeds Second limit (${limits.second}). Current total is ${existingTotals.second}.`,
-            ]);
-          setIsSubmitting(false);
-          return;
-          }
-        }
-      }
 
       const transactionsToAdd: Array<Omit<Transaction, 'id'>> = entries.map((entry) => ({
         projectId,
@@ -706,6 +770,9 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
 
       if (successfulResults.length === 0) {
         setSubmissionErrors(['Failed to add entries. Please try again.']);
+        if (balanceDeducted) {
+          await addBalance(totalCost);
+        }
         await showError(
           'Error Adding Entry',
           'An error occurred while adding the transaction. Please try again.',
@@ -751,6 +818,9 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     } catch (error) {
       console.error('Error adding entries:', error);
       setSubmissionErrors(['An unexpected error occurred while adding entries. Please try again.']);
+      if (balanceDeducted) {
+        await addBalance(totalCost);
+      }
       await showError(
         'Error Adding Entry',
         'An error occurred while adding the transaction. Please try again.',
@@ -766,34 +836,41 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       <div className="w-full">
         <div
           ref={containerRef}
-          className="relative border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700"
+          className="relative border-2 border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 overflow-hidden"
           style={{ minHeight: `${MIN_TEXTAREA_HEIGHT}px` }}
         >
         <div
           ref={overlayRef}
-            className="absolute inset-0 px-6 py-5 text-xl leading-[1.6] font-mono whitespace-pre-wrap break-words pointer-events-none overflow-hidden text-gray-900 dark:text-gray-100"
-            style={{ zIndex: 0 }}
-          />
+          aria-hidden="true"
+          className={`absolute top-0 left-0 right-0 bottom-0 m-0 ${SHARED_TEXT_CLASSNAMES} pointer-events-none text-gray-900 dark:text-gray-100`}
+          style={{ 
+            ...SHARED_TEXT_STYLE,
+            zIndex: 1,
+            overflow: 'hidden',
+          }}
+        />
 
         <textarea
           ref={textareaRef}
           value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onInput={(e) =>
-              autoResizeTextarea(
-                e.currentTarget,
-                overlayRef.current,
-                containerRef.current,
-              )
-            }
-            className="w-full px-6 py-5 text-xl leading-[1.6] font-mono border-none bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none relative z-10 overflow-hidden"
+          onChange={(e) => setInputText(e.target.value)}
+          onInput={(e) =>
+            autoResizeTextarea(
+              e.currentTarget,
+              overlayRef.current,
+              containerRef.current,
+            )
+          }
+          className={`w-full h-full ${SHARED_TEXT_CLASSNAMES} border-none bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none`}
           style={{
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-              minHeight: `${MIN_TEXTAREA_HEIGHT}px`,
+            ...SHARED_TEXT_STYLE,
+            minHeight: `${MIN_TEXTAREA_HEIGHT}px`,
             color: 'transparent',
-              caretColor: '#60a5fa',
+            caretColor: '#60a5fa',
             WebkitTextFillColor: 'transparent',
+            position: 'relative',
+            zIndex: 2,
+            overflow: 'hidden',
           }}
           autoComplete="off"
           rows={1}

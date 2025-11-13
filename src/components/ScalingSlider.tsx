@@ -76,8 +76,8 @@ const ScalingSlider: React.FC<ScalingSliderProps> = ({
       </div>
 
       {/* Quick preset buttons */}
-      <div className="flex space-x-2">
-        {[75, 100, 125, 150].map((preset) => (
+      <div className="flex flex-wrap gap-2">
+        {[75, 100, 125, 150, 200].map((preset) => (
           <button
             key={preset}
             onClick={() => onChange(preset)}

@@ -1,0 +1,49 @@
+warning: in the working copy of 'src/pages/Dashboard.tsx', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/src/pages/Dashboard.tsx b/src/pages/Dashboard.tsx[m
+[1mindex 3dc5612..9972c2f 100644[m
+[1m--- a/src/pages/Dashboard.tsx[m
+[1m+++ b/src/pages/Dashboard.tsx[m
+[36m@@ -14,7 +14,7 @@[m [mimport { useUserBalance } from '../hooks/useUserBalance';[m
+ import { db } from '../services/database';[m
+ import { formatDate } from '../utils/helpers';[m
+ import { playReloadSound, playUndoSound, playRedoSound } from '../utils/audioFeedback';[m
+[31m-import type { EntryType, Project } from '../types';[m
+[32m+[m[32mimport type { EntryType, Project, AddedEntrySummary } from '../types';[m
+ [m
+ const Dashboard: React.FC = () => {[m
+   const { id } = useParams<{ id: string }>();[m
+[36m@@ -24,7 +24,8 @@[m [mconst Dashboard: React.FC = () => {[m
+   const [entryPanelOpen, setEntryPanelOpen] = useState(false);[m
+   const [selectedEntryType, setSelectedEntryType] = useState<EntryType>('akra');[m
+ [m
+[31m-  const { [m
+[32m+[m[32m  const {[m
+[32m+[m[32m    transactions,[m
+     refresh: refreshTransactions, [m
+     getStatistics, [m
+     addTransaction, [m
+[36m@@ -178,7 +179,7 @@[m [mconst Dashboard: React.FC = () => {[m
+ [m
+   // Tabs moved to sidebar menu[m
+ [m
+[31m-  const handleEntryAdded = () => {[m
+[32m+[m[32m  const handleEntryAdded = (_summary?: AddedEntrySummary[]) => {[m
+     refresh();[m
+   };[m
+ [m
+[36m@@ -446,6 +447,7 @@[m [mconst Dashboard: React.FC = () => {[m
+         onClose={() => setEntryPanelOpen(false)}[m
+         projectId={id || ''}[m
+         entryType={selectedEntryType === 'akra' ? 'akra' : selectedEntryType === 'ring' ? 'ring' : 'akra'}[m
+[32m+[m[32m        transactions={transactions}[m
+         addTransaction={addTransaction}[m
+         onEntryAdded={handleEntryAdded}[m
+       />[m
+[36m@@ -456,6 +458,7 @@[m [mconst Dashboard: React.FC = () => {[m
+           projectId={id || ''}[m
+           entryType={project?.entryTypes?.[0] || 'akra'}[m
+           addTransaction={addTransaction}[m
+[32m+[m[32m        transactions={transactions}[m
+           onEntryAdded={handleEntryAdded}[m
+         />[m
+       </div>[m

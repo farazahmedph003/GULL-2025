@@ -32,3 +32,4 @@ export const getExistingTotalsForNumber = (
 export const getLimitsForEntryType = (limits: AmountLimitMap, entryType: EntryType) =>
   limits[entryType] ?? { first: null, second: null };
 
+

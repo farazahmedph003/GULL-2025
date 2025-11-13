@@ -37,7 +37,11 @@ const typeConfig: Record<EntryType, { digits: number; max: number }> = {
 };
 
 function tokenize(raw: string): Array<{ raw: string; number: string; first?: number; second?: number }> {
-	const text = raw.replace(/\u00A0/g, ' ').replace(/[\t]+/g, ' ').trim();
+	const text = raw
+		.replace(/\u00A0/g, ' ')
+		.replace(/[\t]+/g, ' ')
+		.replace(/\b([fs]+)\s+(\d+)/gi, (_, letters, digits) => `${letters}${digits}`)
+		.trim();
 	const parts = text.split(/\s+|\n|;|,/).filter(Boolean);
 	const tokens: Array<{ raw: string; number: string; first?: number; second?: number }> = [];
 
