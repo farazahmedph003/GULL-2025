@@ -63,60 +63,83 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const storedUser = localStorage.getItem(STORAGE_KEY);
           if (storedUser) {
             const parsedUser = JSON.parse(storedUser);
-            // Verify the user still exists in app_users table
-            try {
-              const { data: appUser, error: fetchError } = await supabase
-                .from('app_users')
-                .select('id, username, full_name, role, is_active, is_partner, email')
-                .eq('id', parsedUser.id)
-                .single();
+            // Restore user immediately from localStorage for better UX
+            setUser(parsedUser);
+            
+            // Verify the user still exists in app_users table (async, non-blocking)
+            // Don't sign out on network errors - only sign out if user is actually inactive/deleted
+            const verifyUser = async () => {
+              try {
+                const { data: appUser, error: fetchError } = await supabase
+                  .from('app_users')
+                  .select('id, username, full_name, role, is_active, is_partner, email')
+                  .eq('id', parsedUser.id)
+                  .single();
 
-              if (appUser && !fetchError && appUser.is_active) {
-                // User exists and is active, restore session
-                const authUser: User = {
-                  id: appUser.id,
-                  email: appUser.email || null,
-                  displayName: appUser.full_name,
-                  username: appUser.username,
-                  role: appUser.role,
-                  isPartner: appUser.is_partner || false,
-                  isAnonymous: false,
-                  createdAt: parsedUser.createdAt || new Date().toISOString(),
-                  lastLoginAt: new Date().toISOString(),
-                };
-                setUser(authUser);
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
-                setLoading(false);
-                return; // Exit early, session restored
-              } else {
-                // User doesn't exist or is inactive, clear localStorage
-                localStorage.removeItem(STORAGE_KEY);
+                if (appUser && !fetchError && appUser.is_active) {
+                  // User exists and is active, update session with latest data
+                  const authUser: User = {
+                    id: appUser.id,
+                    email: appUser.email || null,
+                    displayName: appUser.full_name,
+                    username: appUser.username,
+                    role: appUser.role,
+                    isPartner: appUser.is_partner || false,
+                    isAnonymous: false,
+                    createdAt: parsedUser.createdAt || new Date().toISOString(),
+                    lastLoginAt: new Date().toISOString(),
+                  };
+                  setUser(authUser);
+                  localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
+                } else if (appUser && !appUser.is_active) {
+                  // User is inactive - only then clear session
+                  console.warn('User account is inactive, signing out');
+                  setUser(null);
+                  localStorage.removeItem(STORAGE_KEY);
+                } else if (fetchError && fetchError.code === 'PGRST116') {
+                  // User not found in database - clear session
+                  console.warn('User not found in database, signing out');
+                  setUser(null);
+                  localStorage.removeItem(STORAGE_KEY);
+                }
+                // If there's a network error or other error, keep the user logged in
+                // This prevents accidental sign-outs due to temporary network issues
+              } catch (error) {
+                console.warn('Failed to verify app_users session (keeping user logged in):', error);
+                // Don't sign out on errors - keep user logged in from localStorage
               }
-            } catch (error) {
-              console.warn('Failed to verify app_users session:', error);
-              // Continue to check Supabase Auth session
-            }
+            };
+            
+            // Verify in background, don't block initialization
+            verifyUser();
+            setLoading(false);
+            return; // Exit early, session restored from localStorage
           }
 
           // If no app_users session, check for Supabase Auth session
-          const { data: { session } } = await supabase.auth.getSession();
-          
-          if (session?.user) {
-            const authUser: User = {
-              id: session.user.id,
-              email: session.user.email || null,
-              displayName: session.user.user_metadata?.displayName || null,
-              isAnonymous: session.user.is_anonymous || false,
-              createdAt: session.user.created_at || new Date().toISOString(),
-              lastLoginAt: new Date().toISOString(),
-            };
-            setUser(authUser);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
-            saveRecentLogin(authUser); // Save to recent logins
+          try {
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+            
+            if (session?.user && !sessionError) {
+              const authUser: User = {
+                id: session.user.id,
+                email: session.user.email || null,
+                displayName: session.user.user_metadata?.displayName || null,
+                isAnonymous: session.user.is_anonymous || false,
+                createdAt: session.user.created_at || new Date().toISOString(),
+                lastLoginAt: new Date().toISOString(),
+              };
+              setUser(authUser);
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
+              saveRecentLogin(authUser); // Save to recent logins
+            }
+          } catch (error) {
+            console.warn('Failed to get Supabase session (non-critical):', error);
+            // Don't sign out on session fetch errors
           }
 
-          // Listen for auth changes
-          supabase.auth.onAuthStateChange((_event: any, session: any) => {
+          // Listen for auth changes - but don't sign out on SIGNED_OUT events if we have localStorage
+          supabase.auth.onAuthStateChange((event: any, session: any) => {
             if (session?.user) {
               const authUser: User = {
                 id: session.user.id,
@@ -129,9 +152,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setUser(authUser);
               localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
               saveRecentLogin(authUser); // Save to recent logins
-            } else {
-              setUser(null);
-              localStorage.removeItem(STORAGE_KEY);
+            } else if (event === 'SIGNED_OUT') {
+              // Only sign out if it's an explicit sign out, not a token expiration
+              // Check if we have a stored user - if yes, keep them logged in
+              const storedUser = localStorage.getItem(STORAGE_KEY);
+              if (!storedUser) {
+                // No stored user, safe to sign out
+                setUser(null);
+                localStorage.removeItem(STORAGE_KEY);
+              } else {
+                // We have a stored user, keep them logged in
+                // This handles cases where Supabase session expires but user should stay logged in
+                console.log('Supabase session expired, but keeping user logged in from localStorage');
+              }
+            } else if (event === 'TOKEN_REFRESHED') {
+              // Token refreshed successfully, update session
+              if (session?.user) {
+                const authUser: User = {
+                  id: session.user.id,
+                  email: session.user.email || null,
+                  displayName: session.user.user_metadata?.displayName || null,
+                  isAnonymous: session.user.is_anonymous || false,
+                  createdAt: session.user.created_at || new Date().toISOString(),
+                  lastLoginAt: new Date().toISOString(),
+                };
+                setUser(authUser);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
+              }
             }
           });
         }
@@ -144,6 +191,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     initAuth();
+  }, []);
+
+  // Periodic session validation - runs every 5 minutes to keep session fresh
+  // but doesn't sign out on failures
+  useEffect(() => {
+    if (!supabase || isOfflineMode()) return;
+
+    const sessionValidationInterval = setInterval(async () => {
+      try {
+        const storedUser = localStorage.getItem(STORAGE_KEY);
+        if (!storedUser) return;
+
+        const parsedUser = JSON.parse(storedUser);
+        
+        // Silently validate user in background
+        const { data: appUser, error: fetchError } = await supabase
+          .from('app_users')
+          .select('id, username, full_name, role, is_active, is_partner, email')
+          .eq('id', parsedUser.id)
+          .single();
+
+        if (appUser && !fetchError && appUser.is_active) {
+          // User is still valid, update with latest data
+          const authUser: User = {
+            id: appUser.id,
+            email: appUser.email || null,
+            displayName: appUser.full_name,
+            username: appUser.username,
+            role: appUser.role,
+            isPartner: appUser.is_partner || false,
+            isAnonymous: false,
+            createdAt: parsedUser.createdAt || new Date().toISOString(),
+            lastLoginAt: new Date().toISOString(),
+          };
+          setUser(authUser);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(authUser));
+        } else if (appUser && !appUser.is_active) {
+          // User is inactive - only then sign out
+          console.warn('User account is inactive, signing out');
+          setUser(null);
+          localStorage.removeItem(STORAGE_KEY);
+        } else if (fetchError && fetchError.code === 'PGRST116') {
+          // User not found - sign out
+          console.warn('User not found in database, signing out');
+          setUser(null);
+          localStorage.removeItem(STORAGE_KEY);
+        }
+        // Network errors are ignored - user stays logged in
+      } catch (error) {
+        // Silently ignore validation errors - don't sign out on temporary issues
+        console.debug('Session validation error (non-critical):', error);
+      }
+    }, 5 * 60 * 1000); // Every 5 minutes
+
+    return () => {
+      clearInterval(sessionValidationInterval);
+    };
   }, []);
 
   const signUp = async (credentials: SignUpCredentials) => {
@@ -386,12 +490,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     
     try {
+      // Exit impersonation if active
+      if (isImpersonating) {
+        await exitImpersonation();
+      }
+      
       if (supabase && !isOfflineMode()) {
-        await supabase.auth.signOut();
+        try {
+          await supabase.auth.signOut();
+        } catch (err) {
+          console.warn('Supabase sign out error (non-critical):', err);
+          // Continue with local sign out even if Supabase fails
+        }
       }
       
       setUser(null);
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(IMPERSONATION_KEY);
       
       // Clear all project data (optional - you might want to keep local data)
       // localStorage.clear();
