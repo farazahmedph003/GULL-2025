@@ -31,6 +31,52 @@ type AmountType = 'first' | 'second';
 type NumberToken = Extract<Token, { type: 'number' }>;
 type AmountToken = Extract<Token, { type: 'amount' }>;
 
+// Hybrid Urdu-English translations for error messages
+const translateToRomanUrdu = (text: string): string => {
+  const translations: Record<string, string> = {
+    'Input issues detected': 'Input issues detect hue',
+    'Line': 'Line',
+    'column': 'column',
+    'Letters like': 'Letters jaise',
+    'are not allowed between numbers. Use separators such as space or punctuation instead.': 'numbers ke beech allowed nahi hain. Space ya punctuation use karein.',
+    'Number': 'Number',
+    'has': 'mein',
+    'digits. Only 1 to 4 digits are allowed.': 'digits hain. Sirf 1 se 4 digits allowed hain.',
+    'Please fix these issues': 'Meharbani karke in issues ko fix karein',
+    'Please paste numbers and amounts before adding entries.': 'Meharbani karke entries add karne se pehle numbers aur amounts paste karein.',
+    'Fix the highlighted issues above before adding entries.': 'Entries add karne se pehle upar highlighted issues ko fix karein.',
+    'appear before any numbers. Place numbers before the amount values.': 'kisi bhi number se pehle appear ho rahe hain. Numbers ko amount values se pehle rakhein.',
+    'do not have any F or S amounts after them. Add at least one amount for each number.': 'ke baad koi F ya S amount nahi hai. Har number ke liye kam se kam ek amount add karein.',
+    'No valid entries found. Add numbers followed by F and/or S amounts.': 'Koi valid entries nahi mili. Numbers ke saath F aur/ya S amounts add karein.',
+    'Add at least one F or S amount before submitting.': 'Submit karne se pehle kam se kam ek F ya S amount add karein.',
+    'Insufficient balance. You need': 'Balance kafi nahi hai. Aapko chahiye',
+    'Insufficient Balance': 'Insufficient Balance',
+    'but only have': 'lekin sirf hai',
+    'exceeds First limit': 'First limit se exceed kar raha hai',
+    'exceeds Second limit': 'Second limit se exceed kar raha hai',
+    'Current total is': 'Current total hai',
+    'Failed to add entries. Please try again.': 'Entries add karne mein fail ho gaya. Meharbani karke phir se try karein.',
+    'An unexpected error occurred while adding entries. Please try again.': 'Entries add karte waqt unexpected error aaya. Meharbani karke phir se try karein.',
+    'Failed to deduct balance. Please try again.': 'Balance deduct karne mein fail ho gaya. Meharbani karke phir se try karein.',
+  };
+
+  // Try to find a translation, otherwise return original
+  // Check for exact matches first
+  if (translations[text]) {
+    return translations[text];
+  }
+
+  // Then check for partial matches and replace
+  let translated = text;
+  for (const [key, value] of Object.entries(translations)) {
+    if (translated.includes(key)) {
+      translated = translated.replace(new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value);
+    }
+  }
+  
+  return translated;
+};
+
 type Token =
   | {
       type: 'number';
@@ -275,7 +321,7 @@ const parseText = (text: string): ParseResult => {
         }
 
     if (lowerChar === 'f' || lowerChar === 's') {
-      const amountMatch = remainingText.match(/^([fF]+|[sS]+)\s*(\d+)/);
+      const amountMatch = remainingText.match(/^([fF]+|[sS]+)[ \t]{0,3}(\d+)/);
 
       if (amountMatch) {
         const [matched, letters] = amountMatch;
@@ -292,30 +338,35 @@ const parseText = (text: string): ParseResult => {
           const nextPosition = advancePosition(text, position, matched.length);
           const value = text.slice(position.index, nextPosition.index);
 
-          amounts.push({
-            value,
-            amountType,
-            line: tokenStart.line,
-            column: tokenStart.column,
-            startIndex: tokenStart.index,
-            endIndex: nextPosition.index,
-          });
+          // Check if amount spans multiple lines - if so, treat as error
+          if (tokenStart.line !== nextPosition.line) {
+            // Fall through to letter parsing errors
+          } else {
+            amounts.push({
+              value,
+              amountType,
+              line: tokenStart.line,
+              column: tokenStart.column,
+              startIndex: tokenStart.index,
+              endIndex: nextPosition.index,
+            });
 
-          tokens.push({
-            type: 'amount',
-            amountType,
-            value,
-            startIndex: tokenStart.index,
-            endIndex: nextPosition.index,
-            line: tokenStart.line,
-            column: tokenStart.column,
-          });
+            tokens.push({
+              type: 'amount',
+              amountType,
+              value,
+              startIndex: tokenStart.index,
+              endIndex: nextPosition.index,
+              line: tokenStart.line,
+              column: tokenStart.column,
+            });
 
-          position = nextPosition;
-          continue;
+            position = nextPosition;
+            continue;
+          }
         }
-        // Fall back to letter parsing errors for mixed sequences.
       }
+      // Fall back to letter parsing errors for mixed sequences or cross-line amounts
     }
 
     if (isLetter(currentChar)) {
@@ -387,7 +438,7 @@ const renderTokensAsHtml = (tokens: Token[]): string =>
       let className = 'text-gray-900 dark:text-gray-100';
 
       if (token.type === 'number') {
-        className = 'text-yellow-500 dark:text-yellow-400';
+        className = 'text-gray-900 dark:text-gray-100';
       } else if (token.type === 'amount') {
         className =
           token.amountType === 'first'
@@ -634,12 +685,12 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     setBalanceMessage(null);
 
     if (!inputText.trim()) {
-      setSubmissionErrors(['Please paste numbers and amounts before adding entries.']);
+      setSubmissionErrors([translateToRomanUrdu('Please paste numbers and amounts before adding entries.')]);
       return;
     }
 
     if (parseResult.errors.length > 0) {
-      setSubmissionErrors(['Fix the highlighted issues above before adding entries.']);
+      setSubmissionErrors([translateToRomanUrdu('Fix the highlighted issues above before adding entries.')]);
       return;
     }
 
@@ -655,7 +706,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         )
         .join(', ');
       issues.push(
-        `Amounts ${orphanList} appear before any numbers. Place numbers before the amount values.`,
+        translateToRomanUrdu(`Amounts ${orphanList} appear before any numbers. Place numbers before the amount values.`),
       );
     }
 
@@ -667,12 +718,12 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         )
         .join(', ');
       issues.push(
-        `Numbers ${missingList} do not have any F or S amounts after them. Add at least one amount for each number.`,
+        translateToRomanUrdu(`Numbers ${missingList} do not have any F or S amounts after them. Add at least one amount for each number.`),
       );
     }
 
     if (entries.length === 0 && issues.length === 0) {
-      issues.push('No valid entries found. Add numbers followed by F and/or S amounts.');
+      issues.push(translateToRomanUrdu('No valid entries found. Add numbers followed by F and/or S amounts.'));
     }
 
     if (issues.length > 0) {
@@ -683,13 +734,13 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
     const totalCost = entries.reduce((sum, entry) => sum + entry.first + entry.second, 0);
 
     if (totalCost === 0) {
-      setSubmissionErrors(['Add at least one F or S amount before submitting.']);
+      setSubmissionErrors([translateToRomanUrdu('Add at least one F or S amount before submitting.')]);
       return;
     }
 
     if (!hasSufficientBalance(totalCost)) {
       setBalanceMessage(
-        `Insufficient balance. You need ${formatCurrency(totalCost)} but only have ${formatCurrency(balance)}.`,
+        translateToRomanUrdu(`Insufficient balance. You need ${formatCurrency(totalCost)} but only have ${formatCurrency(balance)}.`),
       );
       return;
     }
@@ -717,7 +768,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         const totalFirst = existingTotals.first + addition.addFirst;
         if (totalFirst > limits.first) {
           setSubmissionErrors([
-            `Number ${paddedNumber} exceeds First limit (${limits.first}). Current total is ${existingTotals.first}.`,
+            translateToRomanUrdu(`Number ${paddedNumber} exceeds First limit (${limits.first}). Current total is ${existingTotals.first}.`),
           ]);
           return;
         }
@@ -727,7 +778,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         const totalSecond = existingTotals.second + addition.addSecond;
         if (totalSecond > limits.second) {
           setSubmissionErrors([
-            `Number ${paddedNumber} exceeds Second limit (${limits.second}). Current total is ${existingTotals.second}.`,
+            translateToRomanUrdu(`Number ${paddedNumber} exceeds Second limit (${limits.second}). Current total is ${existingTotals.second}.`),
           ]);
           return;
         }
@@ -739,9 +790,10 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
 
     try {
       if (totalCost > 0) {
-        const balanceSuccess = await deductBalance(totalCost);
+        // IMPORTANT: Don't update total_spent here - let database trigger handle it to avoid doubling
+        const balanceSuccess = await deductBalance(totalCost, false); // adjustSpent=false to prevent doubling
         if (!balanceSuccess) {
-          setBalanceMessage('Failed to deduct balance. Please try again.');
+          setBalanceMessage(translateToRomanUrdu('Failed to deduct balance. Please try again.'));
           return;
         }
         balanceDeducted = true;
@@ -769,7 +821,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       );
 
       if (successfulResults.length === 0) {
-        setSubmissionErrors(['Failed to add entries. Please try again.']);
+        setSubmissionErrors([translateToRomanUrdu('Failed to add entries. Please try again.')]);
         if (balanceDeducted) {
           await addBalance(totalCost);
         }
@@ -817,7 +869,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
       }, 50);
     } catch (error) {
       console.error('Error adding entries:', error);
-      setSubmissionErrors(['An unexpected error occurred while adding entries. Please try again.']);
+      setSubmissionErrors([translateToRomanUrdu('An unexpected error occurred while adding entries. Please try again.')]);
       if (balanceDeducted) {
         await addBalance(totalCost);
       }
@@ -897,7 +949,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
             </svg>
             <div className="space-y-2">
               <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200">
-                Input issues detected
+                {translateToRomanUrdu('Input issues detected')}
               </h4>
               <ul className="space-y-2 text-sm text-yellow-700 dark:text-yellow-300">
                 {parseResult.errors.map((error) => (
@@ -906,25 +958,23 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
                     className="leading-relaxed"
                   >
                     <p className="font-medium">
-                      Line {error.line + 1}, column {error.column + 1}
+                      {translateToRomanUrdu('Line')} {error.line + 1}, {translateToRomanUrdu('column')} {error.column + 1}
                     </p>
                     {error.kind === 'letter-sequence' ? (
                       <p>
-                        Letters like{' '}
+                        {translateToRomanUrdu('Letters like')}{' '}
                         <code className="px-1 py-0.5 rounded bg-yellow-100 dark:bg-yellow-800/40">
                           {error.value}
                         </code>{' '}
-                        are not allowed between numbers. Use separators such as
-                        space or punctuation instead.
+                        {translateToRomanUrdu('are not allowed between numbers. Use separators such as space or punctuation instead.')}
                       </p>
                     ) : (
                       <p>
-                        Number{' '}
+                        {translateToRomanUrdu('Number')}{' '}
                         <code className="px-1 py-0.5 rounded bg-yellow-100 dark:bg-yellow-800/40">
                           {error.value}
                         </code>{' '}
-                        has {error.value.length} digits. Only 1 to 4 digits are
-                        allowed.
+                        {translateToRomanUrdu('has')} {error.value.length} {translateToRomanUrdu('digits. Only 1 to 4 digits are allowed.')}
                       </p>
                     )}
                   </li>
@@ -953,12 +1003,12 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
             </svg>
             <div className="space-y-2">
               <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200">
-                Please fix these issues
+                {translateToRomanUrdu('Please fix these issues')}
               </h4>
               <ul className="space-y-2 text-sm text-yellow-700 dark:text-yellow-300">
                 {submissionErrors.map((error) => (
                   <li key={error} className="leading-relaxed">
-                    {error}
+                    {translateToRomanUrdu(error)}
                   </li>
                 ))}
               </ul>
@@ -985,11 +1035,54 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
             </svg>
             <div>
               <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">
-                Insufficient Balance
+                {translateToRomanUrdu('Insufficient Balance')}
               </h4>
-              <p className="text-sm text-red-600 dark:text-red-400">{balanceMessage}</p>
+              <p className="text-sm text-red-600 dark:text-red-400">{balanceMessage ? translateToRomanUrdu(balanceMessage) : balanceMessage}</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {parsedEntries.groups.length > 0 && (() => {
+        const totalFirst = parsedEntries.groups.reduce((sum, group) => sum + group.first, 0);
+        const totalSecond = parsedEntries.groups.reduce((sum, group) => sum + group.second, 0);
+        const totalBoth = totalFirst + totalSecond;
+        
+        return (
+          <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3">
+            <div className="flex items-center space-x-4 text-sm font-bold">
+              <span className="text-green-600 dark:text-green-400">
+                First: {totalFirst.toLocaleString()}
+              </span>
+              <span className="text-purple-600 dark:text-purple-400">
+                Second: {totalSecond.toLocaleString()}
+              </span>
+              <span className="text-blue-600 dark:text-blue-400">
+                Total: {totalBoth.toLocaleString()}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleAdd}
+              className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg shadow-md hover:shadow-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled={isSubmitting || !inputText.trim()}
+            >
+              {isSubmitting ? 'Processing...' : 'Add'}
+            </button>
+          </div>
+        );
+      })()}
+
+      {!parsedEntries.groups.length && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={handleAdd}
+            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg shadow-md hover:shadow-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+            disabled={isSubmitting || !inputText.trim()}
+          >
+            {isSubmitting ? 'Processing...' : 'Add'}
+          </button>
         </div>
       )}
 
@@ -1042,17 +1135,6 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
           </div>
         </div>
       )}
-
-        <div className="flex justify-end">
-          <button
-          type="button"
-          onClick={handleAdd}
-          className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg shadow-md hover:shadow-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-            disabled={isSubmitting || !inputText.trim()}
-          >
-          {isSubmitting ? 'Processing...' : 'Add'}
-          </button>
-        </div>
       </div>
   );
 };

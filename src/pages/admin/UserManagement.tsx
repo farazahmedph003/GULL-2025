@@ -22,6 +22,7 @@ interface UserData {
   entryCount: number;
   is_active: boolean;
   is_partner?: boolean;
+  role?: string;
 }
 
 const UserManagement: React.FC = () => {
@@ -297,9 +298,10 @@ const UserManagement: React.FC = () => {
         throw new Error('User data not found');
       }
       const newBalance = userData.balance - difference;
+      const newTotalSpent = Math.max(0, (userData.total_spent || 0) + difference);
 
       // Update user balance
-      await db.updateUserBalance(expandedUserId, newBalance);
+      await db.updateUserBalance(expandedUserId, newBalance, { totalSpent: newTotalSpent });
 
       // Update transaction
       await db.updateTransaction(editingTransaction.id, {
@@ -335,7 +337,8 @@ const UserManagement: React.FC = () => {
         throw new Error('User data not found');
       }
       const newBalance = userData.balance + refundAmount;
-      await db.updateUserBalance(expandedUserId, newBalance);
+      const newTotalSpent = Math.max(0, (userData.total_spent || 0) - refundAmount);
+      await db.updateUserBalance(expandedUserId, newBalance, { totalSpent: newTotalSpent });
 
       // Delete the transaction
       await db.deleteTransaction(deletingTransaction.id);
@@ -552,14 +555,28 @@ const UserManagement: React.FC = () => {
 
         {/* Users Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {users.map((user) => (
+          {users.map((user) => {
+            const isAdmin = user.role === 'admin' || user.username.toLowerCase() === 'gullbaba';
+            const isGullBaba = user.username.toLowerCase() === 'gullbaba';
+            
+            return (
             <div key={user.id} className={`rounded-2xl shadow-xl overflow-hidden relative ${
-              user.is_partner 
+              isGullBaba
+                ? 'bg-gradient-to-br from-yellow-50 via-amber-50 to-yellow-100 dark:from-yellow-900/50 dark:via-amber-900/50 dark:to-yellow-900/50 border-4 border-yellow-400 dark:border-yellow-500 ring-4 ring-yellow-300 dark:ring-yellow-700/50 shadow-2xl'
+                : user.is_partner 
                 ? 'bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 dark:from-amber-900/40 dark:via-yellow-900/40 dark:to-orange-900/40 border-4 border-yellow-400 dark:border-yellow-500 ring-4 ring-yellow-200 dark:ring-yellow-800/50' 
                 : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700'
             }`}>
+              {/* King Badge for GULL BABA */}
+              {isGullBaba && (
+                <div className="absolute top-0 right-0 bg-gradient-to-br from-yellow-400 via-amber-500 to-yellow-600 text-white px-4 py-1 text-xs font-bold uppercase tracking-wider shadow-lg transform rotate-0 rounded-bl-xl flex items-center gap-1 z-10">
+                  <span className="text-sm">👑</span>
+                  <span>KING</span>
+                </div>
+              )}
+              
               {/* Partner Badge Ribbon */}
-              {user.is_partner && (
+              {user.is_partner && !isGullBaba && (
                 <div className="absolute top-0 right-0 bg-gradient-to-br from-yellow-400 via-amber-500 to-orange-500 text-white px-4 py-1 text-xs font-bold uppercase tracking-wider shadow-lg transform rotate-0 rounded-bl-xl flex items-center gap-1">
                   <span className="text-sm">⭐</span>
                   <span>Partner</span>
@@ -567,143 +584,245 @@ const UserManagement: React.FC = () => {
               )}
               
               {/* User Card */}
-              <div className="p-6">
-                <div className="flex items-start justify-between mb-4">
+              <div className={`p-6 ${isGullBaba ? 'relative overflow-hidden' : ''}`}>
+                {/* Decorative background pattern for GULL BABA */}
+                {isGullBaba && (
+                  <>
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-yellow-400 to-transparent opacity-50"></div>
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-yellow-400 to-transparent opacity-50"></div>
+                    <div className="absolute top-1/2 left-0 w-full h-px bg-gradient-to-r from-transparent via-yellow-300/30 to-transparent transform -translate-y-1/2"></div>
+                    <div className="absolute top-0 right-0 w-20 h-20 bg-yellow-400/10 rounded-full blur-2xl"></div>
+                    <div className="absolute bottom-0 left-0 w-20 h-20 bg-amber-400/10 rounded-full blur-2xl"></div>
+                  </>
+                )}
+                
+                <div className={`flex items-start justify-between mb-6 ${isGullBaba ? 'relative z-10' : ''}`}>
                   <div className="flex-1">
+                    {isGullBaba && (
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="flex gap-1">
+                          <span className="text-2xl">👑</span>
+                          <span className="text-xl">⚜️</span>
+                          <span className="text-2xl">👑</span>
+                        </div>
+                        <div className="h-px flex-1 bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-400 opacity-50"></div>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className={`text-xl font-bold ${
-                        user.is_partner 
+                      <h3 className={`${isGullBaba ? 'text-2xl' : 'text-xl'} font-bold ${
+                        isGullBaba
+                          ? 'text-yellow-700 dark:text-yellow-300 drop-shadow-lg'
+                          : user.is_partner 
                           ? 'text-amber-900 dark:text-amber-200' 
                           : 'text-gray-900 dark:text-white'
                       }`}>
+                        {isGullBaba && '👑 '}
                         {user.full_name}
                       </h3>
                     </div>
-                    <p className={`text-sm ${
-                      user.is_partner 
-                        ? 'text-amber-700 dark:text-amber-400' 
-                        : 'text-gray-600 dark:text-gray-400'
-                    }`}>@{user.username}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">{user.email}</p>
+                    <div className={`mt-2 ${isGullBaba ? 'space-y-1' : ''}`}>
+                      <p className={`text-sm ${
+                        isGullBaba
+                          ? 'text-yellow-600 dark:text-yellow-400 font-semibold'
+                          : user.is_partner 
+                          ? 'text-amber-700 dark:text-amber-400' 
+                          : 'text-gray-600 dark:text-gray-400'
+                      }`}>
+                        {isGullBaba && '👤 '}
+                        @{user.username}
+                      </p>
+                      <p className={`text-xs ${isGullBaba ? 'text-yellow-500 dark:text-yellow-500' : 'text-gray-500 dark:text-gray-500'} mt-1`}>
+                        {isGullBaba && '📧 '}
+                        {user.email}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleToggleActive(user)}
-                      className={`px-3 py-1 rounded-full text-xs font-semibold transition-all hover:opacity-80 cursor-pointer ${
-                        user.is_active
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                          : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                      }`}
-                      title="Click to toggle active/inactive"
-                    >
-                      {user.is_active ? 'Active' : 'Inactive'}
-                    </button>
-                    <button
-                      onClick={() => handleDeleteUser(user)}
-                      className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                      title="Delete user"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
+                  {!isAdmin && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleToggleActive(user)}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-all hover:opacity-80 cursor-pointer ${
+                          user.is_active
+                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                            : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                        }`}
+                        title="Click to toggle active/inactive"
+                      >
+                        {user.is_active ? 'Active' : 'Inactive'}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteUser(user)}
+                        className="p-2 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                        title="Delete user"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                  {isAdmin && (
+                    <div className={`flex flex-col items-end gap-2 ${isGullBaba ? 'relative z-10' : ''}`}>
+                      <div className="px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-yellow-400 to-amber-500 text-white shadow-lg">
+                        👑 Admin
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className={`space-y-2 mb-4 ${
-                  user.is_partner 
-                    ? 'bg-amber-100/50 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-300 dark:border-amber-700' 
-                    : ''
-                }`}>
-                  <div className="flex justify-between items-center">
-                    <span className={`text-sm ${
-                      user.is_partner 
-                        ? 'text-amber-700 dark:text-amber-400 font-semibold' 
-                        : 'text-gray-600 dark:text-gray-400'
-                    }`}>Balance:</span>
-                    <span className={`font-bold ${
-                      user.is_partner 
-                        ? 'text-green-700 dark:text-green-300 text-lg' 
-                        : 'text-green-600 dark:text-green-400'
-                    }`}>
-                      PKR {user.balance.toLocaleString()}
-                    </span>
+                {/* Decorative separator for GULL BABA */}
+                {isGullBaba && (
+                  <div className="flex items-center gap-2 mb-6 relative z-10">
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-yellow-400/50 to-transparent"></div>
+                    <div className="flex gap-1 px-2">
+                      <span className="text-yellow-500">⚜️</span>
+                      <span className="text-amber-500">👑</span>
+                      <span className="text-yellow-500">⚜️</span>
+                    </div>
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-yellow-400/50 to-transparent"></div>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className={`text-sm ${
-                      user.is_partner 
-                        ? 'text-amber-700 dark:text-amber-400 font-semibold' 
-                        : 'text-gray-600 dark:text-gray-400'
-                    }`}>Total Spent:</span>
-                    <span className={`font-bold ${
-                      user.is_partner 
-                        ? 'text-red-700 dark:text-red-300 text-lg' 
-                        : 'text-red-600 dark:text-red-400'
-                    }`}>
-                      PKR {(user.total_spent || 0).toLocaleString()}
-                    </span>
+                )}
+
+                {/* Stats Section - Hidden for Admin users */}
+                {!isAdmin && (
+                  <div className={`space-y-2 mb-4 ${
+                    user.is_partner 
+                      ? 'bg-amber-100/50 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-300 dark:border-amber-700' 
+                      : ''
+                  }`}>
+                    <div className="flex justify-between items-center">
+                      <span className={`text-sm ${
+                        user.is_partner 
+                          ? 'text-amber-700 dark:text-amber-400 font-semibold' 
+                          : 'text-gray-600 dark:text-gray-400'
+                      }`}>Balance:</span>
+                      <span className={`font-bold ${
+                        user.is_partner 
+                          ? 'text-green-700 dark:text-green-300 text-lg' 
+                          : 'text-green-600 dark:text-green-400'
+                      }`}>
+                        PKR {user.balance.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className={`text-sm ${
+                        user.is_partner 
+                          ? 'text-amber-700 dark:text-amber-400 font-semibold' 
+                          : 'text-gray-600 dark:text-gray-400'
+                      }`}>Total Spent:</span>
+                      <span className={`font-bold ${
+                        user.is_partner 
+                          ? 'text-red-700 dark:text-red-300 text-lg' 
+                          : 'text-red-600 dark:text-red-400'
+                      }`}>
+                        PKR {(user.total_spent || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className={`text-sm ${
+                        user.is_partner 
+                          ? 'text-amber-700 dark:text-amber-400 font-semibold' 
+                          : 'text-gray-600 dark:text-gray-400'
+                      }`}>Total Entries:</span>
+                      <span className={`font-semibold ${
+                        user.is_partner 
+                          ? 'text-amber-900 dark:text-amber-200 text-lg' 
+                          : 'text-gray-900 dark:text-white'
+                      }`}>
+                        {user.entryCount}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className={`text-sm ${
-                      user.is_partner 
-                        ? 'text-amber-700 dark:text-amber-400 font-semibold' 
-                        : 'text-gray-600 dark:text-gray-400'
-                    }`}>Total Entries:</span>
-                    <span className={`font-semibold ${
-                      user.is_partner 
-                        ? 'text-amber-900 dark:text-amber-200 text-lg' 
-                        : 'text-gray-900 dark:text-white'
-                    }`}>
-                      {user.entryCount}
-                    </span>
-                  </div>
-                </div>
+                )}
 
                 {/* Action Buttons */}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => {
-                      setSelectedUser(user);
-                      setTopUpModalOpen(true);
-                    }}
-                    className="px-4 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg font-semibold hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors text-sm"
-                  >
-                    💰 Load
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedUser(user);
-                      setEditUserModalOpen(true);
-                    }}
-                    className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors text-sm"
-                  >
-                    ✏️ Edit
-                  </button>
-                  <button
-                    onClick={() => handleViewHistory(user)}
-                    className="px-4 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-lg font-semibold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors text-sm"
-                  >
-                    📜 History
-                  </button>
-                  <button
-                    onClick={() => handleGeneratePDF(user)}
-                    className="px-4 py-2 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors text-sm"
-                  >
-                    📄 PDF
-                  </button>
-                  <button
-                    onClick={() => handleResetUserSpent(user)}
-                    className="px-4 py-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded-lg font-semibold hover:bg-yellow-200 dark:hover:bg-yellow-900/50 transition-colors text-sm border-2 border-yellow-300 dark:border-yellow-700"
-                  >
-                    💸 Reset Spent
-                  </button>
-                  <button
-                    onClick={() => handleResetUserHistory(user)}
-                    className="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors text-sm border-2 border-red-300 dark:border-red-700"
-                  >
-                    🔄 Reset History
-                  </button>
-                </div>
+                {isAdmin ? (
+                  /* Only Edit button for Admin users - Enhanced design */
+                  <div className={`flex flex-col items-center gap-4 ${isGullBaba ? 'relative z-10' : ''}`}>
+                    {isGullBaba && (
+                      <div className="text-center">
+                        <p className="text-xs text-yellow-600 dark:text-yellow-400 font-medium mb-2">
+                          Manage Account Settings
+                        </p>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => {
+                        setSelectedUser(user);
+                        setEditUserModalOpen(true);
+                      }}
+                      className={`${
+                        isGullBaba
+                          ? 'px-8 py-3 bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 text-white rounded-xl font-bold text-base shadow-xl hover:shadow-2xl hover:scale-105 transition-all transform border-2 border-blue-300 dark:border-blue-400'
+                          : 'px-6 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors text-sm'
+                      }`}
+                    >
+                      {isGullBaba ? (
+                        <span className="flex items-center gap-2">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                          <span>Edit Profile</span>
+                        </span>
+                      ) : (
+                        '✏️ Edit'
+                      )}
+                    </button>
+                    {isGullBaba && (
+                      <div className="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-400">
+                        <span>⚜️</span>
+                        <span className="font-medium">Administrator Access</span>
+                        <span>⚜️</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* All buttons for regular users */
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => {
+                        setSelectedUser(user);
+                        setTopUpModalOpen(true);
+                      }}
+                      className="px-4 py-2 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg font-semibold hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors text-sm"
+                    >
+                      💰 Load
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedUser(user);
+                        setEditUserModalOpen(true);
+                      }}
+                      className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg font-semibold hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors text-sm"
+                    >
+                      ✏️ Edit
+                    </button>
+                    <button
+                      onClick={() => handleViewHistory(user)}
+                      className="px-4 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-lg font-semibold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors text-sm"
+                    >
+                      📜 History
+                    </button>
+                    <button
+                      onClick={() => handleGeneratePDF(user)}
+                      className="px-4 py-2 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors text-sm"
+                    >
+                      📄 PDF
+                    </button>
+                    <button
+                      onClick={() => handleResetUserSpent(user)}
+                      className="px-4 py-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded-lg font-semibold hover:bg-yellow-200 dark:hover:bg-yellow-900/50 transition-colors text-sm border-2 border-yellow-300 dark:border-yellow-700"
+                    >
+                      💸 Reset Spent
+                    </button>
+                    <button
+                      onClick={() => handleResetUserHistory(user)}
+                      className="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors text-sm border-2 border-red-300 dark:border-red-700"
+                    >
+                      🔄 Reset History
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Expanded History Section */}
@@ -853,7 +972,8 @@ const UserManagement: React.FC = () => {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {users.length === 0 && (
@@ -897,6 +1017,7 @@ const UserManagement: React.FC = () => {
               fullName: selectedUser.full_name,
               email: selectedUser.email,
               isPartner: selectedUser.is_partner,
+              role: selectedUser.role,
             }}
             onSubmit={handleEditUser}
           />
@@ -921,6 +1042,17 @@ const UserManagement: React.FC = () => {
           }}
           onSave={handleEditTransaction}
           userBalance={users.find(u => u.id === expandedUserId)?.balance || 0}
+          transactions={historyData.map(h => ({
+            id: h.id,
+            number: h.number,
+            first: h.first_amount,
+            second: h.second_amount,
+            notes: '',
+            entryType: h.entry_type as any,
+            projectId: 'admin',
+            createdAt: h.created_at,
+            updatedAt: h.created_at,
+          }))}
         />
       )}
 

@@ -427,7 +427,10 @@ const UserDashboard: React.FC = () => {
                         onSuccess={(summary) => {
                           registerHighlights(summary);
                           // Parent state is already updated via addTransaction. Keep a light refresh to sync balances.
-                          refreshBalance();
+                          // Small delay to let database trigger complete, then reconcile spent
+                          setTimeout(() => {
+                            refreshBalance();
+                          }, 500);
                         }}
                       />
                     ) : (
@@ -474,6 +477,7 @@ const UserDashboard: React.FC = () => {
           onClose={() => setEditingTransaction(null)}
           transaction={editingTransaction}
           onSave={handleEditSave}
+          transactions={transactions}
         />
       )}
 

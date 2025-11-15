@@ -87,20 +87,38 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
       let secondAmount = second.trim() ? Number(second) : 0;
 
       // Check for inline FIRST/SECOND keywords in the numbers input
-      const firstMatch = numbersText.match(/\bfirst\s+(\d+(?:\.\d+)?)\b/i);
-      const secondMatch = numbersText.match(/\bsecond\s+(\d+(?:\.\d+)?)\b/i);
+      const extractAmount = (
+        regex: RegExp,
+        setter: (value: number) => void,
+      ) => {
+        let match: RegExpExecArray | null;
+        regex.lastIndex = 0;
+        // Use while loop to find LAST occurrence, so the final inline value wins
+        while ((match = regex.exec(numbersText)) !== null) {
+          const value = Number(match[1]);
+          if (!Number.isNaN(value)) {
+            setter(value);
+          }
+        }
+        numbersText = numbersText.replace(regex, ' ').trim();
+      };
 
-      if (firstMatch) {
-        firstAmount = Number(firstMatch[1]);
-        // Remove the "first X" part from the numbers text
-        numbersText = numbersText.replace(/\bfirst\s+\d+(?:\.\d+)?\b/i, '').trim();
-      }
+      extractAmount(/\bfirst\s+(\d+(?:\.\d+)?)\b/gi, (value) => {
+        firstAmount = value;
+      });
 
-      if (secondMatch) {
-        secondAmount = Number(secondMatch[1]);
-        // Remove the "second X" part from the numbers text
-        numbersText = numbersText.replace(/\bsecond\s+\d+(?:\.\d+)?\b/i, '').trim();
-      }
+      extractAmount(/\bsecond\s+(\d+(?:\.\d+)?)\b/gi, (value) => {
+        secondAmount = value;
+      });
+
+      // Support shorthand tokens like "f100" / "s50"
+      extractAmount(/\bf(\d+(?:\.\d+)?)\b/gi, (value) => {
+        firstAmount = value;
+      });
+
+      extractAmount(/\bs(\d+(?:\.\d+)?)\b/gi, (value) => {
+        secondAmount = value;
+      });
 
       // Parse numbers: split on any non-digit characters - supports ALL Unicode symbols and multiple occurrences
       // The regex [^0-9]+ matches one or more consecutive non-digit characters (supports 10,000+ symbols)
@@ -174,8 +192,9 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
       }
 
       // Deduct total balance once upfront for better performance
+      // IMPORTANT: Don't update total_spent here - let database trigger handle it to avoid doubling
       if (totalCost > 0) {
-        const balanceSuccess = await deductBalance(totalCost);
+        const balanceSuccess = await deductBalance(totalCost, false); // adjustSpent=false to prevent doubling
         if (!balanceSuccess) {
           setErrors(prev => ({
             ...prev,

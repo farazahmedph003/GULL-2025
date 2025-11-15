@@ -9,6 +9,7 @@ interface EditUserModalProps {
     fullName: string;
     email: string;
     isPartner?: boolean;
+    role?: string;
   };
   onSubmit: (updates: {
     fullName?: string;
@@ -27,6 +28,9 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
   const [isPartner, setIsPartner] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // Check if user is admin
+  const isAdmin = user.role === 'admin' || user.username.toLowerCase() === 'gullbaba';
 
   useEffect(() => {
     if (isOpen && user) {
@@ -49,7 +53,8 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
       if (username !== user.username) updates.username = username;
       if (email !== user.email) updates.email = email;
       if (password) updates.password = password;
-      if (isPartner !== (user.isPartner || false)) updates.isPartner = isPartner;
+      // Don't update partner status for admin users
+      if (!isAdmin && isPartner !== (user.isPartner || false)) updates.isPartner = isPartner;
 
       await onSubmit(updates);
       setPassword('');
@@ -147,20 +152,23 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
             />
           </div>
 
-          <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-2 border-amber-200 dark:border-amber-700 rounded-xl">
-            <input
-              type="checkbox"
-              id="editIsPartner"
-              checked={isPartner}
-              onChange={(e) => setIsPartner(e.target.checked)}
-              className="w-5 h-5 text-amber-600 border-gray-300 rounded focus:ring-2 focus:ring-amber-500"
-              disabled={loading}
-            />
-            <label htmlFor="editIsPartner" className="flex items-center gap-2 cursor-pointer select-none">
-              <span className="text-lg">⭐</span>
-              <span className="font-semibold text-gray-900 dark:text-gray-100">Partner Status</span>
-            </label>
-          </div>
+          {/* Partner Status - Hidden for Admin users */}
+          {!isAdmin && (
+            <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-2 border-amber-200 dark:border-amber-700 rounded-xl">
+              <input
+                type="checkbox"
+                id="editIsPartner"
+                checked={isPartner}
+                onChange={(e) => setIsPartner(e.target.checked)}
+                className="w-5 h-5 text-amber-600 border-gray-300 rounded focus:ring-2 focus:ring-amber-500"
+                disabled={loading}
+              />
+              <label htmlFor="editIsPartner" className="flex items-center gap-2 cursor-pointer select-none">
+                <span className="text-lg">⭐</span>
+                <span className="font-semibold text-gray-900 dark:text-gray-100">Partner Status</span>
+              </label>
+            </div>
+          )}
 
           {error && (
             <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">

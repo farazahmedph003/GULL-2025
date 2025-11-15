@@ -40,7 +40,7 @@ function tokenize(raw: string): Array<{ raw: string; number: string; first?: num
 	const text = raw
 		.replace(/\u00A0/g, ' ')
 		.replace(/[\t]+/g, ' ')
-		.replace(/\b([fs]+)\s+(\d+)/gi, (_, letters, digits) => `${letters}${digits}`)
+		.replace(/\b([fs]+)\s{1,3}(\d+)/gi, (_, letters, digits) => `${letters}${digits}`)
 		.trim();
 	const parts = text.split(/\s+|\n|;|,/).filter(Boolean);
 	const tokens: Array<{ raw: string; number: string; first?: number; second?: number }> = [];

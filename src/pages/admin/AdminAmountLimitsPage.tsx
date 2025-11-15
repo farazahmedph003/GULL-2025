@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { EntryType } from '../../types';
 import { useSystemSettings } from '../../hooks/useSystemSettings';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -26,18 +26,61 @@ const parseInput = (value: string): number | null => {
 };
 
 const AdminAmountLimitsPage: React.FC = () => {
-  const { amountLimits, updateAmountLimits, loading } = useSystemSettings();
+  const { amountLimits, updateAmountLimits, loading, refresh } = useSystemSettings();
   const { showSuccess, showError, showInfo } = useNotifications();
   const [selectedType, setSelectedType] = useState<EntryType>('open');
   const [firstInput, setFirstInput] = useState<string>('');
   const [secondInput, setSecondInput] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+  const lastSyncedLimits = useRef<{ first: number | null; second: number | null } | null>(null);
 
   const currentLimits = useMemo(() => amountLimits[selectedType], [amountLimits, selectedType]);
 
+  // Reset sync ref when entry type changes
   useEffect(() => {
-    setFirstInput(formatLimit(currentLimits.first ?? null));
-    setSecondInput(formatLimit(currentLimits.second ?? null));
+    lastSyncedLimits.current = null;
+  }, [selectedType]);
+
+  // Refresh settings when page becomes visible (fallback if real-time subscription misses updates)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refresh();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Also refresh periodically as a fallback (every 30 seconds, only when page is visible)
+    // This ensures limits are synced even if real-time subscription has issues
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refresh();
+      }
+    }, 30000);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(intervalId);
+    };
+  }, [refresh]);
+
+  // Sync inputs with current limits - this will update when limits change from other devices
+  // This effect runs whenever currentLimits changes, ensuring real-time updates are reflected
+  useEffect(() => {
+    const newFirst = formatLimit(currentLimits.first ?? null);
+    const newSecond = formatLimit(currentLimits.second ?? null);
+    
+    // Always update inputs to match the current limits from the database
+    // This ensures real-time updates from other devices are reflected immediately
+    setFirstInput(newFirst);
+    setSecondInput(newSecond);
+    
+    // Update the sync ref to track what we've synced
+    lastSyncedLimits.current = {
+      first: currentLimits.first ?? null,
+      second: currentLimits.second ?? null,
+    };
   }, [currentLimits]);
 
   const handleSave = async () => {
@@ -59,6 +102,11 @@ const AdminAmountLimitsPage: React.FC = () => {
         first: firstLimit,
         second: secondLimit,
       });
+      // Update the synced ref after successful save
+      lastSyncedLimits.current = {
+        first: firstLimit,
+        second: secondLimit,
+      };
       showSuccess(
         'Limits Updated',
         `Amount limits for ${selectedType.toUpperCase()} saved successfully.`,
@@ -81,6 +129,11 @@ const AdminAmountLimitsPage: React.FC = () => {
     setIsSaving(true);
     try {
       await updateAmountLimits(selectedType, { first: null, second: null });
+      // Update the synced ref after successful reset
+      lastSyncedLimits.current = {
+        first: null,
+        second: null,
+      };
       showSuccess(
         'Limits Cleared',
         `Amount limits for ${selectedType.toUpperCase()} reset to unlimited.`,
@@ -200,6 +253,7 @@ const AdminAmountLimitsPage: React.FC = () => {
 };
 
 export default AdminAmountLimitsPage;
+
 
 
 

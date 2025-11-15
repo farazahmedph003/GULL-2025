@@ -15,6 +15,37 @@ export const useTransactions = (projectId: string) => {
   const isUserScope = projectId === 'user-scope';
   const storageKey = isUserScope ? 'gull-transactions-user' : `gull-transactions-${projectId}`;
 
+  const removeTransactionsById = useCallback((idsToRemove: string[]) => {
+    if (!idsToRemove?.length) {
+      return;
+    }
+    const idSet = new Set(idsToRemove);
+    setTransactions(prevTransactions => {
+      const updated = prevTransactions.filter(t => !idSet.has(t.id));
+      localStorage.setItem(storageKey, JSON.stringify(updated));
+      return updated;
+    });
+  }, [storageKey]);
+
+  const settleBalanceForAmount = useCallback(async (amount: number) => {
+    if (amount === 0) {
+      return;
+    }
+
+    // IMPORTANT: Don't update total_spent here - let database trigger/reconciliation handle it to avoid doubling
+    if (amount > 0) {
+      const success = await addBalance(amount, false); // adjustSpent=false to prevent doubling
+      if (!success) {
+        throw new Error('Failed to refund user balance');
+      }
+    } else {
+      const success = await deductBalance(Math.abs(amount), false); // adjustSpent=false to prevent doubling
+      if (!success) {
+        throw new Error('Failed to adjust user balance');
+      }
+    }
+  }, [addBalance, deductBalance]);
+
   // Load transactions from database or localStorage as fallback
   const loadTransactions = useCallback(async () => {
     setLoading(true);
@@ -190,108 +221,72 @@ export const useTransactions = (projectId: string) => {
 
   // Delete transaction with balance refund
   const deleteTransaction = useCallback(async (transactionId: string) => {
+    const transactionToDelete = transactions.find(t => t.id === transactionId);
+    if (!transactionToDelete) {
+      throw new Error('Transaction not found');
+    }
+
+    const refundAmount = (transactionToDelete.first || 0) + (transactionToDelete.second || 0);
+    const shouldUseDatabase = isSupabaseConfigured() && !isOfflineMode();
+
     try {
-      // First, check if transaction exists and get it
-      const transactionToDelete = transactions.find(t => t.id === transactionId);
-      if (!transactionToDelete) {
-        console.log('Transaction already deleted:', transactionId);
-        return false;
+      if (shouldUseDatabase) {
+        await db.deleteTransaction(transactionId, isImpersonating ? originalAdminUser?.id : undefined);
       }
 
-      // Update state immediately to prevent duplicate deletions
-      setTransactions(prevTransactions => {
-        const updated = prevTransactions.filter(t => t.id !== transactionId);
-        // Update localStorage with the new state
-        localStorage.setItem(storageKey, JSON.stringify(updated));
-        return updated;
-      });
-
-      // Calculate refund amount
-      const refundAmount = (transactionToDelete.first || 0) + (transactionToDelete.second || 0);
-      
-      // Refund balance for positive amounts
-      if (refundAmount > 0) {
-        const success = await addBalance(refundAmount);
-        if (!success) {
-          throw new Error('Failed to refund balance');
-        }
-      }
-
-      // Deduct balance for negative amounts (reverse deductions)
-      if (refundAmount < 0) {
-        const success = await deductBalance(Math.abs(refundAmount));
-        if (!success) {
-          throw new Error('Failed to reverse deduction');
-        }
-      }
-
-      // Try to delete from Supabase first
-      if (isSupabaseConfigured() && !isOfflineMode()) {
-        try {
-          await db.deleteTransaction(transactionId, isImpersonating ? originalAdminUser?.id : undefined);
-          console.log('Transaction deleted from Supabase:', transactionId);
-        } catch (dbError) {
-          console.warn('Failed to delete from Supabase:', dbError);
-        }
-      }
+      await settleBalanceForAmount(refundAmount);
+      removeTransactionsById([transactionId]);
       
       return true;
     } catch (error) {
       console.error('Error deleting transaction:', error);
-      return false;
+      throw error instanceof Error ? error : new Error('Failed to delete transaction');
     }
-  }, [transactions, projectId, deductBalance, addBalance, storageKey, isImpersonating, originalAdminUser?.id]);
+  }, [transactions, removeTransactionsById, settleBalanceForAmount, isImpersonating, originalAdminUser?.id]);
 
   // Bulk delete transactions with balance refunds
   const bulkDeleteTransactions = useCallback(async (transactionIds: string[]) => {
-    try {
-      const transactionsToDelete = transactions.filter(t => transactionIds.includes(t.id));
-      
-      // Calculate total refund amount
-      const totalRefund = transactionsToDelete.reduce((sum, t) => {
-        return sum + (t.first || 0) + (t.second || 0);
-      }, 0);
-
-      // Refund balance for positive amounts
-      if (totalRefund > 0) {
-        const success = await addBalance(totalRefund);
-        if (!success) {
-          throw new Error('Failed to refund balance');
-        }
-      }
-
-      // Deduct balance for negative amounts (reverse deductions)
-      if (totalRefund < 0) {
-        const success = await deductBalance(Math.abs(totalRefund));
-        if (!success) {
-          throw new Error('Failed to reverse deduction');
-        }
-      }
-
-      // Try to delete from Supabase first
-      if (isSupabaseConfigured() && !isOfflineMode()) {
-        try {
-          // Delete each transaction from Supabase
-          for (const transactionId of transactionIds) {
-            await db.deleteTransaction(transactionId, isImpersonating ? originalAdminUser?.id : undefined);
-          }
-          console.log('Transactions deleted from Supabase:', transactionIds);
-        } catch (dbError) {
-          console.warn('Failed to delete from Supabase:', dbError);
-        }
-      }
-
-      // Always update localStorage
-      localStorage.setItem(storageKey, JSON.stringify(transactions.filter(t => !transactionIds.includes(t.id))));
-      
-      // Update state using functional update
-      setTransactions(prevTransactions => prevTransactions.filter(t => !transactionIds.includes(t.id)));
-      return true;
-    } catch (error) {
-      console.error('Error bulk deleting transactions:', error);
+    if (!transactionIds.length) {
       return false;
     }
-  }, [transactions, projectId, deductBalance, addBalance]);
+
+    const targetTransactions = transactions.filter(t => transactionIds.includes(t.id));
+    if (!targetTransactions.length) {
+      throw new Error('No transactions found for deletion');
+    }
+
+    const shouldUseDatabase = isSupabaseConfigured() && !isOfflineMode();
+    const deletedTransactions: Transaction[] = [];
+
+    const finalizeDeleted = async () => {
+      if (!deletedTransactions.length) {
+        return;
+      }
+      const totalAmount = deletedTransactions.reduce((sum, t) => {
+        return sum + (t.first || 0) + (t.second || 0);
+      }, 0);
+      await settleBalanceForAmount(totalAmount);
+      removeTransactionsById(deletedTransactions.map(t => t.id));
+    };
+
+    try {
+      if (shouldUseDatabase) {
+        for (const transaction of targetTransactions) {
+          await db.deleteTransaction(transaction.id, isImpersonating ? originalAdminUser?.id : undefined);
+          deletedTransactions.push(transaction);
+        }
+      } else {
+        deletedTransactions.push(...targetTransactions);
+      }
+
+      await finalizeDeleted();
+      return deletedTransactions.length === transactionIds.length;
+    } catch (error) {
+      console.error('Error bulk deleting transactions:', error);
+      await finalizeDeleted();
+      throw error instanceof Error ? error : new Error('Failed to bulk delete transactions');
+    }
+  }, [transactions, removeTransactionsById, settleBalanceForAmount, isImpersonating, originalAdminUser?.id]);
 
   // Add transaction with balance integration
   const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction: boolean = false): Promise<Transaction | null> => {
@@ -390,16 +385,17 @@ export const useTransactions = (projectId: string) => {
       const balanceDifference = newTotal - originalTotal;
 
       // Handle balance adjustments
+      // IMPORTANT: Don't update total_spent here - let database trigger/reconciliation handle it to avoid doubling
       if (balanceDifference !== 0) {
         if (balanceDifference > 0) {
-          // Need to deduct more balance - also increase spent by difference
-          const success = await deductBalance(balanceDifference, true);
+          // Need to deduct more balance
+          const success = await deductBalance(balanceDifference, false); // adjustSpent=false to prevent doubling
           if (!success) {
             throw new Error('Failed to deduct balance for transaction update');
           }
         } else {
-          // Refund balance - also decrease spent by difference
-          const success = await addBalance(Math.abs(balanceDifference), true);
+          // Refund balance
+          const success = await addBalance(Math.abs(balanceDifference), false); // adjustSpent=false to prevent doubling
           if (!success) {
             throw new Error('Failed to refund balance for transaction update');
           }

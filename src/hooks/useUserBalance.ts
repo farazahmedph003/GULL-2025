@@ -73,11 +73,27 @@ export const useUserBalance = () => {
         }
 
         const newBalance = data?.balance || 0; // Default to 0 for new users - admin must top up
-        const newSpent = data?.total_spent || 0; // Get total_spent from database
-        console.log('✅ Balance fetched from database:', newBalance, 'spent:', newSpent);
+        const serverSpent = Math.max(0, data?.total_spent || 0); // Get total_spent from database
+        console.log('✅ Balance fetched from database:', newBalance, 'spent:', serverSpent);
+
+        let resolvedSpent = serverSpent;
+        try {
+          const totals = await db.getUserActiveEntryTotals(user.id);
+          const ledgerSpent = Math.max(0, totals.totalAmount);
+          if (Math.abs(ledgerSpent - serverSpent) > 0.01) {
+            console.warn('⚠️ Detected spent mismatch. Syncing with ledger totals.', {
+              serverSpent,
+              ledgerSpent,
+            });
+            await db.updateUserBalance(user.id, newBalance, { totalSpent: ledgerSpent });
+          }
+          resolvedSpent = ledgerSpent;
+        } catch (ledgerError) {
+          console.warn('⚠️ Could not reconcile spent totals:', ledgerError);
+        }
         
         setBalance(newBalance);
-        setSpent(newSpent);
+        setSpent(resolvedSpent);
         
         // Update localStorage as cache (but don't rely on it)
         const localBalances = JSON.parse(localStorage.getItem('gull_user_balances') || '{}');
@@ -86,7 +102,7 @@ export const useUserBalance = () => {
         
         // Also cache spent amount
         const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
-        spentMap[effectiveUserId] = newSpent;
+        spentMap[effectiveUserId] = resolvedSpent;
         localStorage.setItem('gull_user_spent', JSON.stringify(spentMap));
         
       } catch (err) {
@@ -174,16 +190,22 @@ export const useUserBalance = () => {
       } else {
         try {
           const newBalance = balance - amount;
+          const nextSpent = adjustSpent ? Math.max(0, spent + amount) : spent;
           
           console.log('💰 Deducting balance:', {
             userId: user.id,
             currentBalance: balance,
             amount,
-            newBalance
+            newBalance,
+            nextSpent
           });
 
           // Use service role client to bypass RLS (app_users don't have auth sessions)
-          const { error: updateError } = await db.updateUserBalance(user.id, newBalance);
+          const { error: updateError } = await db.updateUserBalance(
+            user.id,
+            newBalance,
+            adjustSpent ? { totalSpent: nextSpent } : undefined
+          );
 
           if (updateError) {
             console.error('❌ Balance deduction failed:', updateError);
@@ -197,9 +219,9 @@ export const useUserBalance = () => {
           // track spent locally only if adjustSpent is true
           if (adjustSpent) {
             const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
-            spentMap[effectiveUserId] = (spentMap[effectiveUserId] || 0) + amount;
+            spentMap[effectiveUserId] = nextSpent;
             localStorage.setItem('gull_user_spent', JSON.stringify(spentMap));
-            setSpent(spentMap[effectiveUserId]);
+            setSpent(nextSpent);
           }
           
           window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
@@ -214,7 +236,7 @@ export const useUserBalance = () => {
         }
       }
     },
-    [user, balance, hasSufficientBalance, effectiveUserId]
+    [user, balance, hasSufficientBalance, effectiveUserId, spent]
   );
 
   // Add balance (for admin top-ups and refunds)
@@ -246,16 +268,22 @@ export const useUserBalance = () => {
       } else {
         try {
           const newBalance = balance + amount;
+          const nextSpent = adjustSpent ? Math.max(0, spent - amount) : spent;
           
           console.log('💰 Adding balance:', {
             userId: user.id,
             currentBalance: balance,
             amount,
-            newBalance
+            newBalance,
+            nextSpent
           });
 
           // Use service role client to bypass RLS (app_users don't have auth sessions)
-          const { error: updateError } = await db.updateUserBalance(user.id, newBalance);
+          const { error: updateError } = await db.updateUserBalance(
+            user.id,
+            newBalance,
+            adjustSpent ? { totalSpent: nextSpent } : undefined
+          );
 
           if (updateError) {
             console.error('❌ Balance addition failed:', updateError);
@@ -269,9 +297,9 @@ export const useUserBalance = () => {
           // Decrease spent when balance is added back only if adjustSpent is true (e.g., on delete or refund)
           if (adjustSpent) {
             const spentMap = JSON.parse(localStorage.getItem('gull_user_spent') || '{}');
-            spentMap[effectiveUserId] = Math.max(0, (spentMap[effectiveUserId] || 0) - amount);
+            spentMap[effectiveUserId] = nextSpent;
             localStorage.setItem('gull_user_spent', JSON.stringify(spentMap));
-            setSpent(spentMap[effectiveUserId]);
+            setSpent(nextSpent);
           }
           
           window.dispatchEvent(new CustomEvent('user-balance-updated', { detail: { balance: newBalance } }));
@@ -286,7 +314,7 @@ export const useUserBalance = () => {
         }
       }
     },
-    [user, balance, effectiveUserId]
+    [user, balance, effectiveUserId, spent]
   );
 
   // Listen for global balance updates

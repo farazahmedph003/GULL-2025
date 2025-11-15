@@ -1344,8 +1344,13 @@ export class DatabaseService {
 
   /**
    * Update user balance (uses service role to bypass RLS)
+   * Pass totalSpent to keep spent counters in sync with balance changes.
    */
-  async updateUserBalance(userId: string, newBalance: number): Promise<{ error?: any }> {
+  async updateUserBalance(
+    userId: string,
+    newBalance: number,
+    options?: { totalSpent?: number }
+  ): Promise<{ error?: any }> {
     // ⚠️ CRITICAL: Prevent negative balance
     if (newBalance < 0) {
       console.error('❌ Cannot update balance: Balance would become negative', {
@@ -1364,16 +1369,25 @@ export class DatabaseService {
     }
 
     try {
+      const payload: Record<string, number> = { balance: newBalance };
+      if (options && options.totalSpent !== undefined) {
+        const sanitizedSpent = Number.isFinite(options.totalSpent)
+          ? Math.max(0, options.totalSpent)
+          : 0;
+        payload.total_spent = sanitizedSpent;
+      }
+
       console.log('🔧 Updating balance with service role client:', {
         userId,
         newBalance,
+        totalSpent: payload.total_spent,
         hasServiceKey: !!supabaseAdmin.supabaseKey,
         serviceKeyPreview: supabaseAdmin.supabaseKey ? supabaseAdmin.supabaseKey.substring(0, 20) + '...' : 'NOT SET'
       });
 
       const { error } = await supabaseAdmin
         .from('app_users')
-        .update({ balance: newBalance })
+        .update(payload)
         .eq('id', userId);
 
       if (error) {
@@ -1429,6 +1443,41 @@ export class DatabaseService {
         }
         throw error;
       }
+    });
+  }
+
+  /**
+   * Get aggregate totals for all active entries of a user
+   */
+  async getUserActiveEntryTotals(userId: string): Promise<{
+    totalFirst: number;
+    totalSecond: number;
+    totalAmount: number;
+  }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    return this.withRetry(async () => {
+      const { data, error } = await client
+        .from('transactions')
+        .select('sum_first:sum(first_amount), sum_second:sum(second_amount)')
+        .eq('user_id', userId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+
+      const totalFirst = Number(data?.sum_first) || 0;
+      const totalSecond = Number(data?.sum_second) || 0;
+      return {
+        totalFirst,
+        totalSecond,
+        totalAmount: totalFirst + totalSecond,
+      };
     });
   }
 

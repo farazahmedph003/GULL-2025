@@ -166,7 +166,8 @@ const AdminPacketPage: React.FC = () => {
         throw new Error('User data not found');
       }
       const newBalance = userData.balance + refundAmount;
-      await db.updateUserBalance(deletingEntry.user_id, newBalance);
+      const newTotalSpent = Math.max(0, (userData.total_spent || 0) - refundAmount);
+      await db.updateUserBalance(deletingEntry.user_id, newBalance, { totalSpent: newTotalSpent });
 
       // Delete the transaction
       await db.deleteTransaction(deletingEntry.id);
@@ -265,7 +266,8 @@ const AdminPacketPage: React.FC = () => {
       const newBalance = userData.balance - difference;
 
       // Update user balance
-      await db.updateUserBalance(editingEntry.user_id, newBalance);
+      const newTotalSpent = Math.max(0, (userData.total_spent || 0) + difference);
+      await db.updateUserBalance(editingEntry.user_id, newBalance, { totalSpent: newTotalSpent });
 
       // Update transaction
       await db.updateTransaction(editingEntry.id, {
@@ -717,6 +719,17 @@ const AdminPacketPage: React.FC = () => {
             updatedAt: editingEntry.created_at,
           }}
           onSave={handleEdit}
+          transactions={entries.map(e => ({
+            id: e.id,
+            number: e.number,
+            first: e.first_amount,
+            second: e.second_amount,
+            notes: '',
+            entryType: 'packet' as any,
+            projectId: 'admin',
+            createdAt: e.created_at,
+            updatedAt: e.created_at,
+          }))}
         />
       )}
 

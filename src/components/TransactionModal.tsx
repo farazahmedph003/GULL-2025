@@ -331,6 +331,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
           onEdit?.(updated);
           setEditingTransaction(null);
         }}
+        transactions={summary.transactions}
       />
     </>
   );

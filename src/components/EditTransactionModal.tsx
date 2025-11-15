@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import type { Transaction } from '../types';
 import { useUserBalance } from '../hooks/useUserBalance';
 import { formatCurrency } from '../utils/helpers';
+import { useSystemSettings } from '../hooks/useSystemSettings';
+import { getLimitsForEntryType, getExistingTotalsForNumber } from '../utils/amountLimits';
 
 interface EditTransactionModalProps {
   isOpen: boolean;
@@ -9,6 +11,7 @@ interface EditTransactionModalProps {
   transaction: Transaction | null;
   onSave: (transaction: Transaction) => void;
   userBalance?: number; // Optional: use specific user's balance (for admin editing)
+  transactions?: Transaction[]; // All transactions for amount limit validation
 }
 
 const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
@@ -17,12 +20,14 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   transaction,
   onSave,
   userBalance,
+  transactions = [],
 }) => {
   const [first, setFirst] = useState('');
   const [second, setSecond] = useState('');
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<{ first?: string; second?: string; balance?: string }>({});
   const { balance: currentUserBalance } = useUserBalance();
+  const { amountLimits } = useSystemSettings();
   
   // Use provided userBalance for admin editing, otherwise use current user's balance
   const balance = userBalance !== undefined ? userBalance : currentUserBalance;
@@ -50,11 +55,41 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       newErrors.second = 'SECOND must be a valid number';
     }
 
-    // Balance validation - check if increasing amounts beyond available balance
+    // Amount limit and balance validation
     if (transaction) {
-      const oldTotal = transaction.first + transaction.second;
       const newFirst = first.trim() ? Number(first) : 0;
       const newSecond = second.trim() ? Number(second) : 0;
+      
+      // Get existing totals for this number (excluding the current transaction being edited)
+      const otherTransactions = transactions.filter(t => 
+        t.id !== transaction.id && 
+        t.entryType === transaction.entryType && 
+        t.number === transaction.number
+      );
+      
+      const existingTotals = getExistingTotalsForNumber(
+        otherTransactions,
+        transaction.entryType,
+        transaction.number
+      );
+      
+      // Calculate new totals (existing + new values)
+      const newTotalFirst = existingTotals.first + newFirst;
+      const newTotalSecond = existingTotals.second + newSecond;
+      
+      // Check limits
+      const limits = getLimitsForEntryType(amountLimits, transaction.entryType);
+      
+      if (limits.first !== null && newTotalFirst > limits.first) {
+        newErrors.first = `Number ${transaction.number} exceeds First limit (${limits.first}). Current total (excluding this entry) is ${existingTotals.first}. New total would be ${newTotalFirst}.`;
+      }
+      
+      if (limits.second !== null && newTotalSecond > limits.second) {
+        newErrors.second = `Number ${transaction.number} exceeds Second limit (${limits.second}). Current total (excluding this entry) is ${existingTotals.second}. New total would be ${newTotalSecond}.`;
+      }
+
+      // Balance validation - check if increasing amounts beyond available balance
+      const oldTotal = transaction.first + transaction.second;
       const newTotal = newFirst + newSecond;
       const difference = newTotal - oldTotal;
 
