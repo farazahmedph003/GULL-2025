@@ -432,9 +432,43 @@ const escapeHtml = (value: string): string =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
+// Get color class for separator characters
+const getSeparatorColor = (char: string): string => {
+  const separatorColors: Record<string, { light: string; dark: string }> = {
+    '.': { light: 'text-blue-700', dark: 'text-blue-400' },      // Dot - Blue
+    ',': { light: 'text-orange-700', dark: 'text-orange-400' },  // Comma - Orange
+    '\\': { light: 'text-red-700', dark: 'text-red-400' },      // Backslash - Red
+    '/': { light: 'text-green-700', dark: 'text-green-400' },   // Forward slash - Green
+    '-': { light: 'text-purple-700', dark: 'text-purple-400' },  // Dash - Purple
+    '_': { light: 'text-pink-700', dark: 'text-pink-400' },      // Underscore - Pink
+    '|': { light: 'text-cyan-700', dark: 'text-cyan-400' },      // Pipe - Cyan
+    ';': { light: 'text-yellow-700', dark: 'text-yellow-400' },  // Semicolon - Yellow
+    ':': { light: 'text-indigo-700', dark: 'text-indigo-400' },  // Colon - Indigo
+    ' ': { light: 'text-gray-400', dark: 'text-gray-500' },      // Space - Gray
+  };
+
+  const color = separatorColors[char];
+  if (color) {
+    return `${color.light} dark:${color.dark}`;
+  }
+  // Default for unknown separators
+  return 'text-gray-600 dark:text-gray-400';
+};
+
 const renderTokensAsHtml = (tokens: Token[]): string =>
   tokens
     .map((token) => {
+      if (token.type === 'separator') {
+        // Color each separator character individually
+        const chars = token.value.split('');
+        return chars
+          .map((char) => {
+            const colorClass = getSeparatorColor(char);
+            return `<span class="${colorClass}">${escapeHtml(char)}</span>`;
+          })
+          .join('');
+      }
+
       let className = 'text-gray-900 dark:text-gray-100';
 
       if (token.type === 'number') {
