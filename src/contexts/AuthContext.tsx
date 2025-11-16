@@ -651,7 +651,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    // Return a default context instead of throwing to prevent crashes
+    // This allows components to render gracefully and check for user availability
+    console.warn('useAuth called outside AuthProvider - returning default context');
+    return {
+      user: null,
+      loading: true,
+      error: 'AuthProvider not available',
+      signUp: async () => { throw new Error('AuthProvider not available'); },
+      signIn: async () => { throw new Error('AuthProvider not available'); },
+      signOut: async () => { throw new Error('AuthProvider not available'); },
+      clearError: () => {},
+      isImpersonating: false,
+      impersonatedUser: null,
+      originalAdminUser: null,
+      setImpersonatedUser: () => {},
+      exitImpersonation: async () => {},
+    };
   }
   return context;
 };

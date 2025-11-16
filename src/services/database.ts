@@ -100,36 +100,41 @@ export class DatabaseService {
     metadata: any = {}
   ): Promise<void> {
     if (!isSupabaseConfigured()) {
-      console.warn('Supabase not configured, skipping admin action logging');
-      return;
+      return; // Silently skip if not configured
     }
 
     if (!supabase) {
-      console.warn('Database connection not available, skipping admin action logging');
-      return;
+      return; // Silently skip if no connection
     }
 
+    // Skip logging if admin_actions table doesn't exist (non-blocking)
+    // This prevents errors from blocking the main operation
     try {
-      await this.withRetry(async () => {
-        const { error } = await supabase
-          .from('admin_actions')
-          .insert({
-            admin_user_id: adminUserId,
-            target_user_id: targetUserId,
-            action_type: actionType,
-            description,
-            metadata
-          });
+      const { error } = await supabase
+        .from('admin_actions')
+        .insert({
+          admin_user_id: adminUserId,
+          target_user_id: targetUserId,
+          action_type: actionType,
+          description,
+          metadata
+        })
+        .select()
+        .limit(0); // Don't return data, just check if table exists
 
-        if (error) {
-          console.error('Database error in logAdminAction:', error);
-          // Don't throw - just log the error and continue
-          console.warn('Admin action logging failed, but continuing with main operation');
+      if (error) {
+        // If table doesn't exist (PGRST205) or any other error, silently skip
+        // Don't log errors to avoid console spam
+        if (error.code === 'PGRST205' || error.code === '42P01') {
+          // Table doesn't exist - this is expected in some setups
+          return;
         }
-      });
-    } catch (error) {
-      console.error('Failed to log admin action:', error);
-      // Don't throw - logging failures shouldn't break the main operation
+        // For other errors, silently fail
+        return;
+      }
+    } catch (error: any) {
+      // Silently fail - logging is optional and shouldn't block operations
+      return;
     }
   }
 
@@ -1635,23 +1640,48 @@ export class DatabaseService {
         let deductionsMap = new Map<string, { first: number; second: number }>();
         if (adminView) {
           try {
-            const { data: deductions, error: dedError } = await client
-              .from('admin_deductions')
-              .select('transaction_id, deducted_first, deducted_second')
-              .in('transaction_id', transactions.map((t: any) => t.id));
+            const transactionIds = transactions.map((t: any) => t.id);
             
-            if (!dedError && deductions) {
-              // Sum up all deductions per transaction
-              deductions.forEach((ded: any) => {
-                const existing = deductionsMap.get(ded.transaction_id) || { first: 0, second: 0 };
-                deductionsMap.set(ded.transaction_id, {
-                  first: existing.first + (ded.deducted_first || 0),
-                  second: existing.second + (ded.deducted_second || 0),
-                });
-              });
+            // Batch the query if there are too many transaction IDs (PostgreSQL has a limit)
+            const BATCH_SIZE = 1000;
+            let allDeductions: any[] = [];
+            
+            for (let i = 0; i < transactionIds.length; i += BATCH_SIZE) {
+              const batch = transactionIds.slice(i, i + BATCH_SIZE);
+              
+              const { data: deductions, error: dedError } = await client
+                .from('admin_deductions')
+                .select('transaction_id, deducted_first, deducted_second')
+                .in('transaction_id', batch);
+              
+              if (dedError) {
+                console.error('Error loading admin deductions batch:', dedError);
+                // Continue with other batches even if one fails
+                continue;
+              }
+              
+              if (deductions) {
+                allDeductions = allDeductions.concat(deductions);
+              }
             }
-          } catch (err) {
-            console.warn('Could not load admin deductions:', err);
+            
+            // Sum up all deductions per transaction
+            allDeductions.forEach((ded: any) => {
+              const existing = deductionsMap.get(ded.transaction_id) || { first: 0, second: 0 };
+              deductionsMap.set(ded.transaction_id, {
+                first: existing.first + Number(ded.deducted_first || 0),
+                second: existing.second + Number(ded.deducted_second || 0),
+              });
+            });
+            
+            console.log('🔍 Admin deductions loaded:', {
+              totalDeductions: allDeductions.length,
+              uniqueTransactions: deductionsMap.size,
+              sampleDeduction: allDeductions[0] || 'none'
+            });
+          } catch (err: any) {
+            console.error('Could not load admin deductions:', err);
+            // Don't throw - continue without deductions
           }
         }
         
@@ -1683,8 +1713,18 @@ export class DatabaseService {
                   first: deductions.first / numbers.length,
                   second: deductions.second / numbers.length,
                 };
+                const originalFirst = firstAmount;
+                const originalSecond = secondAmount;
                 firstAmount = Math.max(0, firstAmount - deductionPerEntry.first);
                 secondAmount = Math.max(0, secondAmount - deductionPerEntry.second);
+                
+                // Log if deductions were applied (only for first entry to avoid spam)
+                if (numbers.indexOf(number) === 0 && (deductions.first > 0 || deductions.second > 0)) {
+                  console.log(`💰 Applied deductions for bulk transaction ${transaction.id} (${numbers.length} entries):`, {
+                    deductions: { first: deductions.first, second: deductions.second },
+                    perEntry: deductionPerEntry
+                  });
+                }
               }
               
               allEntries.push({
@@ -1705,8 +1745,19 @@ export class DatabaseService {
             
             if (adminView) {
               const deductions = deductionsMap.get(transaction.id) || { first: 0, second: 0 };
+              const originalFirst = firstAmount;
+              const originalSecond = secondAmount;
               firstAmount = Math.max(0, firstAmount - deductions.first);
               secondAmount = Math.max(0, secondAmount - deductions.second);
+              
+              // Log if deductions were applied
+              if (deductions.first > 0 || deductions.second > 0) {
+                console.log(`💰 Applied deductions for transaction ${transaction.id}:`, {
+                  original: { first: originalFirst, second: originalSecond },
+                  deductions: { first: deductions.first, second: deductions.second },
+                  final: { first: firstAmount, second: secondAmount }
+                });
+              }
             }
             
             allEntries.push({
@@ -2006,8 +2057,9 @@ export class DatabaseService {
 
     const client = supabaseAdmin || supabase;
 
-    return this.withRetry(async () => {
-      const { error } = await client
+    // Don't use withRetry for faster execution - let the caller handle retries if needed
+    try {
+      const { data, error } = await client
         .from('admin_deductions')
         .insert({
           transaction_id: transactionId,
@@ -2016,10 +2068,32 @@ export class DatabaseService {
           deducted_second: deductedSecond,
           deduction_type: deductionType,
           metadata: metadata || {},
-        });
+        })
+        .select()
+        .single();
 
-      if (error) throw error;
-    });
+      if (error) {
+        console.error('❌ saveAdminDeduction error:', {
+          error,
+          transactionId,
+          adminUserId,
+          deductedFirst,
+          deductedSecond,
+          deductionType,
+        });
+        throw error;
+      }
+
+      console.log('✅ saveAdminDeduction success:', {
+        id: data?.id,
+        transactionId,
+        deductedFirst,
+        deductedSecond,
+      });
+    } catch (error: any) {
+      console.error('❌ saveAdminDeduction exception:', error);
+      throw error;
+    }
   }
 
   /**
