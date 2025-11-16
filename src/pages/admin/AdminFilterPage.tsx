@@ -269,6 +269,17 @@ const AdminFilterPage: React.FC = () => {
       return;
     }
 
+    // Validate required data
+    if (!calculatedResults || calculatedResults.length === 0) {
+      showError('Error', 'No results to save. Please apply a filter first.');
+      return;
+    }
+
+    if (!user?.id) {
+      showError('Error', 'User not authenticated. Please refresh the page.');
+      return;
+    }
+
     setShowSaveModal(false);
     
     // Save current state to history before making changes
@@ -278,180 +289,233 @@ const AdminFilterPage: React.FC = () => {
     try {
       console.log('🔄 Starting filter save...');
       console.log('📊 Calculated Results:', calculatedResults);
+      console.log('👤 User ID:', user.id);
       
       // Process each number and deduct BOTH first and second if applicable
       const processedEntries = new Set<string>();
+      let errorCount = 0;
+      const errors: string[] = [];
       
       for (const result of calculatedResults) {
-        const entriesForNumber = entries.filter(e => e.number === result.number);
-        console.log(`📌 Processing number ${result.number}: ${entriesForNumber.length} entries found`);
-        console.log(`   First to deduct: ${result.firstResult}, Second to deduct: ${result.secondResult}`);
-        
-        // Group entries by user to deduct proportionally from each user
-        const entriesByUser = new Map<string, typeof entries>();
-        entriesForNumber.forEach(entry => {
-          const userId = entry.userId || 'unknown';
-          if (!entriesByUser.has(userId)) {
-            entriesByUser.set(userId, []);
-          }
-          entriesByUser.get(userId)!.push(entry);
-        });
-        
-        console.log(`   👥 Found ${entriesByUser.size} users with this number`);
-        
-        let remainingFirstToDeduct = result.firstResult;
-        let remainingSecondToDeduct = result.secondResult;
-        
-        // Process entries for each user proportionally
-        for (const [userId, userEntries] of entriesByUser) {
-          console.log(`   👤 Processing user ${userId}: ${userEntries.length} entries`);
-          
-          // Calculate user's total for this number
-          const userFirstTotal = userEntries.reduce((sum, e) => sum + (e.first || 0), 0);
-          const userSecondTotal = userEntries.reduce((sum, e) => sum + (e.second || 0), 0);
-          
-          // Calculate how much to deduct from this user (proportional to their share)
-          const totalFirst = entriesForNumber.reduce((sum, e) => sum + (e.first || 0), 0);
-          const totalSecond = entriesForNumber.reduce((sum, e) => sum + (e.second || 0), 0);
-          
-          // Calculate proportional share and round to whole numbers
-          const userFirstShareRaw = totalFirst > 0 ? (userFirstTotal / totalFirst) * result.firstResult : 0;
-          const userSecondShareRaw = totalSecond > 0 ? (userSecondTotal / totalSecond) * result.secondResult : 0;
-          
-          // Round to whole numbers (no decimals)
-          const userFirstShare = Math.round(userFirstShareRaw);
-          const userSecondShare = Math.round(userSecondShareRaw);
-          
-          // Ensure we don't deduct more than what's remaining and what the user has
-          let userRemainingFirst = Math.min(userFirstShare, remainingFirstToDeduct, userFirstTotal);
-          let userRemainingSecond = Math.min(userSecondShare, remainingSecondToDeduct, userSecondTotal);
-          
-          // Ensure whole numbers (remove any decimal parts)
-          userRemainingFirst = Math.floor(userRemainingFirst);
-          userRemainingSecond = Math.floor(userRemainingSecond);
-          
-          console.log(`   📊 User share: F ${userRemainingFirst.toFixed(0)}, S ${userRemainingSecond.toFixed(0)}`);
-          
-          for (const entry of userEntries) {
-            const entryKey = `${entry.id}-${entry.number}`;
-            if (processedEntries.has(entryKey)) {
-              console.log(`   ⏭️ Skipping already processed entry ${entry.id}`);
-              continue;
-            }
-            
-            const currentFirst = entry.first || 0;
-            const currentSecond = entry.second || 0;
-            
-            let newFirst = currentFirst;
-            let newSecond = currentSecond;
-            let needsUpdate = false;
-            
-            // Deduct from first if needed
-            if (userRemainingFirst > 0 && currentFirst > 0) {
-              // Ensure whole number deduction (no decimals)
-              const deductAmount = Math.floor(Math.min(currentFirst, userRemainingFirst));
-              if (deductAmount > 0) {
-                newFirst = currentFirst - deductAmount;
-                userRemainingFirst -= deductAmount;
-                remainingFirstToDeduct -= deductAmount;
-                needsUpdate = true;
-                console.log(`   💰 Entry ${entry.id} (@${entry.username}) - Deducting F ${deductAmount}: ${currentFirst} → ${newFirst}`);
-              }
-            }
-            
-            // Deduct from second if needed
-            if (userRemainingSecond > 0 && currentSecond > 0) {
-              // Ensure whole number deduction (no decimals)
-              const deductAmount = Math.floor(Math.min(currentSecond, userRemainingSecond));
-              if (deductAmount > 0) {
-                newSecond = currentSecond - deductAmount;
-                userRemainingSecond -= deductAmount;
-                remainingSecondToDeduct -= deductAmount;
-                needsUpdate = true;
-                console.log(`   💎 Entry ${entry.id} (@${entry.username}) - Deducting S ${deductAmount}: ${currentSecond} → ${newSecond}`);
-              }
-            }
-            
-            // Save admin deduction (admin-only, doesn't modify user data)
-            if (needsUpdate) {
-              // Ensure whole numbers (no decimals) when saving
-              const deductedFirst = Math.floor(currentFirst - newFirst);
-              const deductedSecond = Math.floor(currentSecond - newSecond);
-              
-              console.log(`   ✅ Saving admin deduction for entry ${entry.id}: F ${deductedFirst}, S ${deductedSecond}`);
-              
-        await db.saveAdminDeduction(
-          entry.id,
-          user?.id || 'unknown',
-          deductedFirst,
-          deductedSecond,
-          'filter_save',
-                {
-                  entryType: selectedType,
-                  numberFiltered: result.number,
-                  firstLimit,
-                  secondLimit,
-                  firstFilterValue,
-                  secondFilterValue,
-                  firstComparison,
-                  secondComparison,
-                }
-              );
-              
-              processedEntries.add(entryKey);
-            }
-            
-            // Stop if user's share is fully deducted
-            if (userRemainingFirst <= 0 && userRemainingSecond <= 0) {
-              break;
-            }
-          }
-        }
-        
-        console.log(`   ✔️ Number ${result.number} complete. Remaining: F ${remainingFirstToDeduct.toFixed(0)}, S ${remainingSecondToDeduct.toFixed(0)}`);
-      }
-      
-      // Log admin action for each affected user
-      if (user?.id) {
-        const affectedUsers = new Set<string>();
-        for (const result of calculatedResults) {
+        try {
           const entriesForNumber = entries.filter(e => e.number === result.number);
+          console.log(`📌 Processing number ${result.number}: ${entriesForNumber.length} entries found`);
+          console.log(`   First to deduct: ${result.firstResult}, Second to deduct: ${result.secondResult}`);
+          
+          if (entriesForNumber.length === 0) {
+            console.warn(`⚠️ No entries found for number ${result.number}`);
+            continue;
+          }
+          
+          // Group entries by user to deduct proportionally from each user
+          const entriesByUser = new Map<string, typeof entries>();
           entriesForNumber.forEach(entry => {
-            if (entry.userId) affectedUsers.add(entry.userId);
-          });
-        }
-
-        for (const targetUserId of affectedUsers) {
-          await db.logAdminAction(
-            user.id,
-            targetUserId,
-            'filter_save',
-            `Filter & Calculate: Deducted amounts from ${calculatedResults.length} numbers (${selectedType})`,
-            {
-              entryType: selectedType,
-              numbersCount: calculatedResults.length,
-              entriesUpdated: processedEntries.size,
-              firstLimit,
-              secondLimit,
-              firstFilterValue,
-              secondFilterValue,
-              firstComparison,
-              secondComparison,
+            const userId = entry.userId || 'unknown';
+            if (!entriesByUser.has(userId)) {
+              entriesByUser.set(userId, []);
             }
-          );
+            entriesByUser.get(userId)!.push(entry);
+          });
+          
+          console.log(`   👥 Found ${entriesByUser.size} users with this number`);
+          
+          let remainingFirstToDeduct = result.firstResult;
+          let remainingSecondToDeduct = result.secondResult;
+          
+          // Process entries for each user proportionally
+          for (const [userId, userEntries] of entriesByUser) {
+            console.log(`   👤 Processing user ${userId}: ${userEntries.length} entries`);
+            
+            // Calculate user's total for this number
+            const userFirstTotal = userEntries.reduce((sum, e) => sum + (e.first || 0), 0);
+            const userSecondTotal = userEntries.reduce((sum, e) => sum + (e.second || 0), 0);
+            
+            // Calculate how much to deduct from this user (proportional to their share)
+            const totalFirst = entriesForNumber.reduce((sum, e) => sum + (e.first || 0), 0);
+            const totalSecond = entriesForNumber.reduce((sum, e) => sum + (e.second || 0), 0);
+            
+            // Calculate proportional share and round to whole numbers
+            const userFirstShareRaw = totalFirst > 0 ? (userFirstTotal / totalFirst) * result.firstResult : 0;
+            const userSecondShareRaw = totalSecond > 0 ? (userSecondTotal / totalSecond) * result.secondResult : 0;
+            
+            // Round to whole numbers (no decimals)
+            const userFirstShare = Math.round(userFirstShareRaw);
+            const userSecondShare = Math.round(userSecondShareRaw);
+            
+            // Ensure we don't deduct more than what's remaining and what the user has
+            let userRemainingFirst = Math.min(userFirstShare, remainingFirstToDeduct, userFirstTotal);
+            let userRemainingSecond = Math.min(userSecondShare, remainingSecondToDeduct, userSecondTotal);
+            
+            // Ensure whole numbers (remove any decimal parts)
+            userRemainingFirst = Math.floor(userRemainingFirst);
+            userRemainingSecond = Math.floor(userRemainingSecond);
+            
+            console.log(`   📊 User share: F ${userRemainingFirst.toFixed(0)}, S ${userRemainingSecond.toFixed(0)}`);
+            
+            for (const entry of userEntries) {
+              const entryKey = `${entry.id}-${entry.number}`;
+              if (processedEntries.has(entryKey)) {
+                console.log(`   ⏭️ Skipping already processed entry ${entry.id}`);
+                continue;
+              }
+              
+              const currentFirst = entry.first || 0;
+              const currentSecond = entry.second || 0;
+              
+              let newFirst = currentFirst;
+              let newSecond = currentSecond;
+              let needsUpdate = false;
+              
+              // Deduct from first if needed
+              if (userRemainingFirst > 0 && currentFirst > 0) {
+                // Ensure whole number deduction (no decimals)
+                const deductAmount = Math.floor(Math.min(currentFirst, userRemainingFirst));
+                if (deductAmount > 0) {
+                  newFirst = currentFirst - deductAmount;
+                  userRemainingFirst -= deductAmount;
+                  remainingFirstToDeduct -= deductAmount;
+                  needsUpdate = true;
+                  console.log(`   💰 Entry ${entry.id} (@${entry.username}) - Deducting F ${deductAmount}: ${currentFirst} → ${newFirst}`);
+                }
+              }
+              
+              // Deduct from second if needed
+              if (userRemainingSecond > 0 && currentSecond > 0) {
+                // Ensure whole number deduction (no decimals)
+                const deductAmount = Math.floor(Math.min(currentSecond, userRemainingSecond));
+                if (deductAmount > 0) {
+                  newSecond = currentSecond - deductAmount;
+                  userRemainingSecond -= deductAmount;
+                  remainingSecondToDeduct -= deductAmount;
+                  needsUpdate = true;
+                  console.log(`   💎 Entry ${entry.id} (@${entry.username}) - Deducting S ${deductAmount}: ${currentSecond} → ${newSecond}`);
+                }
+              }
+              
+              // Save admin deduction (admin-only, doesn't modify user data)
+              if (needsUpdate) {
+                // Ensure whole numbers (no decimals) when saving
+                const deductedFirst = Math.floor(currentFirst - newFirst);
+                const deductedSecond = Math.floor(currentSecond - newSecond);
+                
+                console.log(`   ✅ Saving admin deduction for entry ${entry.id}: F ${deductedFirst}, S ${deductedSecond}`);
+                
+                try {
+                  await db.saveAdminDeduction(
+                    entry.id,
+                    user.id,
+                    deductedFirst,
+                    deductedSecond,
+                    'filter_save',
+                    {
+                      entryType: selectedType,
+                      numberFiltered: result.number,
+                      firstLimit,
+                      secondLimit,
+                      firstFilterValue,
+                      secondFilterValue,
+                      firstComparison,
+                      secondComparison,
+                    }
+                  );
+                  
+                  processedEntries.add(entryKey);
+                } catch (saveError: any) {
+                  errorCount++;
+                  const errorMsg = `Failed to save deduction for entry ${entry.id}: ${saveError?.message || 'Unknown error'}`;
+                  errors.push(errorMsg);
+                  console.error(`   ❌ ${errorMsg}`, saveError);
+                  // Continue with other entries even if one fails
+                }
+              }
+              
+              // Stop if user's share is fully deducted
+              if (userRemainingFirst <= 0 && userRemainingSecond <= 0) {
+                break;
+              }
+            }
+          }
+          
+          console.log(`   ✔️ Number ${result.number} complete. Remaining: F ${remainingFirstToDeduct.toFixed(0)}, S ${remainingSecondToDeduct.toFixed(0)}`);
+        } catch (resultError: any) {
+          errorCount++;
+          const errorMsg = `Error processing number ${result.number}: ${resultError?.message || 'Unknown error'}`;
+          errors.push(errorMsg);
+          console.error(`   ❌ ${errorMsg}`, resultError);
+          // Continue with other numbers even if one fails
         }
       }
       
-      showSuccess('Success', `Saved filter! Created ${processedEntries.size} admin deductions (admin-only view).`);
+      // Log admin action for each affected user (non-blocking)
+      if (user?.id && processedEntries.size > 0) {
+        try {
+          const affectedUsers = new Set<string>();
+          for (const result of calculatedResults) {
+            const entriesForNumber = entries.filter(e => e.number === result.number);
+            entriesForNumber.forEach(entry => {
+              if (entry.userId) affectedUsers.add(entry.userId);
+            });
+          }
+
+          // Log actions in parallel (don't wait for all to complete)
+          const logPromises = Array.from(affectedUsers).map(targetUserId => 
+            db.logAdminAction(
+              user.id,
+              targetUserId,
+              'filter_save',
+              `Filter & Calculate: Deducted amounts from ${calculatedResults.length} numbers (${selectedType})`,
+              {
+                entryType: selectedType,
+                numbersCount: calculatedResults.length,
+                entriesUpdated: processedEntries.size,
+                firstLimit,
+                secondLimit,
+                firstFilterValue,
+                secondFilterValue,
+                firstComparison,
+                secondComparison,
+              }
+            ).catch(err => {
+              console.warn('Failed to log admin action:', err);
+              // Don't throw - logging failures shouldn't break the operation
+            })
+          );
+          
+          // Don't await - let it run in background
+          Promise.all(logPromises).catch(err => {
+            console.warn('Some admin action logs failed:', err);
+          });
+        } catch (logError) {
+          console.warn('Error setting up admin action logging:', logError);
+          // Don't throw - logging failures shouldn't break the operation
+        }
+      }
+      
+      // Show result message
+      if (errorCount > 0) {
+        showError(
+          'Partial Success', 
+          `Saved ${processedEntries.size} deductions, but ${errorCount} errors occurred. Check console for details.`
+        );
+      } else if (processedEntries.size > 0) {
+        showSuccess('Success', `Saved filter! Created ${processedEntries.size} admin deductions (admin-only view).`);
+      } else {
+        showError('Error', 'No deductions were created. Please check your filter criteria.');
+      }
       
       // Reload entries to show updated values and save to history
-      await loadEntries(true);
+      if (processedEntries.size > 0) {
+        await loadEntries(true);
+      }
       
-      // Clear results
-      setCalculatedResults([]);
-    } catch (error) {
+      // Clear results only if successful
+      if (errorCount === 0) {
+        setCalculatedResults([]);
+      }
+    } catch (error: any) {
       console.error('❌ Save filter error:', error);
-      showError('Error', 'Failed to save filter');
+      const errorMessage = error?.message || 'Unknown error occurred';
+      showError('Error', `Failed to save filter: ${errorMessage}`);
     } finally {
       setProcessing(false);
     }
