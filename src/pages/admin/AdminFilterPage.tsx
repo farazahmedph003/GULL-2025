@@ -314,21 +314,11 @@ const AdminFilterPage: React.FC = () => {
           const totalFirst = entriesForNumber.reduce((sum, e) => sum + (e.first || 0), 0);
           const totalSecond = entriesForNumber.reduce((sum, e) => sum + (e.second || 0), 0);
           
-          // Calculate proportional share and round to whole numbers
-          const userFirstShareRaw = totalFirst > 0 ? (userFirstTotal / totalFirst) * result.firstResult : 0;
-          const userSecondShareRaw = totalSecond > 0 ? (userSecondTotal / totalSecond) * result.secondResult : 0;
+          const userFirstShare = totalFirst > 0 ? (userFirstTotal / totalFirst) * result.firstResult : 0;
+          const userSecondShare = totalSecond > 0 ? (userSecondTotal / totalSecond) * result.secondResult : 0;
           
-          // Round to whole numbers (no decimals)
-          const userFirstShare = Math.round(userFirstShareRaw);
-          const userSecondShare = Math.round(userSecondShareRaw);
-          
-          // Ensure we don't deduct more than what's remaining and what the user has
           let userRemainingFirst = Math.min(userFirstShare, remainingFirstToDeduct, userFirstTotal);
           let userRemainingSecond = Math.min(userSecondShare, remainingSecondToDeduct, userSecondTotal);
-          
-          // Ensure whole numbers (remove any decimal parts)
-          userRemainingFirst = Math.floor(userRemainingFirst);
-          userRemainingSecond = Math.floor(userRemainingSecond);
           
           console.log(`   📊 User share: F ${userRemainingFirst.toFixed(0)}, S ${userRemainingSecond.toFixed(0)}`);
           
@@ -348,35 +338,28 @@ const AdminFilterPage: React.FC = () => {
             
             // Deduct from first if needed
             if (userRemainingFirst > 0 && currentFirst > 0) {
-              // Ensure whole number deduction (no decimals)
-              const deductAmount = Math.floor(Math.min(currentFirst, userRemainingFirst));
-              if (deductAmount > 0) {
-                newFirst = currentFirst - deductAmount;
-                userRemainingFirst -= deductAmount;
-                remainingFirstToDeduct -= deductAmount;
-                needsUpdate = true;
-                console.log(`   💰 Entry ${entry.id} (@${entry.username}) - Deducting F ${deductAmount}: ${currentFirst} → ${newFirst}`);
-              }
+              const deductAmount = Math.min(currentFirst, userRemainingFirst);
+              newFirst = currentFirst - deductAmount;
+              userRemainingFirst -= deductAmount;
+              remainingFirstToDeduct -= deductAmount;
+              needsUpdate = true;
+              console.log(`   💰 Entry ${entry.id} (@${entry.username}) - Deducting F ${deductAmount}: ${currentFirst} → ${newFirst}`);
             }
             
             // Deduct from second if needed
             if (userRemainingSecond > 0 && currentSecond > 0) {
-              // Ensure whole number deduction (no decimals)
-              const deductAmount = Math.floor(Math.min(currentSecond, userRemainingSecond));
-              if (deductAmount > 0) {
-                newSecond = currentSecond - deductAmount;
-                userRemainingSecond -= deductAmount;
-                remainingSecondToDeduct -= deductAmount;
-                needsUpdate = true;
-                console.log(`   💎 Entry ${entry.id} (@${entry.username}) - Deducting S ${deductAmount}: ${currentSecond} → ${newSecond}`);
-              }
+              const deductAmount = Math.min(currentSecond, userRemainingSecond);
+              newSecond = currentSecond - deductAmount;
+              userRemainingSecond -= deductAmount;
+              remainingSecondToDeduct -= deductAmount;
+              needsUpdate = true;
+              console.log(`   💎 Entry ${entry.id} (@${entry.username}) - Deducting S ${deductAmount}: ${currentSecond} → ${newSecond}`);
             }
             
             // Save admin deduction (admin-only, doesn't modify user data)
             if (needsUpdate) {
-              // Ensure whole numbers (no decimals) when saving
-              const deductedFirst = Math.floor(currentFirst - newFirst);
-              const deductedSecond = Math.floor(currentSecond - newSecond);
+              const deductedFirst = currentFirst - newFirst;
+              const deductedSecond = currentSecond - newSecond;
               
               console.log(`   ✅ Saving admin deduction for entry ${entry.id}: F ${deductedFirst}, S ${deductedSecond}`);
               
