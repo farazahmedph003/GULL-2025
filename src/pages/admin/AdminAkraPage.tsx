@@ -303,19 +303,22 @@ const AdminAkraPage: React.FC = () => {
     if (!confirm) return;
 
     const result = await confirm(
-      `Are you sure you want to DELETE ALL AKRA ENTRIES?\n\nThis will permanently delete ${stats.totalEntries} entries across all users.\n\nThis action CANNOT be undone!`,
-      { type: 'danger', title: '🚨 Reset All Akra Entries' }
+      `Are you sure you want to RESET ADMIN VIEW for Akra entries?\n\nThis will remove all admin deductions and hide entries from admin view.\n\n⚠️ User data will NOT be affected - only the admin view will be reset.`,
+      { type: 'warning', title: '🔄 Reset Admin View (Akra)' }
     );
 
     if (!result) return;
 
+    setResetting(true);
     try {
-      await db.deleteAllEntriesByType('akra');
-      await showSuccess('Success', `All ${stats.totalEntries} Akra entries have been deleted`);
+      const result = await db.deleteAllAdminDeductionsByType('akra');
+      await showSuccess('Success', `Admin view reset! Hidden ${result.deletedCount} entries from admin view. User data unchanged.`);
       loadEntries(true); // Force reload after reset
     } catch (error) {
       console.error('Reset error:', error);
-      showError('Error', 'Failed to reset Akra entries');
+      showError('Error', 'Failed to reset admin view');
+    } finally {
+      setResetting(false);
     }
   };
 
