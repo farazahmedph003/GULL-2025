@@ -51,6 +51,7 @@ const AdminAkraPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'aggregated' | 'history'>('aggregated');
   const [searchNumber, setSearchNumber] = useState('');
   const [showNumbersModal, setShowNumbersModal] = useState<{ numbers: string[]; title: string } | null>(null);
+  const [resetting, setResetting] = useState(false);
   const [stats, setStats] = useState({
     totalEntries: 0,
     firstPkr: 0,
