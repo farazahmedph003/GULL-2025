@@ -660,12 +660,14 @@ export const useAuth = (): AuthContextType => {
       error: 'AuthProvider not available',
       signUp: async () => { throw new Error('AuthProvider not available'); },
       signIn: async () => { throw new Error('AuthProvider not available'); },
+      signInAnonymously: async () => { throw new Error('AuthProvider not available'); },
       signOut: async () => { throw new Error('AuthProvider not available'); },
+      updateProfile: async () => { throw new Error('AuthProvider not available'); },
       clearError: () => {},
       isImpersonating: false,
       impersonatedUser: null,
       originalAdminUser: null,
-      setImpersonatedUser: () => {},
+      setImpersonatedUser: async () => {},
       exitImpersonation: async () => {},
     };
   }

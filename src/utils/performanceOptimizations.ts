@@ -46,7 +46,7 @@ export function arePropsEqual<T extends Record<string, any>>(
     // Handle arrays
     if (Array.isArray(prev) && Array.isArray(next)) {
       if (prev.length !== next.length) return false;
-      return prev.every((item, idx) => item === next[idx]);
+      return prev.every((item: any, idx: number) => item === next[idx]);
     }
     
     // Handle objects

@@ -344,7 +344,7 @@ const AdminOpenPage: React.FC = () => {
     });
     
     // Process filter_save groups (all deductions with same filter_save_id are one group)
-    filterSaveGroups.forEach((filterDeductions, filterSaveId) => {
+    filterSaveGroups.forEach((filterDeductions) => {
       const totalFirst = filterDeductions.reduce((sum, d) => sum + d.deducted_first, 0);
       const totalSecond = filterDeductions.reduce((sum, d) => sum + d.deducted_second, 0);
       const displayNumbers = filterDeductions.map(d => d.transactions.number).join(', ');
@@ -723,7 +723,7 @@ const AdminOpenPage: React.FC = () => {
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2 flex-wrap">
                               {(() => {
-                                const allNumbers = group.displayData.numbers.split(', ').map(n => n.trim());
+                                const allNumbers = group.displayData.numbers.split(', ').map((n: string) => n.trim());
                                 const maxDisplay = 10;
                                 const displayNumbers = allNumbers.slice(0, maxDisplay);
                                 const hasMore = allNumbers.length > maxDisplay;

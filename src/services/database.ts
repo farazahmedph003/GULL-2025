@@ -1809,7 +1809,7 @@ export class DatabaseService {
               const batch = transactionIds.slice(i, i + BATCH_SIZE);
               
               // Filter out any null/undefined/invalid IDs
-              const validBatch = batch.filter(id => id && typeof id === 'string' && id.length > 0);
+              const validBatch = batch.filter((id: any) => id && typeof id === 'string' && id.length > 0);
               
               if (validBatch.length === 0) {
                 console.warn('⚠️ Skipping empty batch of transaction IDs');
@@ -1894,8 +1894,6 @@ export class DatabaseService {
                   first: deductions.first / numbers.length,
                   second: deductions.second / numbers.length,
                 };
-                const originalFirst = firstAmount;
-                const originalSecond = secondAmount;
                 firstAmount = Math.max(0, firstAmount - deductionPerEntry.first);
                 secondAmount = Math.max(0, secondAmount - deductionPerEntry.second);
                 
