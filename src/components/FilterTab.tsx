@@ -15,10 +15,11 @@ interface FilterTabProps {
 
 const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResults, availableEntryTypes, onEntryTypeChange, onSaveResultsForType }) => {
   const { showError, showWarning } = useNotifications();
+  // Filter states - Default values set to 1 and disabled (not editable)
   const [firstOperator, setFirstOperator] = useState<FilterOperator>('>=');
-  const [firstValue, setFirstValue] = useState('');
+  const [firstValue, setFirstValue] = useState('1');
   const [secondOperator, setSecondOperator] = useState<FilterOperator>('>=');
-  const [secondValue, setSecondValue] = useState('');
+  const [secondValue, setSecondValue] = useState('1');
   const [firstLimit, setFirstLimit] = useState('');
   const [secondLimit, setSecondLimit] = useState('');
   const [results, setResults] = useState<FilterResult[]>([]);
@@ -251,7 +252,9 @@ const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResul
               <select
                 value={firstOperator}
                 onChange={(e) => setFirstOperator(e.target.value as FilterOperator)}
-                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-4 py-2.5 text-center text-xl font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                disabled
+                className="w-full bg-gray-600 border border-gray-500 text-gray-400 rounded-lg px-4 py-2.5 text-center text-xl font-bold cursor-not-allowed opacity-60"
+                title="Default value: 1 (not editable)"
               >
                 {operators.map((op) => (
                   <option key={op} value={op}>
@@ -269,9 +272,14 @@ const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResul
                 type="number"
                 value={firstValue}
                 onChange={(e) => setFirstValue(e.target.value)}
-                placeholder="0.00"
-                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-4 py-2.5 text-lg focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                disabled
+                placeholder="1 (default)"
+                className="w-full bg-gray-600 border border-gray-500 text-gray-400 rounded-lg px-4 py-2.5 text-lg cursor-not-allowed opacity-60"
+                title="Default value: 1 (not editable)"
               />
+              <p className="mt-1 text-xs text-gray-400 italic">
+                Default value: 1 (applies to all entry types)
+              </p>
             </div>
 
             <div>
@@ -303,7 +311,9 @@ const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResul
               <select
                 value={secondOperator}
                 onChange={(e) => setSecondOperator(e.target.value as FilterOperator)}
-                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-4 py-2.5 text-center text-xl font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                disabled
+                className="w-full bg-gray-600 border border-gray-500 text-gray-400 rounded-lg px-4 py-2.5 text-center text-xl font-bold cursor-not-allowed opacity-60"
+                title="Default value: 1 (not editable)"
               >
                 {operators.map((op) => (
                   <option key={op} value={op}>
@@ -321,9 +331,14 @@ const FilterTab: React.FC<FilterTabProps> = ({ summaries, entryType, onSaveResul
                 type="number"
                 value={secondValue}
                 onChange={(e) => setSecondValue(e.target.value)}
-                placeholder="0.00"
-                className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-4 py-2.5 text-lg focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                disabled
+                placeholder="1 (default)"
+                className="w-full bg-gray-600 border border-gray-500 text-gray-400 rounded-lg px-4 py-2.5 text-lg cursor-not-allowed opacity-60"
+                title="Default value: 1 (not editable)"
               />
+              <p className="mt-1 text-xs text-gray-400 italic">
+                Default value: 1 (applies to all entry types)
+              </p>
             </div>
 
             <div>

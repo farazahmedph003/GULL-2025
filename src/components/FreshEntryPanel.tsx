@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useTransactions } from '../hooks/useTransactions';
 import { useNotifications } from '../contexts/NotificationContext';
+import LoadingButton from './LoadingButton';
 
 interface FreshEntryPanelProps {
   projectId: string;
@@ -56,9 +57,17 @@ const FreshEntryPanel: React.FC<FreshEntryPanelProps> = ({ projectId, entryType,
         updatedAt: new Date().toISOString(),
       }));
 
-      for (const tx of payloads) {
-        const ok = await addTransaction(tx);
-        if (!ok) throw new Error('Failed to add one or more entries');
+      // Use batch operation if available
+      const { addTransactionsBatch } = useTransactions(projectId);
+      if (addTransactionsBatch && payloads.length > 1) {
+        // Batch add all transactions at once (INSTANT!)
+        await addTransactionsBatch(payloads);
+      } else {
+        // Fallback to individual adds
+        for (const tx of payloads) {
+          const ok = await addTransaction(tx);
+          if (!ok) throw new Error('Failed to add one or more entries');
+        }
       }
 
       setNumbers('');
@@ -101,13 +110,16 @@ const FreshEntryPanel: React.FC<FreshEntryPanelProps> = ({ projectId, entryType,
 
       <div className="flex items-center justify-between">
         <div className="text-xs text-gray-500 dark:text-gray-400">{numbersList.length} number(s) ready</div>
-        <button
+        <LoadingButton
           type="submit"
-          disabled={!canSubmit || isSubmitting}
-          className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-500 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+          loading={isSubmitting}
+          disabled={!canSubmit}
+          variant="success"
+          size="sm"
+          className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-500 text-white font-semibold"
         >
-          {isSubmitting ? 'Adding…' : 'Add Entry'}
-        </button>
+          Add Entry
+        </LoadingButton>
       </div>
     </form>
   );

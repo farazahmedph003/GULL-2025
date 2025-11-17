@@ -17,11 +17,13 @@ import {
   getLimitsForEntryType,
   padNumberForEntryType,
 } from '../utils/amountLimits';
+import LoadingButton from './LoadingButton';
 
 interface IntelligentEntryProps {
   projectId: string;
   entryType: EntryType;
   addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<Transaction | null>;
+  addTransactionsBatch?: (transactions: Array<Omit<Transaction, 'id'>>, skipBalanceDeduction?: boolean) => Promise<Transaction[]>;
   transactions: Transaction[];
   onSuccess?: (summary: AddedEntrySummary[]) => void;
 }
@@ -622,6 +624,7 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
   projectId,
   entryType: _entryType,
   addTransaction,
+  addTransactionsBatch,
   transactions,
   onSuccess: _onSuccess,
 }) => {
@@ -846,9 +849,17 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
         updatedAt: now,
       }));
 
-      const results = await Promise.all(
-        transactionsToAdd.map((transaction) => addTransaction(transaction, true)),
-      );
+      // Use batch operation if available and multiple transactions
+      let results: (Transaction | null)[] = [];
+      if (addTransactionsBatch && transactionsToAdd.length > 1) {
+        const batchResults = await addTransactionsBatch(transactionsToAdd, true);
+        results = batchResults;
+      } else {
+        // Fallback to individual adds
+        results = await Promise.all(
+          transactionsToAdd.map((transaction) => addTransaction(transaction, true)),
+        );
+      }
 
       const successfulResults = results.filter(
         (transaction): transaction is Transaction => transaction !== null,
@@ -1095,28 +1106,32 @@ const IntelligentEntry: React.FC<IntelligentEntryProps> = ({
                 Total: {totalBoth.toLocaleString()}
               </span>
             </div>
-            <button
+            <LoadingButton
               type="button"
               onClick={handleAdd}
-              className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg shadow-md hover:shadow-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-              disabled={isSubmitting || !inputText.trim()}
+              loading={isSubmitting}
+              variant="primary"
+              size="sm"
+              disabled={!inputText.trim()}
             >
-              {isSubmitting ? 'Processing...' : 'Add'}
-            </button>
+              Add
+            </LoadingButton>
           </div>
         );
       })()}
 
       {!parsedEntries.groups.length && (
         <div className="flex justify-end">
-          <button
+          <LoadingButton
             type="button"
             onClick={handleAdd}
-            className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg shadow-md hover:shadow-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-            disabled={isSubmitting || !inputText.trim()}
+            loading={isSubmitting}
+            variant="primary"
+            size="sm"
+            disabled={!inputText.trim()}
           >
-            {isSubmitting ? 'Processing...' : 'Add'}
-          </button>
+            Add
+          </LoadingButton>
         </div>
       )}
 

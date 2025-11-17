@@ -8,6 +8,7 @@ interface EntryFormsBarProps {
   entryType?: 'akra' | 'ring' | 'open' | 'packet';
   onEntryAdded?: (summary?: AddedEntrySummary[]) => void;
   addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<Transaction | null>;
+  addTransactionsBatch?: (transactions: Array<Omit<Transaction, 'id'>>, skipBalanceDeduction?: boolean) => Promise<Transaction[]>;
   transactions: Transaction[];
 }
 
@@ -16,6 +17,7 @@ const EntryFormsBar: React.FC<EntryFormsBarProps> = ({
   entryType = 'akra',
   onEntryAdded,
   addTransaction,
+  addTransactionsBatch,
   transactions,
 }) => {
   const [activeTab, setActiveTab] = useState<'standard' | 'intelligent'>('standard');
@@ -54,6 +56,7 @@ const EntryFormsBar: React.FC<EntryFormsBarProps> = ({
           <StandardEntry
             projectId={projectId}
             addTransaction={addTransaction}
+            addTransactionsBatch={addTransactionsBatch}
             transactions={transactions}
             onSuccess={(added) => {
               onEntryAdded?.(added);
@@ -64,6 +67,7 @@ const EntryFormsBar: React.FC<EntryFormsBarProps> = ({
             projectId={projectId}
             entryType={entryType}
             addTransaction={addTransaction}
+            addTransactionsBatch={addTransactionsBatch}
             transactions={transactions}
             onSuccess={(added) => {
               onEntryAdded?.(added);

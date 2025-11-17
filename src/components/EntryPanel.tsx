@@ -11,6 +11,7 @@ interface EntryPanelProps {
   transactions: Transaction[];
   onEntryAdded?: (summary?: AddedEntrySummary[]) => void;
   addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<Transaction | null>;
+  addTransactionsBatch?: (transactions: Array<Omit<Transaction, 'id'>>, skipBalanceDeduction?: boolean) => Promise<Transaction[]>;
 }
 
 const EntryPanel: React.FC<EntryPanelProps> = ({
@@ -21,6 +22,7 @@ const EntryPanel: React.FC<EntryPanelProps> = ({
   transactions,
   onEntryAdded,
   addTransaction,
+  addTransactionsBatch,
 }) => {
   const [activeTab, setActiveTab] = useState<'standard' | 'intelligent'>('standard');
 
@@ -112,6 +114,7 @@ const EntryPanel: React.FC<EntryPanelProps> = ({
               <StandardEntry
                 projectId={projectId}
                 addTransaction={addTransaction}
+                addTransactionsBatch={addTransactionsBatch}
                 transactions={transactions}
                 onSuccess={(added) => {
                   onEntryAdded?.(added);
@@ -123,6 +126,7 @@ const EntryPanel: React.FC<EntryPanelProps> = ({
                 projectId={projectId}
                 entryType={entryType}
                 addTransaction={addTransaction}
+                addTransactionsBatch={addTransactionsBatch}
                 transactions={transactions}
                 onSuccess={(added) => {
                   onEntryAdded?.(added);

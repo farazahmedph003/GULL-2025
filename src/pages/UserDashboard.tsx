@@ -40,7 +40,8 @@ const UserDashboard: React.FC = () => {
     transactions,
     refresh: refreshTransactions, 
     getStatistics: _getStatistics, 
-    addTransaction, 
+    addTransaction,
+    addTransactionsBatch,
     deleteTransaction,
     bulkDeleteTransactions,
     updateTransaction,
@@ -423,6 +424,7 @@ const UserDashboard: React.FC = () => {
                       <StandardEntry
                         projectId={'user-scope'}
                         addTransaction={addTransaction}
+                        addTransactionsBatch={addTransactionsBatch}
                         transactions={transactions}
                         onSuccess={(summary) => {
                           registerHighlights(summary);
@@ -438,6 +440,7 @@ const UserDashboard: React.FC = () => {
                         projectId={'user-scope'}
                         entryType={project.entryTypes[0] || 'akra'}
                         addTransaction={addTransaction}
+                        addTransactionsBatch={addTransactionsBatch}
                         transactions={transactions}
                         onSuccess={(summary) => {
                           registerHighlights(summary);

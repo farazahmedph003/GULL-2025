@@ -244,7 +244,7 @@ export const useTransactions = (projectId: string) => {
     }
   }, [transactions, removeTransactionsById, settleBalanceForAmount, isImpersonating, originalAdminUser?.id]);
 
-  // Bulk delete transactions with balance refunds
+  // Bulk delete transactions with balance refunds (using batch operation)
   const bulkDeleteTransactions = useCallback(async (transactionIds: string[]) => {
     if (!transactionIds.length) {
       return false;
@@ -271,10 +271,14 @@ export const useTransactions = (projectId: string) => {
 
     try {
       if (shouldUseDatabase) {
-        for (const transaction of targetTransactions) {
-          await db.deleteTransaction(transaction.id, isImpersonating ? originalAdminUser?.id : undefined);
-          deletedTransactions.push(transaction);
-        }
+        // Use batch delete for instant deletion
+        console.log(`🚀 Batch deleting ${targetTransactions.length} transactions...`);
+        await db.deleteTransactionsBatch(
+          targetTransactions.map(t => t.id),
+          isImpersonating ? originalAdminUser?.id : undefined
+        );
+        deletedTransactions.push(...targetTransactions);
+        console.log(`✅ Batch delete complete!`);
       } else {
         deletedTransactions.push(...targetTransactions);
       }
@@ -369,6 +373,87 @@ export const useTransactions = (projectId: string) => {
     }
   }, [projectId, deductBalance, addBalance, user]);
 
+  // Batch add transactions with balance integration (much faster than individual adds)
+  const addTransactionsBatch = useCallback(async (
+    transactionsToAdd: Array<Omit<Transaction, 'id'>>,
+    skipBalanceDeduction: boolean = false
+  ): Promise<Transaction[]> => {
+    if (transactionsToAdd.length === 0) {
+      return [];
+    }
+
+    try {
+      // Calculate total cost for balance deduction
+      const totalCost = transactionsToAdd.reduce((sum, t) => {
+        return sum + (t.first || 0) + (t.second || 0);
+      }, 0);
+
+      // Deduct balance for positive amounts (only if not skipped)
+      if (!skipBalanceDeduction && totalCost > 0) {
+        const success = await deductBalance(totalCost);
+        if (!success) {
+          throw new Error('Failed to deduct balance');
+        }
+      }
+
+      // Add balance for negative amounts (refunds/deductions)
+      if (!skipBalanceDeduction && totalCost < 0) {
+        const success = await addBalance(Math.abs(totalCost));
+        if (!success) {
+          throw new Error('Failed to add balance');
+        }
+      }
+
+      let newTransactions: Transaction[] = [];
+
+      // Try to save to Supabase first (only if user is authenticated)
+      if (isSupabaseConfigured() && !isOfflineMode() && user?.id) {
+        try {
+          console.log(`🚀 Batch creating ${transactionsToAdd.length} transactions...`);
+          newTransactions = await db.createTransactionsBatch(
+            user.id,
+            transactionsToAdd,
+            isImpersonating ? originalAdminUser?.id : undefined
+          );
+          console.log(`✅ Batch create complete! ${newTransactions.length} transactions created`);
+        } catch (dbError) {
+          console.error('❌ Failed to batch save to Supabase, falling back to individual saves:', dbError);
+          // Fallback to individual saves
+          for (const transaction of transactionsToAdd) {
+            try {
+              const tx = await db.createTransaction(user.id, transaction, isImpersonating ? originalAdminUser?.id : undefined);
+              newTransactions.push(tx);
+            } catch (err) {
+              console.error('Failed to save transaction:', err);
+            }
+          }
+        }
+      } else {
+        // Offline mode - use localStorage
+        newTransactions = transactionsToAdd.map(transaction => ({
+          ...transaction,
+          id: `txn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }));
+      }
+
+      // Update state using functional update
+      setTransactions(prevTransactions => {
+        const updatedTransactions = [...prevTransactions, ...newTransactions];
+        // Always save to localStorage as backup/cache
+        localStorage.setItem(storageKey, JSON.stringify(updatedTransactions));
+        return updatedTransactions;
+      });
+
+      console.log(`✅ Batch add complete! ${newTransactions.length} transactions added`);
+      return newTransactions;
+    } catch (error) {
+      console.error('Error batch adding transactions:', error);
+      throw error instanceof Error ? error : new Error('Failed to batch add transactions');
+    }
+  }, [projectId, deductBalance, addBalance, user, isImpersonating, originalAdminUser?.id]);
+
   // Update transaction with balance handling
   const updateTransaction = useCallback(async (transactionId: string, updates: Partial<Transaction>) => {
     try {
@@ -445,6 +530,7 @@ export const useTransactions = (projectId: string) => {
     getByNumber,
     getTransaction,
     addTransaction,
+    addTransactionsBatch,
     deleteTransaction,
     bulkDeleteTransactions,
     updateTransaction,

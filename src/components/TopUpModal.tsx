@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import LoadingButton from './LoadingButton';
 
 interface TopUpModalProps {
   isOpen: boolean;

@@ -7,6 +7,7 @@ import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import { groupTransactionsByNumber } from '../../utils/transactionHelpers';
 import type { EntryType } from '../../types';
 import { exportFilterResultsToPDF } from '../../utils/pdfExport';
+import LoadingButton from '../../components/LoadingButton';
 
 type ComparisonType = '>=' | '>' | '<=' | '<' | '==';
 
@@ -23,11 +24,11 @@ const AdminFilterPage: React.FC = () => {
   const [entries, setEntries] = useState<any[]>([]);
   const [processing, setProcessing] = useState(false); // Prevent double actions
   
-  // Filter states
+  // Filter states - Default values set to 1 and disabled (not editable)
   const [firstComparison, setFirstComparison] = useState<ComparisonType>('>=');
-  const [firstFilterValue, setFirstFilterValue] = useState('');
+  const [firstFilterValue, setFirstFilterValue] = useState('1');
   const [secondComparison, setSecondComparison] = useState<ComparisonType>('>=');
-  const [secondFilterValue, setSecondFilterValue] = useState('');
+  const [secondFilterValue, setSecondFilterValue] = useState('1');
   
   // Limit states
   const [firstLimit, setFirstLimit] = useState('');
@@ -112,7 +113,7 @@ const AdminFilterPage: React.FC = () => {
       // Use adminView=true to see admin-adjusted amounts
       const data = await db.getAllEntriesByType(selectedType, true);
       
-      // Convert to transaction format
+      // Convert to transaction format - CRITICAL: Preserve original_transaction_id for split entries
       const transactions = data.map((e: any) => ({
         id: e.id,
         number: e.number,
@@ -121,9 +122,25 @@ const AdminFilterPage: React.FC = () => {
         second: e.second_amount,
         userId: e.user_id,
         username: e.app_users?.username || 'Unknown',
+        // CRITICAL: Preserve original_transaction_id for split entries (especially ring)
+        original_transaction_id: e.original_transaction_id || undefined,
+        is_split_entry: e.is_split_entry || false,
       }));
       
       setEntries(transactions);
+      
+      // Debug: Log split entries for ring type
+      if (selectedType === 'ring') {
+        const splitEntries = transactions.filter((t: any) => t.is_split_entry);
+        if (splitEntries.length > 0) {
+          console.log(`🔍 Ring debug - Found ${splitEntries.length} split entries out of ${transactions.length} total entries`);
+          console.log(`   Sample split entries:`, splitEntries.slice(0, 3).map((t: any) => ({
+            id: t.id,
+            original_transaction_id: t.original_transaction_id,
+            number: t.number
+          })));
+        }
+      }
       
       // Save to history after loading if requested
       if (saveHistory) {
@@ -291,6 +308,10 @@ const AdminFilterPage: React.FC = () => {
       console.log('📊 Calculated Results:', calculatedResults);
       console.log('👤 User ID:', user.id);
       
+      // Generate unique filter_save_id to group all deductions from this filter save
+      const filterSaveId = `filter_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      console.log(`🆔 Generated filter_save_id: ${filterSaveId}`);
+      
       // Process each number and deduct BOTH first and second if applicable
       const processedEntries = new Set<string>();
       let errorCount = 0;
@@ -305,27 +326,45 @@ const AdminFilterPage: React.FC = () => {
       const originalEntriesData = await db.getAllEntriesByType(selectedType, false); // false = no admin view, get original amounts
       const originalEntriesMap = new Map<string, { first: number; second: number }>();
       
+      // Build map of original amounts - handle both split and non-split entries
       originalEntriesData.forEach((e: any) => {
-        // For split entries, use original_transaction_id if available, otherwise use id
+        // For split entries (ring entries that were split), use original_transaction_id
+        // For non-split entries, use the entry id
         const transactionId = e.original_transaction_id || e.id;
         const existing = originalEntriesMap.get(transactionId) || { first: 0, second: 0 };
+        
+        // Sum up amounts for split entries that share the same original_transaction_id
         originalEntriesMap.set(transactionId, {
           first: existing.first + (e.first_amount || 0),
           second: existing.second + (e.second_amount || 0),
         });
       });
       
-      console.log(`📊 Loaded ${originalEntriesMap.size} original transaction amounts for ${selectedType}`);
+      console.log(`📊 Loaded ${originalEntriesMap.size} original transaction amounts for ${selectedType} (from ${originalEntriesData.length} entries)`);
       if (selectedType === 'ring') {
-        console.log('🔍 Ring debug - Sample original entries:', originalEntriesData.slice(0, 3).map((e: any) => ({
+        console.log('🔍 Ring debug - Sample original entries:', originalEntriesData.slice(0, 5).map((e: any) => ({
           id: e.id,
           original_transaction_id: e.original_transaction_id,
+          is_split_entry: e.is_split_entry,
           number: e.number,
           first: e.first_amount,
           second: e.second_amount
         })));
-        console.log('🔍 Ring debug - Sample originalEntriesMap keys:', Array.from(originalEntriesMap.keys()).slice(0, 5));
+        console.log('🔍 Ring debug - Sample originalEntriesMap:', Array.from(originalEntriesMap.entries()).slice(0, 5).map(([id, amounts]) => ({
+          transactionId: id,
+          amounts
+        })));
       }
+      
+      // Collect ALL deductions from ALL numbers first (before saving anything)
+      const allDeductionsToSave: Array<{
+        transactionId: string;
+        deductedFirst: number;
+        deductedSecond: number;
+        entryKey: string;
+        username: string;
+        number: string; // Store the number for metadata
+      }> = [];
       
       for (const result of calculatedResults) {
         try {
@@ -334,8 +373,24 @@ const AdminFilterPage: React.FC = () => {
           console.log(`   First to deduct: ${result.firstResult}, Second to deduct: ${result.secondResult}`);
           
           if (entriesForNumber.length === 0) {
-            console.warn(`⚠️ No entries found for number ${result.number}`);
+            console.warn(`⚠️ No entries found for number ${result.number} in ${selectedType}`);
+            errorCount++;
+            errors.push(`No entries found for number ${result.number}`);
+            processedResults++;
             continue;
+          }
+          
+          // Debug: Log entry details for ring entries
+          if (selectedType === 'ring') {
+            console.log(`🔍 Ring debug - Entries for ${result.number}:`, entriesForNumber.map((e: any) => ({
+              id: e.id,
+              original_transaction_id: (e as any).original_transaction_id,
+              is_split_entry: (e as any).is_split_entry,
+              number: e.number,
+              first: e.first,
+              second: e.second,
+              username: e.username
+            })));
           }
           
           // Group entries by user to deduct proportionally from each user
@@ -353,14 +408,7 @@ const AdminFilterPage: React.FC = () => {
           let remainingFirstToDeduct = result.firstResult;
           let remainingSecondToDeduct = result.secondResult;
           
-          // Collect all deductions that need to be saved for this number
-          const deductionsToSave: Array<{
-            entryId: string;
-            deductedFirst: number;
-            deductedSecond: number;
-            entryKey: string;
-            username: string;
-          }> = [];
+          // Collect all deductions that need to be saved for this number (will be added to allDeductionsToSave)
           
           // Process entries for each user proportionally
           for (const [userId, userEntries] of entriesByUser) {
@@ -431,7 +479,26 @@ const AdminFilterPage: React.FC = () => {
               }
               
               // Get ORIGINAL amounts for this transaction (before any deductions)
-              const originalAmounts = originalEntriesMap.get(transactionId) || { first: entry.first || 0, second: entry.second || 0 };
+              // For split entries, this will get the aggregated original amount
+              const originalAmounts = originalEntriesMap.get(transactionId);
+              
+              if (!originalAmounts) {
+                console.error(`❌ CRITICAL: Original amounts not found for transaction ${transactionId} (number: ${entry.number}, type: ${selectedType})`);
+                console.error(`   Entry details:`, {
+                  id: entry.id,
+                  original_transaction_id: (entry as any).original_transaction_id,
+                  is_split_entry: (entry as any).is_split_entry,
+                  first: entry.first,
+                  second: entry.second,
+                  username: entry.username
+                });
+                console.error(`   Available transaction IDs in map (first 10):`, Array.from(originalEntriesMap.keys()).slice(0, 10));
+                // Skip this entry to prevent incorrect deductions
+                errorCount++;
+                errors.push(`Original amounts not found for transaction ${transactionId} (number: ${entry.number})`);
+                continue;
+              }
+              
               const originalFirst = originalAmounts.first;
               const originalSecond = originalAmounts.second;
               
@@ -470,16 +537,29 @@ const AdminFilterPage: React.FC = () => {
                 }
               }
               
-              // Collect deduction for batch save
-              if (deductedFirst > 0 || deductedSecond > 0) {
-                deductionsToSave.push({
-                  entryId: transactionId, // Use original transaction ID for split entries
-                  deductedFirst,
-                  deductedSecond,
+              // Collect deduction for batch save (add to global collection)
+              // CRITICAL: Only save if we have valid amounts and transaction ID
+              if ((deductedFirst > 0 || deductedSecond > 0) && transactionId) {
+                // Validate transaction ID is not empty
+                if (!transactionId || transactionId.trim() === '') {
+                  console.error(`❌ CRITICAL: Empty transaction ID for entry ${entry.id} (number: ${entry.number})`);
+                  errorCount++;
+                  errors.push(`Empty transaction ID for entry ${entry.id} (number: ${entry.number})`);
+                  continue;
+                }
+                
+                allDeductionsToSave.push({
+                  transactionId: transactionId.trim(), // Use original transaction ID for split entries, ensure no whitespace
+                  deductedFirst: Math.max(0, deductedFirst), // Ensure non-negative
+                  deductedSecond: Math.max(0, deductedSecond), // Ensure non-negative
                   entryKey,
                   username: entry.username || 'Unknown',
+                  number: result.number, // Store number for metadata
                 });
+                processedEntries.add(entryKey);
                 console.log(`   ✅ Collected deduction for entry ${transactionId}: F ${deductedFirst}, S ${deductedSecond}`);
+              } else if (deductedFirst === 0 && deductedSecond === 0) {
+                console.log(`   ⏭️ Skipping entry ${transactionId} - no deduction needed (F: ${deductedFirst}, S: ${deductedSecond})`);
               }
               
               // Stop if user's share is fully deducted
@@ -487,63 +567,6 @@ const AdminFilterPage: React.FC = () => {
                 break;
               }
             }
-          }
-          
-          // Save all deductions for this number in parallel (batch save)
-          if (deductionsToSave.length > 0) {
-            console.log(`   💾 Saving ${deductionsToSave.length} deductions for number ${result.number} in parallel...`);
-            
-            // Add timeout to prevent hanging
-            const saveWithTimeout = async (entryId: string, deductedFirst: number, deductedSecond: number, entryKey: string) => {
-              const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Save timeout after 10 seconds')), 10000)
-              );
-              
-              // Ensure whole numbers (no decimals) when saving
-              const deductedFirstWhole = Math.floor(deductedFirst);
-              const deductedSecondWhole = Math.floor(deductedSecond);
-              
-              const savePromise = db.saveAdminDeduction(
-                entryId,
-                user.id,
-                deductedFirstWhole,
-                deductedSecondWhole,
-                'filter_save',
-                {
-                  entryType: selectedType,
-                  numberFiltered: result.number,
-                  firstLimit,
-                  secondLimit,
-                  firstFilterValue,
-                  secondFilterValue,
-                  firstComparison,
-                  secondComparison,
-                }
-              );
-              
-              try {
-                await Promise.race([savePromise, timeoutPromise]);
-                processedEntries.add(entryKey);
-                console.log(`   ✅ Saved deduction for entry ${entryId}: F ${deductedFirst}, S ${deductedSecond}`);
-                return { success: true, entryKey };
-              } catch (saveError: any) {
-                errorCount++;
-                const errorMsg = `Failed to save deduction for entry ${entryId}: ${saveError?.message || 'Unknown error'}`;
-                errors.push(errorMsg);
-                console.error(`   ❌ ${errorMsg}`, saveError);
-                return { success: false, entryKey, error: saveError };
-              }
-            };
-            
-            const savePromises = deductionsToSave.map(({ entryId, deductedFirst, deductedSecond, entryKey }) =>
-              saveWithTimeout(entryId, deductedFirst, deductedSecond, entryKey)
-            );
-            
-            // Wait for all saves to complete
-            const saveResults = await Promise.allSettled(savePromises);
-            const successCount = saveResults.filter(r => r.status === 'fulfilled' && r.value.success).length;
-            const failedCount = deductionsToSave.length - successCount;
-            console.log(`   ✅ Saved ${successCount}/${deductionsToSave.length} deductions for number ${result.number}${failedCount > 0 ? ` (${failedCount} failed)` : ''}`);
           }
           
           console.log(`   ✔️ Number ${result.number} complete. Remaining: F ${remainingFirstToDeduct.toFixed(0)}, S ${remainingSecondToDeduct.toFixed(0)}`);
@@ -562,6 +585,72 @@ const AdminFilterPage: React.FC = () => {
       }
       
       console.log(`📊 All numbers processed: ${processedResults}/${totalResults}`);
+      console.log(`💾 Collected ${allDeductionsToSave.length} total deductions to save in batch...`);
+      
+      // Save ALL deductions in a single batch operation (INSTANT!)
+      if (allDeductionsToSave.length > 0) {
+        try {
+          // Filter out any deductions with invalid transaction IDs before batch save
+          const validDeductions = allDeductionsToSave.filter(d => {
+            if (!d.transactionId || d.transactionId.trim() === '') {
+              console.error(`❌ Filtering out deduction with invalid transaction ID:`, d);
+              return false;
+            }
+            if (d.deductedFirst < 0 || d.deductedSecond < 0) {
+              console.error(`❌ Filtering out deduction with negative amounts:`, d);
+              return false;
+            }
+            return true;
+          });
+          
+          if (validDeductions.length < allDeductionsToSave.length) {
+            const filteredCount = allDeductionsToSave.length - validDeductions.length;
+            console.warn(`⚠️ Filtered out ${filteredCount} invalid deductions before batch save`);
+            errorCount += filteredCount;
+            errors.push(`Filtered out ${filteredCount} invalid deductions`);
+          }
+          
+          if (validDeductions.length === 0) {
+            console.error(`❌ No valid deductions to save after filtering`);
+            throw new Error('No valid deductions to save. All deductions were filtered out due to invalid transaction IDs or amounts.');
+          }
+          
+          console.log(`🚀 Saving ${validDeductions.length} validated deductions in ONE batch operation...`);
+          
+          const batchDeductions = validDeductions.map(({ transactionId, deductedFirst, deductedSecond, number }) => ({
+            transactionId: transactionId.trim(), // Ensure no whitespace
+            adminUserId: user.id,
+            deductedFirst: Math.floor(Math.max(0, deductedFirst)), // Ensure non-negative whole number
+            deductedSecond: Math.floor(Math.max(0, deductedSecond)), // Ensure non-negative whole number
+            deductionType: 'filter_save',
+            metadata: {
+              entryType: selectedType,
+              numberFiltered: number,
+              firstLimit,
+              secondLimit,
+              firstFilterValue,
+              secondFilterValue,
+              firstComparison,
+              secondComparison,
+              filter_save_id: filterSaveId, // Unique ID to group all deductions from this filter save
+            }
+          }));
+          
+          const batchResult = await db.saveAdminDeductionsBatch(batchDeductions);
+          
+          if (batchResult.failed > 0) {
+            errorCount += batchResult.failed;
+            errors.push(...batchResult.errors);
+            console.error(`❌ Batch save had ${batchResult.failed} failures`);
+          }
+          
+          console.log(`✅ Batch save complete! ${batchResult.success} deductions saved instantly!`);
+        } catch (batchError: any) {
+          console.error('❌ Batch save error:', batchError);
+          errorCount += allDeductionsToSave.length;
+          errors.push(`Batch save failed: ${batchError?.message || 'Unknown error'}`);
+        }
+      }
       
       // Log admin action for each affected user (completely non-blocking, fire and forget)
       if (user?.id && processedEntries.size > 0) {
@@ -636,7 +725,60 @@ const AdminFilterPage: React.FC = () => {
         console.log('🔄 Waiting for database commits before reloading...');
         
         // Wait a bit for database commits to complete
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Increased to 1 second
+        
+        // Verify deductions were saved by checking a sample
+        if (selectedType === 'ring' && calculatedResults.length > 0) {
+          try {
+            const sampleNumber = calculatedResults[0].number;
+            const sampleEntries = entries.filter(e => e.number === sampleNumber);
+            if (sampleEntries.length > 0) {
+              // Use the same logic as when saving - get original transaction ID
+              const sampleEntry = sampleEntries[0];
+              const sampleTransactionId = (sampleEntry as any).original_transaction_id || sampleEntry.id;
+              console.log(`🔍 Verifying deduction was saved for ring transaction ${sampleTransactionId} (number: ${sampleNumber})...`);
+              
+              // Also check what transaction IDs we actually saved
+              console.log(`🔍 Sample entry details:`, {
+                id: sampleEntry.id,
+                original_transaction_id: (sampleEntry as any).original_transaction_id,
+                number: sampleEntry.number
+              });
+              
+              // Try to query the deduction directly using service role if available
+              const { supabase, supabaseAdmin } = await import('../../lib/supabase');
+              const clientToUse = supabaseAdmin || supabase;
+              if (clientToUse) {
+                const { data: verifyDeduction, error: verifyError } = await clientToUse
+                  .from('admin_deductions')
+                  .select('id, transaction_id, deducted_first, deducted_second, deduction_type, metadata')
+                  .eq('transaction_id', sampleTransactionId)
+                  .order('created_at', { ascending: false })
+                  .limit(5); // Get recent deductions
+                
+                if (verifyError) {
+                  console.warn('⚠️ Could not verify deduction:', verifyError);
+                } else if (verifyDeduction && verifyDeduction.length > 0) {
+                  console.log(`✅ Found ${verifyDeduction.length} deduction(s) in database for transaction ${sampleTransactionId}:`, verifyDeduction);
+                } else {
+                  console.warn(`⚠️ Deduction not found in database for transaction ${sampleTransactionId}`);
+                  // Try searching by number in metadata
+                  const { data: searchByMetadata } = await clientToUse
+                    .from('admin_deductions')
+                    .select('id, transaction_id, deducted_first, deducted_second, metadata')
+                    .eq('metadata->>entryType', selectedType)
+                    .like('metadata->>numberFiltered', `%${sampleNumber}%`)
+                    .limit(5);
+                  if (searchByMetadata && searchByMetadata.length > 0) {
+                    console.log(`🔍 Found deductions by metadata search:`, searchByMetadata);
+                  }
+                }
+              }
+            }
+          } catch (verifyErr) {
+            console.warn('⚠️ Error verifying deduction:', verifyErr);
+          }
+        }
         
         // Retry reload up to 3 times if it fails
         let reloadAttempts = 0;
@@ -737,7 +879,9 @@ const AdminFilterPage: React.FC = () => {
                     <select
                       value={firstComparison}
                       onChange={(e) => setFirstComparison(e.target.value as ComparisonType)}
-                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white w-16 text-center"
+                      disabled
+                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 w-16 text-center cursor-not-allowed opacity-60"
+                      title="Default value: 1 (not editable)"
                     >
                       <option value=">=">≥</option>
                       <option value=">">{'>'}</option>
@@ -749,10 +893,15 @@ const AdminFilterPage: React.FC = () => {
                       type="number"
                       value={firstFilterValue}
                       onChange={(e) => setFirstFilterValue(e.target.value)}
-                      placeholder="Enter value"
-                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      disabled
+                      placeholder="1 (default)"
+                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed opacity-60"
+                      title="Default value: 1 (not editable)"
                     />
                   </div>
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 italic">
+                    Default value: 1 (applies to all entry types)
+                  </p>
                 </div>
 
                 {/* Second Filter */}
@@ -764,7 +913,9 @@ const AdminFilterPage: React.FC = () => {
                     <select
                       value={secondComparison}
                       onChange={(e) => setSecondComparison(e.target.value as ComparisonType)}
-                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white w-16 text-center"
+                      disabled
+                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 w-16 text-center cursor-not-allowed opacity-60"
+                      title="Default value: 1 (not editable)"
                     >
                       <option value=">=">≥</option>
                       <option value=">">{'>'}</option>
@@ -776,10 +927,15 @@ const AdminFilterPage: React.FC = () => {
                       type="number"
                       value={secondFilterValue}
                       onChange={(e) => setSecondFilterValue(e.target.value)}
-                      placeholder="Enter value"
-                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      disabled
+                      placeholder="1 (default)"
+                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed opacity-60"
+                      title="Default value: 1 (not editable)"
                     />
                   </div>
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 italic">
+                    Default value: 1 (applies to all entry types)
+                  </p>
                 </div>
               </div>
 
@@ -818,28 +974,30 @@ const AdminFilterPage: React.FC = () => {
 
               {/* Action Buttons */}
               <div className="flex gap-3 flex-wrap">
-                <button
+                <LoadingButton
                   onClick={handleApplyFilter}
-                  className="px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-xl font-semibold shadow-lg transition-all"
+                  loading={processing}
+                  variant="primary"
                 >
                   Apply Filter
-                </button>
+                </LoadingButton>
 
-                <button
+                <LoadingButton
                   onClick={handleReset}
-                  className="px-6 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-all"
+                  loading={processing}
+                  variant="secondary"
                 >
                   Reset
-                </button>
+                </LoadingButton>
 
                 {calculatedResults.length > 0 && (
-                  <button
+                  <LoadingButton
                     onClick={handleSaveFilterClick}
-                    disabled={processing}
-                    className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-semibold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                    loading={processing}
+                    variant="success"
                   >
                     💾 Save Filter
-                  </button>
+                  </LoadingButton>
                 )}
               </div>
             </div>
@@ -982,12 +1140,14 @@ const AdminFilterPage: React.FC = () => {
               >
                 Cancel
               </button>
-              <button
+              <LoadingButton
                 onClick={handleConfirmSaveFilter}
-                className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-semibold shadow-lg transition-all"
+                loading={processing}
+                variant="success"
+                className="flex-1"
               >
                 Yes, Save Filter
-              </button>
+              </LoadingButton>
             </div>
           </div>
         </div>

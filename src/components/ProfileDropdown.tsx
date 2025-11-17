@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { getRecentLogins, removeRecentLogin, type RecentLogin } from '../utils/recentLogins';
 import { getCredential } from '../utils/savedCredentials';
+import { APP_VERSION } from '../config/version';
 
 const ProfileDropdown: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -213,6 +214,14 @@ const ProfileDropdown: React.FC = () => {
               </div>
             </>
           )}
+
+          {/* Version Info */}
+          <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+              <span>Web Version</span>
+              <span className="font-mono font-semibold text-gray-600 dark:text-gray-300">{APP_VERSION}</span>
+            </div>
+          </div>
 
           {/* Sign Out */}
           <button

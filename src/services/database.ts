@@ -524,6 +524,9 @@ export class DatabaseService {
         console.log('🔒 Filtering transactions by user ID:', userId);
       }
 
+      // Filter out entries hidden from user view (for user dashboard)
+      query = query.is('hidden_from_user', null);
+
       // Add explicit limit to ensure ALL transactions are loaded (no limit on Supabase queries)
       const { data, error } = await query
         .order('created_at', { ascending: true })
@@ -637,6 +640,85 @@ export class DatabaseService {
     };
   }
 
+  /**
+   * Batch create multiple transactions at once (much faster than individual creates)
+   */
+  async createTransactionsBatch(
+    userId: string,
+    transactions: Array<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>>,
+    adminUserId?: string
+  ): Promise<Transaction[]> {
+    if (!this.isOnline() || !supabase) {
+      throw new Error('Database not available in offline mode');
+    }
+
+    if (transactions.length === 0) {
+      return [];
+    }
+
+    const clientToUse = supabaseAdmin || supabase;
+
+    try {
+      console.log(`💾 Batch creating ${transactions.length} transactions at once...`);
+
+      // Prepare all transactions for batch insert
+      const insertData = transactions.map(transaction => ({
+        user_id: userId,
+        project_id: transaction.projectId === 'user-scope' ? null : transaction.projectId,
+        number: transaction.number,
+        entry_type: transaction.entryType,
+        first_amount: transaction.first,
+        second_amount: transaction.second,
+        notes: transaction.notes || null,
+      }));
+
+      // Insert all transactions in a single database call
+      const { data, error } = await clientToUse
+        .from('transactions')
+        .insert(insertData)
+        .select();
+
+      if (error) {
+        console.error('❌ createTransactionsBatch error:', error);
+        throw error;
+      }
+
+      const createdTransactions: Transaction[] = (data || []).map((d: any) => ({
+        id: d.id,
+        projectId: d.project_id || 'user-scope',
+        number: d.number,
+        entryType: d.entry_type,
+        first: d.first_amount,
+        second: d.second_amount,
+        notes: d.notes || undefined,
+        createdAt: d.created_at,
+        updatedAt: d.updated_at,
+      }));
+
+      console.log(`✅ Batch create complete: ${createdTransactions.length}/${transactions.length} transactions created`);
+
+      // Log admin action if this was performed by an admin (single log for batch)
+      if (adminUserId && adminUserId !== userId && createdTransactions.length > 0) {
+        await this.logAdminAction(
+          adminUserId,
+          userId,
+          'create_transaction_batch',
+          `Admin created ${createdTransactions.length} transactions in batch`,
+          {
+            transactionIds: createdTransactions.map(t => t.id),
+            projectId: transactions[0]?.projectId,
+            count: createdTransactions.length
+          }
+        );
+      }
+
+      return createdTransactions;
+    } catch (error: any) {
+      console.error('❌ createTransactionsBatch exception:', error);
+      throw error;
+    }
+  }
+
   async updateTransaction(
     transactionId: string, 
     updates: Partial<Omit<Transaction, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>>,
@@ -738,6 +820,78 @@ export class DatabaseService {
           }
         }
       );
+    }
+  }
+
+  /**
+   * Batch delete multiple transactions at once (much faster than individual deletes)
+   */
+  async deleteTransactionsBatch(
+    transactionIds: string[],
+    adminUserId?: string
+  ): Promise<{ success: number; failed: number }> {
+    if (!this.isOnline() || !supabase) {
+      throw new Error('Database not available in offline mode');
+    }
+
+    if (transactionIds.length === 0) {
+      return { success: 0, failed: 0 };
+    }
+
+    const clientToUse = supabaseAdmin || supabase;
+
+    try {
+      console.log(`🗑️ Batch deleting ${transactionIds.length} transactions at once...`);
+
+      // Get transactions first to log the deletion (if admin)
+      let transactionsToLog: any[] = [];
+      if (adminUserId) {
+        const { data } = await clientToUse
+          .from('transactions')
+          .select('*')
+          .in('id', transactionIds);
+        transactionsToLog = data || [];
+      }
+
+      // Delete all transactions in a single database call
+      const { error } = await clientToUse
+        .from('transactions')
+        .delete()
+        .in('id', transactionIds);
+
+      if (error) {
+        console.error('❌ deleteTransactionsBatch error:', error);
+        throw error;
+      }
+
+      // Log admin action if this was performed by an admin (single log for batch)
+      if (adminUserId && transactionsToLog.length > 0) {
+        const userIds = [...new Set(transactionsToLog.map(t => t.user_id))];
+        for (const userId of userIds) {
+          if (userId !== adminUserId) {
+            await this.logAdminAction(
+              adminUserId,
+              userId,
+              'delete_transaction_batch',
+              `Admin deleted ${transactionsToLog.filter(t => t.user_id === userId).length} transactions in batch`,
+              {
+                transactionIds: transactionsToLog.filter(t => t.user_id === userId).map(t => t.id),
+                count: transactionsToLog.filter(t => t.user_id === userId).length
+              }
+            );
+          }
+        }
+      }
+
+      console.log(`✅ Batch delete complete: ${transactionIds.length} transactions deleted`);
+
+      return {
+        success: transactionIds.length,
+        failed: 0
+      };
+    } catch (error: any) {
+      console.error('❌ deleteTransactionsBatch exception:', error);
+      throw error;
     }
   }
 
@@ -1594,11 +1748,15 @@ export class DatabaseService {
     try {
       const rows = await this.withRetry(async () => {
         // First, get all transactions for this entry type
+        // Note: No limit - we need all entries for admin view, but queries are optimized with indexes
+        // Filter out entries hidden from admin view
         const { data: transactions, error: txError } = await client
           .from('transactions')
           .select('id, user_id, project_id, number, entry_type, first_amount, second_amount, created_at, updated_at')
           .eq('entry_type', entryType)
+          .is('hidden_from_admin', null) // Only show entries not hidden from admin
           .order('created_at', { ascending: false });
+          // No .limit() - we need all entries, but Supabase is optimized with indexes
         
         console.log('🔍 getAllEntriesByType transactions result:', {
           entryType,
@@ -1642,20 +1800,36 @@ export class DatabaseService {
           try {
             const transactionIds = transactions.map((t: any) => t.id);
             
-            // Batch the query if there are too many transaction IDs (PostgreSQL has a limit)
-            const BATCH_SIZE = 1000;
+            // Batch the query if there are too many transaction IDs (PostgreSQL/Supabase has limits)
+            // Reduced to 100 to avoid 400 errors with large batches
+            const BATCH_SIZE = 100;
             let allDeductions: any[] = [];
             
             for (let i = 0; i < transactionIds.length; i += BATCH_SIZE) {
               const batch = transactionIds.slice(i, i + BATCH_SIZE);
               
+              // Filter out any null/undefined/invalid IDs
+              const validBatch = batch.filter(id => id && typeof id === 'string' && id.length > 0);
+              
+              if (validBatch.length === 0) {
+                console.warn('⚠️ Skipping empty batch of transaction IDs');
+                continue;
+              }
+              
               const { data: deductions, error: dedError } = await client
                 .from('admin_deductions')
                 .select('transaction_id, deducted_first, deducted_second')
-                .in('transaction_id', batch);
+                .in('transaction_id', validBatch);
               
               if (dedError) {
-                console.error('Error loading admin deductions batch:', dedError);
+                console.error('Error loading admin deductions batch:', {
+                  error: dedError,
+                  entryType,
+                  batchSize: validBatch.length,
+                  sampleIds: validBatch.slice(0, 3),
+                  errorCode: dedError.code,
+                  errorMessage: dedError.message
+                });
                 // Continue with other batches even if one fails
                 continue;
               }
@@ -1667,6 +1841,10 @@ export class DatabaseService {
             
             // Sum up all deductions per transaction
             allDeductions.forEach((ded: any) => {
+              if (!ded.transaction_id) {
+                console.warn('⚠️ Deduction missing transaction_id:', ded);
+                return;
+              }
               const existing = deductionsMap.get(ded.transaction_id) || { first: 0, second: 0 };
               deductionsMap.set(ded.transaction_id, {
                 first: existing.first + Number(ded.deducted_first || 0),
@@ -1675,9 +1853,12 @@ export class DatabaseService {
             });
             
             console.log('🔍 Admin deductions loaded:', {
+              entryType,
               totalDeductions: allDeductions.length,
               uniqueTransactions: deductionsMap.size,
-              sampleDeduction: allDeductions[0] || 'none'
+              totalTransactionIds: transactionIds.length,
+              sampleDeduction: allDeductions[0] || 'none',
+              sampleTransactionIds: transactionIds.slice(0, 3)
             });
           } catch (err: any) {
             console.error('Could not load admin deductions:', err);
@@ -1750,13 +1931,16 @@ export class DatabaseService {
               firstAmount = Math.max(0, firstAmount - deductions.first);
               secondAmount = Math.max(0, secondAmount - deductions.second);
               
-              // Log if deductions were applied
+              // Log if deductions were applied (with entry type for debugging)
               if (deductions.first > 0 || deductions.second > 0) {
-                console.log(`💰 Applied deductions for transaction ${transaction.id}:`, {
+                console.log(`💰 Applied deductions for transaction ${transaction.id} (${entryType}):`, {
                   original: { first: originalFirst, second: originalSecond },
                   deductions: { first: deductions.first, second: deductions.second },
                   final: { first: firstAmount, second: secondAmount }
                 });
+              } else if (entryType === 'ring' && deductionsMap.has(transaction.id)) {
+                // Debug: check if deduction exists but is zero
+                console.log(`🔍 Ring transaction ${transaction.id} has deduction entry but amounts are zero`);
               }
             }
             
@@ -2097,6 +2281,107 @@ export class DatabaseService {
   }
 
   /**
+   * Batch save multiple admin deductions at once (much faster than individual saves)
+   */
+  async saveAdminDeductionsBatch(
+    deductions: Array<{
+      transactionId: string;
+      adminUserId: string;
+      deductedFirst: number;
+      deductedSecond: number;
+      deductionType: string;
+      metadata?: any;
+    }>
+  ): Promise<{ success: number; failed: number; errors: string[] }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    if (deductions.length === 0) {
+      return { success: 0, failed: 0, errors: [] };
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    try {
+      // CRITICAL: Validate all transaction IDs exist before saving
+      // This prevents foreign key constraint errors, especially for ring entries with original_transaction_id
+      const uniqueTransactionIds = [...new Set(deductions.map(d => d.transactionId).filter(Boolean))];
+      console.log(`🔍 Validating ${uniqueTransactionIds.length} unique transaction IDs before batch save...`);
+      
+      const { data: existingTransactions, error: validateError } = await client
+        .from('transactions')
+        .select('id')
+        .in('id', uniqueTransactionIds);
+      
+      if (validateError) {
+        console.error('❌ Transaction validation error:', validateError);
+        throw new Error(`Failed to validate transaction IDs: ${validateError.message}`);
+      }
+      
+      const existingTransactionIds = new Set((existingTransactions || []).map((t: any) => t.id));
+      const missingTransactionIds = uniqueTransactionIds.filter(id => !existingTransactionIds.has(id));
+      
+      if (missingTransactionIds.length > 0) {
+        console.error(`❌ CRITICAL: ${missingTransactionIds.length} transaction IDs not found in database:`, missingTransactionIds.slice(0, 10));
+        // Filter out deductions with invalid transaction IDs
+        const validDeductions = deductions.filter(d => existingTransactionIds.has(d.transactionId));
+        const invalidCount = deductions.length - validDeductions.length;
+        console.warn(`⚠️ Filtering out ${invalidCount} deductions with invalid transaction IDs`);
+        
+        if (validDeductions.length === 0) {
+          return {
+            success: 0,
+            failed: deductions.length,
+            errors: [`All ${deductions.length} deductions have invalid transaction IDs`]
+          };
+        }
+        
+        // Update deductions to only valid ones
+        deductions = validDeductions;
+      }
+      
+      // Prepare all deductions for batch insert
+      const insertData = deductions.map(d => ({
+        transaction_id: d.transactionId,
+        admin_user_id: d.adminUserId,
+        deducted_first: Math.floor(d.deductedFirst), // Ensure whole numbers
+        deducted_second: Math.floor(d.deductedSecond), // Ensure whole numbers
+        deduction_type: d.deductionType,
+        metadata: d.metadata || {},
+      }));
+
+      console.log(`💾 Batch saving ${insertData.length} validated deductions at once...`);
+
+      // Insert all deductions in a single database call
+      const { data, error } = await client
+        .from('admin_deductions')
+        .insert(insertData)
+        .select();
+
+      if (error) {
+        console.error('❌ saveAdminDeductionsBatch error:', error);
+        console.error('   Sample transaction IDs:', insertData.slice(0, 5).map(d => d.transaction_id));
+        throw error;
+      }
+
+      const successCount = data?.length || 0;
+      const failedCount = deductions.length - successCount;
+
+      console.log(`✅ Batch save complete: ${successCount}/${deductions.length} deductions saved`);
+
+      return {
+        success: successCount,
+        failed: failedCount,
+        errors: failedCount > 0 ? [`Failed to save ${failedCount} deductions`] : []
+      };
+    } catch (error: any) {
+      console.error('❌ saveAdminDeductionsBatch exception:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get admin deductions for a specific entry type
    */
   async getAdminDeductionsByType(entryType: 'open' | 'akra' | 'ring' | 'packet'): Promise<any[]> {
@@ -2181,6 +2466,49 @@ export class DatabaseService {
       // Clear cache so next load shows updated amounts
       clearTransactionsCache();
     });
+  }
+
+  /**
+   * Batch delete multiple admin deductions at once (much faster than individual deletes)
+   */
+  async deleteAdminDeductionsBatch(deductionIds: string[]): Promise<{ success: number; failed: number }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    if (deductionIds.length === 0) {
+      return { success: 0, failed: 0 };
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    try {
+      console.log(`🗑️ Batch deleting ${deductionIds.length} deductions at once...`);
+
+      // Delete all deductions in a single database call
+      const { error } = await client
+        .from('admin_deductions')
+        .delete()
+        .in('id', deductionIds);
+
+      if (error) {
+        console.error('❌ deleteAdminDeductionsBatch error:', error);
+        throw error;
+      }
+
+      // Clear cache so next load shows updated amounts
+      clearTransactionsCache();
+
+      console.log(`✅ Batch delete complete: ${deductionIds.length} deductions deleted`);
+
+      return {
+        success: deductionIds.length,
+        failed: 0
+      };
+    } catch (error: any) {
+      console.error('❌ deleteAdminDeductionsBatch exception:', error);
+      throw error;
+    }
   }
 
   /**
@@ -2293,29 +2621,37 @@ export class DatabaseService {
     const client = supabaseAdmin || supabase;
 
     return this.withRetry(async () => {
-      // First, get count of transactions to be deleted
-      const { count, error: countError } = await client
+      // Get all transactions for this user (excluding already hidden ones)
+      const { data: transactions, error: txError } = await client
         .from('transactions')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId);
+        .select('id')
+        .eq('user_id', userId)
+        .is('hidden_from_user', null); // Only get entries not already hidden
 
-      if (countError) throw countError;
+      if (txError) throw txError;
 
-      // Delete all transactions for this user
-      const { error: deleteError } = await client
+      if (!transactions || transactions.length === 0) {
+        return { deletedCount: 0 };
+      }
+
+      const transactionIds = transactions.map((t: any) => t.id);
+
+      // Hide entries from user view (but keep visible in admin pages)
+      const { error: hideError } = await client
         .from('transactions')
-        .delete()
-        .eq('user_id', userId);
+        .update({ hidden_from_user: true })
+        .in('id', transactionIds);
 
-      if (deleteError) throw deleteError;
+      if (hideError) {
+        console.warn('Error hiding transactions from user:', hideError);
+        throw hideError;
+      }
 
-      // Delete all admin deductions for this user's transactions
-      // Note: These will also be cascade-deleted if foreign key is set properly,
-      // but we do it explicitly to be safe
+      // Delete all admin deductions for this user's transactions (clean up)
       const { error: deductionsError } = await client
         .from('admin_deductions')
         .delete()
-        .eq('admin_user_id', userId);
+        .in('transaction_id', transactionIds);
 
       // Don't throw on deductions error as they might not exist
       if (deductionsError) {
@@ -2347,7 +2683,10 @@ export class DatabaseService {
       // Clear cache
       clearTransactionsCache();
 
-      return { deletedCount: count || 0 };
+      const hiddenCount = transactions.length;
+      console.log(`✅ Reset user history for ${userId}: Hidden ${hiddenCount} entries from user view (entries still visible in admin pages)`);
+
+      return { deletedCount: hiddenCount };
     });
   }
 
@@ -2373,6 +2712,72 @@ export class DatabaseService {
 
   /**
    * Delete all entries of a specific type (open, akra, ring, packet)
+   */
+  /**
+   * Delete all admin deductions for an entry type (RESET ADMIN VIEW ONLY)
+   * This does NOT delete user transactions - it only removes admin deductions
+   * User data remains unchanged, only the admin view is reset
+   */
+  async deleteAllAdminDeductionsByType(entryType: 'open' | 'akra' | 'ring' | 'packet'): Promise<{ deletedCount: number }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      throw new Error('Database not available');
+    }
+
+    const client = supabaseAdmin || supabase;
+
+    return this.withRetry(async () => {
+      // Get all transactions of this type (excluding already hidden ones)
+      const { data: transactions, error: txError } = await client
+        .from('transactions')
+        .select('id')
+        .eq('entry_type', entryType)
+        .is('hidden_from_admin', null); // Only get entries not already hidden
+
+      if (txError) throw txError;
+
+      if (!transactions || transactions.length === 0) {
+        return { deletedCount: 0 };
+      }
+
+      const transactionIds = transactions.map((t: any) => t.id);
+      
+      // Delete all admin deductions for these transactions
+      const { data: deletedDeductions, error: deductionsError } = await client
+        .from('admin_deductions')
+        .delete()
+        .in('transaction_id', transactionIds)
+        .select('id', { count: 'exact' });
+
+      if (deductionsError) {
+        console.warn('Error deleting admin deductions:', deductionsError);
+        // Continue even if deductions fail
+      }
+
+      // Hide entries from admin view (but keep in user dashboard)
+      const { error: hideError } = await client
+        .from('transactions')
+        .update({ hidden_from_admin: true })
+        .in('id', transactionIds);
+
+      if (hideError) {
+        console.warn('Error hiding transactions from admin:', hideError);
+        throw hideError;
+      }
+
+      // Clear cache so admin view updates
+      clearTransactionsCache();
+
+      const deletedCount = deletedDeductions?.length || 0;
+      const hiddenCount = transactions.length;
+      console.log(`✅ Reset admin view for ${entryType}: Hidden ${hiddenCount} entries from admin view, deleted ${deletedCount} admin deductions (user transactions unchanged)`);
+
+      return { deletedCount: hiddenCount }; // Return count of hidden entries
+    });
+  }
+
+  /**
+   * @deprecated Use deleteAllAdminDeductionsByType instead - this deletes user data!
+   * Delete all entries of a type (WARNING: This deletes user transactions!)
    */
   async deleteAllEntriesByType(entryType: 'open' | 'akra' | 'ring' | 'packet'): Promise<{ deletedCount: number }> {
     if (!isSupabaseConfigured() || !supabase) {

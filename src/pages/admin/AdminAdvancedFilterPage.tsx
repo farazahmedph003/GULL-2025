@@ -7,6 +7,7 @@ import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import { ConfirmationContext } from '../../App';
 import { groupTransactionsByNumber } from '../../utils/transactionHelpers';
 import type { EntryType } from '../../types';
+import LoadingButton from '../../components/LoadingButton';
 
 const AdminAdvancedFilterPage: React.FC = () => {
   const [selectedType, setSelectedType] = useState<EntryType>('open');
@@ -341,6 +342,14 @@ const AdminAdvancedFilterPage: React.FC = () => {
       console.log('🔄 Starting FIRST deduction...');
       const processedEntries = new Set<string>();
       
+      // Collect ALL deductions first (before saving)
+      const allDeductionsToSave: Array<{
+        transactionId: string;
+        deductedFirst: number;
+        deductedSecond: number;
+        number: string;
+      }> = [];
+      
       for (const result of firstFilteredResults) {
         const entriesForNumber = entries.filter(e => e.number === result.number);
         console.log(`📌 Processing number ${result.number}: ${entriesForNumber.length} entries found`);
@@ -373,24 +382,39 @@ const AdminAdvancedFilterPage: React.FC = () => {
               userRemaining -= deductAmount;
               remainingToDeduct -= deductAmount;
               
-              // Save admin deduction (admin-only, doesn't modify user data)
-      await db.saveAdminDeduction(
-        entry.id,
-        user?.id || 'unknown',
-        deductAmount,
-        0, // Only deducting first
-        'advanced_filter_first',
-                {
-                  entryType: selectedType,
-                  searchQuery: firstNumbers,
-                  numberFiltered: result.number,
-                }
-              );
+              // Collect deduction for batch save
+              allDeductionsToSave.push({
+                transactionId: entry.id,
+                deductedFirst: deductAmount,
+                deductedSecond: 0,
+                number: result.number,
+              });
               
               processedEntries.add(entryKey);
             }
           }
         }
+      }
+      
+      // Save ALL deductions in a single batch operation (INSTANT!)
+      if (allDeductionsToSave.length > 0) {
+        console.log(`🚀 Saving all ${allDeductionsToSave.length} FIRST deductions in ONE batch operation...`);
+        
+        const batchDeductions = allDeductionsToSave.map(({ transactionId, deductedFirst, deductedSecond, number }) => ({
+          transactionId,
+          adminUserId: user?.id || 'unknown',
+          deductedFirst: Math.floor(deductedFirst),
+          deductedSecond: Math.floor(deductedSecond),
+          deductionType: 'advanced_filter_first',
+          metadata: {
+            entryType: selectedType,
+            searchQuery: firstNumbers,
+            numberFiltered: number,
+          }
+        }));
+        
+        await db.saveAdminDeductionsBatch(batchDeductions);
+        console.log(`✅ Batch save complete! ${allDeductionsToSave.length} deductions saved instantly!`);
       }
       
       // Log admin action for each affected user
@@ -458,6 +482,14 @@ const AdminAdvancedFilterPage: React.FC = () => {
       console.log('🔄 Starting SECOND deduction...');
       const processedEntries = new Set<string>();
       
+      // Collect ALL deductions first (before saving)
+      const allDeductionsToSave: Array<{
+        transactionId: string;
+        deductedFirst: number;
+        deductedSecond: number;
+        number: string;
+      }> = [];
+      
       for (const result of secondFilteredResults) {
         const entriesForNumber = entries.filter(e => e.number === result.number);
         console.log(`📌 Processing number ${result.number}: ${entriesForNumber.length} entries found`);
@@ -490,24 +522,39 @@ const AdminAdvancedFilterPage: React.FC = () => {
               userRemaining -= deductAmount;
               remainingToDeduct -= deductAmount;
               
-              // Save admin deduction (admin-only, doesn't modify user data)
-      await db.saveAdminDeduction(
-        entry.id,
-        user?.id || 'unknown',
-        0, // Only deducting second
-        deductAmount,
-        'advanced_filter_second',
-                {
-                  entryType: selectedType,
-                  searchQuery: secondNumbers,
-                  numberFiltered: result.number,
-                }
-              );
+              // Collect deduction for batch save
+              allDeductionsToSave.push({
+                transactionId: entry.id,
+                deductedFirst: 0,
+                deductedSecond: deductAmount,
+                number: result.number,
+              });
               
               processedEntries.add(entryKey);
             }
           }
         }
+      }
+      
+      // Save ALL deductions in a single batch operation (INSTANT!)
+      if (allDeductionsToSave.length > 0) {
+        console.log(`🚀 Saving all ${allDeductionsToSave.length} SECOND deductions in ONE batch operation...`);
+        
+        const batchDeductions = allDeductionsToSave.map(({ transactionId, deductedFirst, deductedSecond, number }) => ({
+          transactionId,
+          adminUserId: user?.id || 'unknown',
+          deductedFirst: Math.floor(deductedFirst),
+          deductedSecond: Math.floor(deductedSecond),
+          deductionType: 'advanced_filter_second',
+          metadata: {
+            entryType: selectedType,
+            searchQuery: secondNumbers,
+            numberFiltered: number,
+          }
+        }));
+        
+        await db.saveAdminDeductionsBatch(batchDeductions);
+        console.log(`✅ Batch save complete! ${allDeductionsToSave.length} deductions saved instantly!`);
       }
       
       // Log admin action for each affected user
@@ -598,13 +645,15 @@ const AdminAdvancedFilterPage: React.FC = () => {
                       >
                         📋 Copy ({firstFilteredResults.length})
                       </button>
-                      <button
+                      <LoadingButton
                         onClick={handleDeductFirst}
-                        disabled={processing}
-                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                        loading={processing}
+                        variant="warning"
+                        size="sm"
+                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50"
                       >
                         ➖ Deduct
-                      </button>
+                      </LoadingButton>
                     </div>
                   )}
                 </div>
@@ -665,13 +714,15 @@ const AdminAdvancedFilterPage: React.FC = () => {
                       >
                         📋 Copy ({secondFilteredResults.length})
                       </button>
-                      <button
+                      <LoadingButton
                         onClick={handleDeductSecond}
-                        disabled={processing}
-                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                        loading={processing}
+                        variant="warning"
+                        size="sm"
+                        className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-lg text-xs font-semibold hover:bg-orange-200 dark:hover:bg-orange-900/50"
                       >
                         ➖ Deduct
-                      </button>
+                      </LoadingButton>
                     </div>
                   )}
                 </div>

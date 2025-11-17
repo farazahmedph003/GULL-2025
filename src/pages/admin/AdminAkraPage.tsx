@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useContext, useMemo } from 'react';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -6,6 +6,8 @@ import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import { ConfirmationContext } from '../../App';
 import EditTransactionModal from '../../components/EditTransactionModal';
 import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
+import { useDebounce } from '../../hooks/useDebounce';
+import LoadingButton from '../../components/LoadingButton';
 
 interface Entry {
   id: string;
@@ -48,6 +50,7 @@ const AdminAkraPage: React.FC = () => {
   const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
   const [viewMode, setViewMode] = useState<'aggregated' | 'history'>('aggregated');
   const [searchNumber, setSearchNumber] = useState('');
+  const [showNumbersModal, setShowNumbersModal] = useState<{ numbers: string[]; title: string } | null>(null);
   const [stats, setStats] = useState({
     totalEntries: 0,
     firstPkr: 0,
@@ -64,8 +67,8 @@ const AdminAkraPage: React.FC = () => {
   const isAnyModalOpenRef = React.useRef(false);
   
   React.useEffect(() => {
-    isAnyModalOpenRef.current = !!(editingEntry || deletingEntry);
-  }, [editingEntry, deletingEntry]);
+    isAnyModalOpenRef.current = !!(editingEntry || deletingEntry || showNumbersModal);
+  }, [editingEntry, deletingEntry, showNumbersModal]);
 
   const loadEntries = useCallback(async (force = false) => {
     // Skip refresh if modal is open (unless forced)
@@ -101,12 +104,13 @@ const AdminAkraPage: React.FC = () => {
     }
   }, [showError]); // Remove modal states from dependencies, use ref instead
 
-  // Filter entries by search
-  const filteredEntries = React.useMemo(() => {
-    if (!searchNumber.trim()) return entries;
-    const search = searchNumber.trim().toLowerCase();
+  // Optimized search with debouncing for fast performance even on slow connections
+  const debouncedSearchNumber = useDebounce(searchNumber, 200);
+  const filteredEntries = useMemo(() => {
+    if (!debouncedSearchNumber.trim()) return entries;
+    const search = debouncedSearchNumber.trim().toLowerCase();
     return entries.filter(entry => entry.number.toLowerCase().includes(search));
-  }, [entries, searchNumber]);
+  }, [entries, debouncedSearchNumber]);
 
   // Group entries by number for aggregated view
   const groupedEntries = React.useMemo(() => {
@@ -120,16 +124,57 @@ const AdminAkraPage: React.FC = () => {
     return groups;
   }, [filteredEntries]);
 
-  // Group deductions by timestamp (within 2 seconds)
+  // Group deductions by filter_save_id (for filter saves) or timestamp (within 2 seconds for others)
   const groupedDeductions = React.useMemo(() => {
     const groups: { deductions: DeductionRecord[], displayData: any }[] = [];
     const processedIds = new Set<string>();
     
+    // First, group filter_save deductions by filter_save_id
+    const filterSaveGroups = new Map<string, DeductionRecord[]>();
+    const nonFilterDeductions: DeductionRecord[] = [];
+    
     deductions.forEach(deduction => {
+      // Check if this is a filter_save deduction with filter_save_id
+      const filterSaveId = deduction.metadata?.filter_save_id;
+      if (deduction.deduction_type === 'filter_save' && filterSaveId) {
+        if (!filterSaveGroups.has(filterSaveId)) {
+          filterSaveGroups.set(filterSaveId, []);
+        }
+        filterSaveGroups.get(filterSaveId)!.push(deduction);
+      } else {
+        nonFilterDeductions.push(deduction);
+      }
+    });
+    
+    // Process filter_save groups (all deductions with same filter_save_id are one group)
+    filterSaveGroups.forEach((filterDeductions, filterSaveId) => {
+      const totalFirst = filterDeductions.reduce((sum, d) => sum + d.deducted_first, 0);
+      const totalSecond = filterDeductions.reduce((sum, d) => sum + d.deducted_second, 0);
+      const displayNumbers = filterDeductions.map(d => d.transactions.number).join(', ');
+      
+      groups.push({
+        deductions: filterDeductions,
+        displayData: {
+          numbers: displayNumbers,
+          first: totalFirst,
+          second: totalSecond,
+          total: totalFirst + totalSecond,
+          count: filterDeductions.length,
+          timestamp: filterDeductions[0].created_at,
+          admin: filterDeductions[0].admin.username,
+          isFilterSave: true,
+        }
+      });
+      
+      filterDeductions.forEach(d => processedIds.add(d.id));
+    });
+    
+    // Process non-filter deductions by timestamp (within 2 seconds)
+    nonFilterDeductions.forEach(deduction => {
       if (processedIds.has(deduction.id)) return;
       
       const createdTime = new Date(deduction.created_at).getTime();
-      const similarDeductions = deductions.filter(d => {
+      const similarDeductions = nonFilterDeductions.filter(d => {
         if (processedIds.has(d.id)) return false;
         const dTime = new Date(d.created_at).getTime();
         const timeDiff = Math.abs(createdTime - dTime);
@@ -309,9 +354,9 @@ const AdminAkraPage: React.FC = () => {
     if (!result) return;
 
     try {
-      for (const deduction of deductions) {
-        await db.deleteAdminDeduction(deduction.id);
-      }
+      // Delete all deductions in a single batch operation (INSTANT!)
+      const deductionIds = deductions.map(d => d.id);
+      await db.deleteAdminDeductionsBatch(deductionIds);
       await showSuccess('Success', `Successfully deleted ${deductions.length} deductions. Amounts have been restored.`);
       loadEntries(true); // Force reload after delete
     } catch (error) {
@@ -462,15 +507,17 @@ const AdminAkraPage: React.FC = () => {
             {/* Reset All Button */}
             <div className="w-full sm:w-auto">
               <label className="block text-sm font-medium text-transparent mb-2">.</label>
-              <button
+              <LoadingButton
                 onClick={handleResetAll}
-                className="w-full sm:w-auto px-6 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-lg font-semibold shadow-lg transition-all flex items-center justify-center gap-2"
+                loading={resetting}
+                variant="warning"
+                className="w-full sm:w-auto px-6 py-2 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-lg font-semibold shadow-lg transition-all flex items-center justify-center gap-2"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                Reset All
-              </button>
+                Reset Admin View
+              </LoadingButton>
             </div>
           </div>
         </div>
@@ -572,72 +619,32 @@ const AdminAkraPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {/* Deduction Records - Show at TOP (most recent first) */}
-                {groupedDeductions
-                  .filter(g => !searchNumber.trim() || g.displayData.numbers.toLowerCase().includes(searchNumber.trim().toLowerCase()))
-                  .sort((a, b) => new Date(b.displayData.timestamp).getTime() - new Date(a.displayData.timestamp).getTime())
-                  .map((group, groupIndex) => (
-                  <tr key={`deduction-group-${groupIndex}`} className="bg-orange-50 dark:bg-orange-900/10 hover:bg-orange-100 dark:hover:bg-orange-900/20 transition-colors border-l-4 border-orange-500">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
-                          {group.deductions[0].transactions.app_users.username}
-                        </span>
-                        <span className="px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs rounded">
-                          DEDUCTION
-                        </span>
-                        {group.displayData.count > 1 && (
-                          <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-xs rounded font-semibold">
-                            {group.displayData.count} deductions
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="font-semibold text-gray-900 dark:text-white">
-                        {group.displayData.numbers}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <span className="text-red-600 dark:text-red-400 font-semibold">
-                        -{group.displayData.first.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <span className="text-red-600 dark:text-red-400 font-semibold">
-                        -{group.displayData.second.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <span className="text-red-600 dark:text-red-400 font-bold">
-                        -{group.displayData.total.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                      <div className="flex flex-col">
-                        <span>{new Date(group.displayData.timestamp).toLocaleString()}</span>
-                        <span className="text-xs text-gray-500 dark:text-gray-500">
-                          by {group.displayData.admin}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <button
-                        onClick={() => handleDeleteDeductionGroup(group.deductions)}
-                        className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-sm font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors flex items-center gap-1"
-                        title={`Delete ${group.displayData.count > 1 ? 'All ' + group.displayData.count + ' Deductions' : 'Deduction'}`}
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                
-                {/* Regular Entries */}
-                {filteredEntries.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((entry) => (
+                {(() => {
+                  // Combine entries and deductions into a single array
+                  const entryItems = filteredEntries.map(entry => ({
+                    type: 'entry' as const,
+                    id: entry.id,
+                    timestamp: new Date(entry.created_at).getTime(),
+                    data: entry
+                  }));
+                  
+                  const deductionItems = groupedDeductions
+                    .filter(g => !searchNumber.trim() || g.displayData.numbers.toLowerCase().includes(searchNumber.trim().toLowerCase()))
+                    .map(group => ({
+                      type: 'deduction' as const,
+                      id: `deduction-group-${group.deductions[0].id}`,
+                      timestamp: new Date(group.displayData.timestamp).getTime(),
+                      data: group
+                    }));
+                  
+                  // Combine and sort by timestamp (newest first)
+                  const combinedItems = [...entryItems, ...deductionItems]
+                    .sort((a, b) => b.timestamp - a.timestamp);
+                  
+                  return combinedItems.map((item) => {
+                    if (item.type === 'entry') {
+                      const entry = item.data;
+                      return (
                   <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
@@ -692,7 +699,98 @@ const AdminAkraPage: React.FC = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                      );
+                    } else {
+                      const group = item.data;
+                      return (
+                        <tr key={item.id} className="bg-orange-50 dark:bg-orange-900/10 hover:bg-orange-100 dark:hover:bg-orange-900/20 transition-colors border-l-4 border-orange-500">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
+                                {group.deductions[0].transactions.app_users.username}
+                              </span>
+                              <span className="px-2 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs rounded">
+                                DEDUCTION
+                              </span>
+                              {group.displayData.count > 1 && (
+                                <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-xs rounded font-semibold">
+                                  {group.displayData.count} deductions
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {(() => {
+                                const allNumbers = group.displayData.numbers.split(', ').map(n => n.trim());
+                                const maxDisplay = 10;
+                                const displayNumbers = allNumbers.slice(0, maxDisplay);
+                                const hasMore = allNumbers.length > maxDisplay;
+                                
+                                return (
+                                  <>
+                                    <span className="font-semibold text-gray-900 dark:text-white">
+                                      {displayNumbers.join(', ')}
+                                      {hasMore && ` ...`}
+                                    </span>
+                                    {hasMore && (
+                                      <button
+                                        onClick={() => setShowNumbersModal({
+                                          numbers: allNumbers,
+                                          title: `All Numbers (${allNumbers.length} total)`
+                                        })}
+                                        className="px-2 py-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline"
+                                      >
+                                        Show More ({allNumbers.length - maxDisplay} more)
+                                      </button>
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <span className="text-red-600 dark:text-red-400 font-semibold">
+                              -{group.displayData.first.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <span className="text-red-600 dark:text-red-400 font-semibold">
+                              -{group.displayData.second.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right">
+                            <span className="text-red-600 dark:text-red-400 font-bold">
+                              -{group.displayData.total.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                            <div className="flex flex-col">
+                              <span>{new Date(group.displayData.timestamp).toLocaleString()}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-500">
+                                by {group.displayData.admin}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <LoadingButton
+                              onClick={() => handleDeleteDeductionGroup(group.deductions)}
+                              variant="danger"
+                              size="sm"
+                              className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-sm font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 flex items-center gap-1"
+                              title={`Delete ${group.displayData.count > 1 ? 'All ' + group.displayData.count + ' Deductions' : 'Deduction'}`}
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                              Delete
+                            </LoadingButton>
+                          </td>
+                        </tr>
+                      );
+                    }
+                  });
+                })()}
               </tbody>
             </table>
 
@@ -750,11 +848,53 @@ const AdminAkraPage: React.FC = () => {
           itemName={`Number: ${deletingEntry.number} (${deletingEntry.app_users.username})`}
         />
       )}
+
+      {/* Numbers Modal */}
+      {showNumbersModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowNumbersModal(null)}>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                {showNumbersModal.title}
+              </h3>
+              <button
+                onClick={() => setShowNumbersModal(null)}
+                className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2">
+                {showNumbersModal.numbers.map((number, index) => (
+                  <div
+                    key={index}
+                    className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-center text-sm font-semibold text-gray-900 dark:text-white"
+                  >
+                    {number}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end">
+              <button
+                onClick={() => setShowNumbersModal(null)}
+                className="px-6 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-export default AdminAkraPage;
+// Memoize component to prevent unnecessary re-renders on slow connections
+export default React.memo(AdminAkraPage);
 
 
 

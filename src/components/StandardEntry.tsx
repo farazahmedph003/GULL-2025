@@ -6,6 +6,7 @@ import { useNotifications } from '../contexts/NotificationContext';
 import { playSuccessSound } from '../utils/audioFeedback';
 import { useAuth } from '../contexts/AuthContext';
 import { useSystemSettings } from '../hooks/useSystemSettings';
+import LoadingButton from './LoadingButton';
 import {
   getExistingTotalsForNumber,
   getLimitsForEntryType,
@@ -16,6 +17,7 @@ interface StandardEntryProps {
   projectId: string;
   onSuccess?: (summary: AddedEntrySummary[]) => void;
   addTransaction: (transaction: Omit<Transaction, 'id'>, skipBalanceDeduction?: boolean) => Promise<Transaction | null>;
+  addTransactionsBatch?: (transactions: Array<Omit<Transaction, 'id'>>, skipBalanceDeduction?: boolean) => Promise<Transaction[]>;
   transactions: Transaction[];
 }
 
@@ -23,6 +25,7 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
   projectId,
   onSuccess: _onSuccess,
   addTransaction,
+  addTransactionsBatch,
   transactions,
 }) => {
   const { user } = useAuth();
@@ -275,10 +278,17 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         });
       }
 
-      // Add all transactions in parallel with balance deduction skipped (already done above)
-      const addPromises = transactionsToAdd.map(transaction => addTransaction(transaction, true));
-      const results = await Promise.all(addPromises);
-      const successfulResults = results.filter((result): result is Transaction => result !== null);
+      // Add all transactions in a single batch operation (INSTANT!)
+      let successfulResults: Transaction[] = [];
+      if (addTransactionsBatch && transactionsToAdd.length > 1) {
+        // Use batch operation for multiple transactions
+        successfulResults = await addTransactionsBatch(transactionsToAdd, true);
+      } else {
+        // Fallback to individual adds for single transaction or if batch not available
+        const addPromises = transactionsToAdd.map(transaction => addTransaction(transaction, true));
+        const results = await Promise.all(addPromises);
+        successfulResults = results.filter((result): result is Transaction => result !== null);
+      }
       const successCount = successfulResults.length;
       
       if (successCount === 0) {
@@ -414,17 +424,20 @@ const StandardEntry: React.FC<StandardEntryProps> = ({
         </div>
 
         {/* Submit Button - Full Width */}
-        <button
+        <LoadingButton
           type="submit"
-          disabled={isSubmitting}
-          className="w-full px-5 py-4 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-lg font-semibold rounded-3xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
+          loading={isSubmitting}
+          variant="primary"
+          size="lg"
+          className="w-full rounded-3xl shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98]"
         >
           Add Entry
-        </button>
+        </LoadingButton>
       </div>
     </form>
   );
 };
 
-export default StandardEntry;
+// Memoize component to prevent unnecessary re-renders
+export default React.memo(StandardEntry);
 

@@ -4,6 +4,7 @@ import { useUserBalance } from '../hooks/useUserBalance';
 import { formatCurrency } from '../utils/helpers';
 import { useSystemSettings } from '../hooks/useSystemSettings';
 import { getLimitsForEntryType, getExistingTotalsForNumber } from '../utils/amountLimits';
+import LoadingButton from './LoadingButton';
 
 interface EditTransactionModalProps {
   isOpen: boolean;
@@ -26,6 +27,7 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   const [second, setSecond] = useState('');
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<{ first?: string; second?: string; balance?: string }>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { balance: currentUserBalance } = useUserBalance();
   const { amountLimits } = useSystemSettings();
   
@@ -105,11 +107,12 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!transaction || !validate()) {
+    if (!transaction || !validate() || isSubmitting) {
       return;
     }
+    setIsSubmitting(true);
 
+    try {
       const updated: Transaction = {
         ...transaction,
         first: first.trim() ? Number(first) : 0,
@@ -118,8 +121,13 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
         updatedAt: new Date().toISOString(),
       };
 
-      onSave(updated);
+      await onSave(updated);
       onClose();
+    } catch (error) {
+      console.error('Error saving transaction:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (!isOpen || !transaction) return null;
@@ -293,15 +301,17 @@ const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
                   </svg>
                   <span>Cancel</span>
                 </button>
-                <button 
+                <LoadingButton
                   type="submit"
+                  loading={isSubmitting}
+                  variant="success"
                   className="px-6 py-3 bg-gradient-to-r from-green-500 to-blue-600 text-white rounded-xl font-semibold hover:from-green-600 hover:to-blue-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center space-x-2"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   <span>Save Changes</span>
-                </button>
+                </LoadingButton>
               </div>
             </form>
           </div>
