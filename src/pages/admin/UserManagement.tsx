@@ -199,7 +199,7 @@ const UserManagement: React.FC = () => {
     
     try {
       const history = await db.getUserHistory(userId);
-      const balanceHist = history.filter((item: any) => item.isTopUp);
+      const balanceHist = history.filter((item: any) => item.isTopUp === true);
       setBalanceHistory(balanceHist);
     } catch (error) {
       console.error('Error reloading balance history:', error);
@@ -257,17 +257,21 @@ const UserManagement: React.FC = () => {
     
     try {
       const history = await db.getUserHistory(userId);
-      // Separate entries from balance history
-      const entries = history.filter((item: any) => !item.isTopUp);
-      const balanceHist = history.filter((item: any) => item.isTopUp);
+      // Separate entries from balance history and admin actions
+      // Only count actual transaction entries (not admin actions or top-ups)
+      const entries = history.filter((item: any) => item.isEntry === true);
+      const balanceHist = history.filter((item: any) => item.isTopUp === true);
       
       setHistoryData(entries);
       setBalanceHistory(balanceHist);
+      
+      // Log for debugging - compare with card count
+      console.log(`📊 History loaded: ${entries.length} entries (Card shows: ${users.find(u => u.id === userId)?.entryCount || 'N/A'})`);
     } catch (error) {
       console.error('Error loading history:', error);
       showError('Error', 'Failed to load user history');
     }
-  }, [showError]);
+  }, [showError, users]);
 
   const handleViewHistory = async (user: UserData) => {
     if (expandedUserId === user.id) {
@@ -280,6 +284,8 @@ const UserManagement: React.FC = () => {
 
     setExpandedUserId(user.id);
     setHistoryTab('entries');
+    // Refresh user list first to ensure entryCount is up-to-date
+    await loadUsers(true);
     await loadHistoryData(user.id, true);
   };
 
@@ -393,8 +399,8 @@ const UserManagement: React.FC = () => {
     if (!confirm) return;
     
     const firstConfirm = await confirm(
-      `Are you sure you want to RESET ALL HISTORY for "${user.full_name}" (@${user.username})?\n\nThis will permanently delete:\n• All transactions (Open, Akra, Ring, Packet)\n• All entry history\n• All admin deductions\n• All balance history (deposits/withdrawals)\n\nThis action CANNOT be undone!`,
-      { type: 'danger', title: '⚠️ Reset User History' }
+      `Are you sure you want to PERMANENTLY DELETE ALL HISTORY for "${user.full_name}" (@${user.username})?\n\nThis will PERMANENTLY DELETE:\n• All transactions (Open, Akra, Ring, Packet)\n• All entry history\n• All admin deductions\n• All balance history (deposits/withdrawals)\n\n🚨 THIS ACTION CANNOT BE UNDONE - ENTRIES WILL BE PERMANENTLY DELETED FROM ALL PAGES!`,
+      { type: 'danger', title: '⚠️ Delete User History Permanently' }
     );
     
     if (!firstConfirm) return;
@@ -829,7 +835,12 @@ const UserManagement: React.FC = () => {
               {expandedUserId === user.id && (
                 <div className="border-t border-gray-200 dark:border-gray-700 p-6 bg-gray-50 dark:bg-gray-900/50">
                   <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-bold text-gray-900 dark:text-white">User History</h4>
+                    <div>
+                      <h4 className="font-bold text-gray-900 dark:text-white">User History</h4>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Showing {historyData.length} entries {historyData.length !== user.entryCount && `(Card shows: ${user.entryCount})`}
+                      </p>
+                    </div>
                     
                     {/* Tabs */}
                     <div className="flex gap-2 items-center">

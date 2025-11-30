@@ -48,6 +48,7 @@ const AdminAkraPage: React.FC = () => {
   const [deductions, setDeductions] = useState<DeductionRecord[]>([]);
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
+  const [deletingDeductionIds, setDeletingDeductionIds] = useState<Set<string>>(new Set()); // Track deletions in progress
   const [viewMode, setViewMode] = useState<'aggregated' | 'history'>('aggregated');
   const [searchNumber, setSearchNumber] = useState('');
   const [showNumbersModal, setShowNumbersModal] = useState<{ numbers: string[]; title: string } | null>(null);
@@ -303,8 +304,8 @@ const AdminAkraPage: React.FC = () => {
     if (!confirm) return;
 
     const result = await confirm(
-      `Are you sure you want to RESET ADMIN VIEW for Akra entries?\n\nThis will remove all admin deductions and hide entries from admin view.\n\n⚠️ User data will NOT be affected - only the admin view will be reset.`,
-      { type: 'warning', title: '🔄 Reset Admin View (Akra)' }
+      `Are you sure you want to PERMANENTLY DELETE ALL Akra entries?\n\nThis will PERMANENTLY DELETE:\n• All Akra transactions (00)\n• All admin deductions for Akra entries\n\n🚨 THIS ACTION CANNOT BE UNDONE - ALL AKRA ENTRIES WILL BE PERMANENTLY DELETED FROM ALL PAGES!`,
+      { type: 'danger', title: '🗑️ Delete All Akra Entries Permanently' }
     );
 
     if (!result) return;
@@ -312,7 +313,7 @@ const AdminAkraPage: React.FC = () => {
     setResetting(true);
     try {
       const result = await db.deleteAllAdminDeductionsByType('akra');
-      await showSuccess('Success', `Admin view reset! Hidden ${result.deletedCount} entries from admin view. User data unchanged.`);
+      await showSuccess('Success', `Permanently deleted ${result.deletedCount} Akra entries!`);
       loadEntries(true); // Force reload after reset
     } catch (error) {
       console.error('Reset error:', error);
@@ -325,6 +326,12 @@ const AdminAkraPage: React.FC = () => {
   const handleDeleteDeduction = async (deduction: DeductionRecord) => {
     if (!confirm) return;
 
+    // Prevent double deletion
+    if (deletingDeductionIds.has(deduction.id)) {
+      console.warn('⚠️ Deduction deletion already in progress');
+      return;
+    }
+
     const result = await confirm(
       `Are you sure you want to DELETE this deduction?\n\nNumber: ${deduction.transactions.number}\nUser: ${deduction.transactions.app_users.username}\nDeducted: F ${deduction.deducted_first}, S ${deduction.deducted_second}\n\nThis will restore the original amounts.`,
       { type: 'danger', title: '🗑️ Delete Deduction' }
@@ -332,13 +339,29 @@ const AdminAkraPage: React.FC = () => {
 
     if (!result) return;
 
+    // Mark as deleting
+    setDeletingDeductionIds(prev => new Set(prev).add(deduction.id));
+
+    // Optimistically remove from UI immediately
+    setDeductions(prev => prev.filter(d => d.id !== deduction.id));
+
     try {
       await db.deleteAdminDeduction(deduction.id);
       await showSuccess('Success', 'Deduction deleted successfully. Amounts have been restored.');
-      loadEntries(true); // Force reload after delete
+      // Force reload to ensure UI is in sync
+      await loadEntries(true);
     } catch (error) {
       console.error('Delete deduction error:', error);
+      // Restore deduction on error
+      setDeductions(prev => [...prev, deduction]);
       showError('Error', 'Failed to delete deduction');
+    } finally {
+      // Remove from deleting set
+      setDeletingDeductionIds(prev => {
+        const next = new Set(prev);
+        next.delete(deduction.id);
+        return next;
+      });
     }
   };
 
@@ -357,15 +380,50 @@ const AdminAkraPage: React.FC = () => {
 
     if (!result) return;
 
+    const deductionIds = deductions.map(d => d.id);
+    
+    // Prevent double deletion
+    const alreadyDeleting = deductionIds.some(id => deletingDeductionIds.has(id));
+    if (alreadyDeleting) {
+      console.warn('⚠️ Deduction deletion already in progress');
+      showError('Error', 'Deletion already in progress. Please wait.');
+      return;
+    }
+
+    // Mark all as deleting
+    setDeletingDeductionIds(prev => {
+      const next = new Set(prev);
+      deductionIds.forEach(id => next.add(id));
+      return next;
+    });
+
+    // Optimistically remove from UI immediately
+    const deductionIdSet = new Set(deductionIds);
+    setDeductions(prev => prev.filter(d => !deductionIdSet.has(d.id)));
+
     try {
-      // Delete all deductions in a single batch operation (INSTANT!)
-      const deductionIds = deductions.map(d => d.id);
-      await db.deleteAdminDeductionsBatch(deductionIds);
+      // Delete all deductions in a single batch operation
+      const deleteResult = await db.deleteAdminDeductionsBatch(deductionIds);
+      
+      if (deleteResult.failed > 0) {
+        throw new Error(`Failed to delete ${deleteResult.failed} deductions`);
+      }
+
       await showSuccess('Success', `Successfully deleted ${deductions.length} deductions. Amounts have been restored.`);
-      loadEntries(true); // Force reload after delete
-    } catch (error) {
+      // Force reload to ensure UI is in sync
+      await loadEntries(true);
+    } catch (error: any) {
       console.error('Delete deductions error:', error);
-      showError('Error', 'Failed to delete deductions');
+      // Restore deductions on error
+      setDeductions(prev => [...prev, ...deductions]);
+      showError('Error', error?.message || 'Failed to delete deductions');
+    } finally {
+      // Remove from deleting set
+      setDeletingDeductionIds(prev => {
+        const next = new Set(prev);
+        deductionIds.forEach(id => next.delete(id));
+        return next;
+      });
     }
   };
 
@@ -779,9 +837,11 @@ const AdminAkraPage: React.FC = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <LoadingButton
                               onClick={() => handleDeleteDeductionGroup(group.deductions)}
+                              loading={group.deductions.some(d => deletingDeductionIds.has(d.id))}
+                              disabled={group.deductions.some(d => deletingDeductionIds.has(d.id))}
                               variant="danger"
                               size="sm"
-                              className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-sm font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 flex items-center gap-1"
+                              className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-sm font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                               title={`Delete ${group.displayData.count > 1 ? 'All ' + group.displayData.count + ' Deductions' : 'Deduction'}`}
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

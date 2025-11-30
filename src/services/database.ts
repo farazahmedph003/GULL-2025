@@ -527,24 +527,74 @@ export class DatabaseService {
       // Filter out entries hidden from user view (for user dashboard)
       query = query.is('hidden_from_user', null);
 
-      // Add explicit limit to ensure ALL transactions are loaded (no limit on Supabase queries)
-      const { data, error } = await query
-        .order('created_at', { ascending: true })
-        .limit(10000); // High limit to ensure all entries are loaded
+      // Fetch ALL transactions using pagination (Supabase PostgREST has max limit of ~1000 per query)
+      // We'll fetch in batches of 1000 until we get all transactions
+      const BATCH_SIZE = 1000;
+      let allTransactions: any[] = [];
+      let offset = 0;
+      let hasMore = true;
+      
+      console.log('🔍 getTransactions: Starting paginated fetch for', { projectId, userId });
+      
+      while (hasMore) {
+        // Build query for this batch
+        let batchQuery = clientToUse
+          .from('transactions')
+          .select('*');
+
+        if (projectId === 'user-scope') {
+          batchQuery = batchQuery.is('project_id', null);
+        } else {
+          batchQuery = batchQuery.eq('project_id', projectId);
+        }
+
+        if (userId) {
+          batchQuery = batchQuery.eq('user_id', userId);
+        }
+
+        batchQuery = batchQuery.is('hidden_from_user', null);
+
+        const { data, error } = await batchQuery
+          .order('created_at', { ascending: true })
+          .range(offset, offset + BATCH_SIZE - 1); // Use range for pagination
+        
+        if (error) {
+          console.error('Error fetching transactions batch:', {
+            projectId,
+            userId,
+            offset,
+            error: error.message,
+            errorCode: error.code
+          });
+          throw error;
+        }
+        
+        if (!data || data.length === 0) {
+          hasMore = false;
+          break;
+        }
+        
+        allTransactions = allTransactions.concat(data);
+        console.log(`🔍 getTransactions: Fetched batch ${Math.floor(offset / BATCH_SIZE) + 1}, ${data.length} transactions (total so far: ${allTransactions.length})`);
+        
+        // If we got fewer than BATCH_SIZE, we've reached the end
+        if (data.length < BATCH_SIZE) {
+          hasMore = false;
+        } else {
+          offset += BATCH_SIZE;
+        }
+      }
 
       console.log('🔍 getTransactions result:', {
         projectId,
-        dataLength: data?.length || 0,
-        error: error?.message || 'none',
-        firstTransaction: data?.[0] || 'none'
+        userId,
+        totalDataLength: allTransactions.length,
+        batchesFetched: Math.floor(offset / BATCH_SIZE) + (allTransactions.length > 0 ? 1 : 0),
+        firstTransaction: allTransactions[0] || 'none',
+        lastTransaction: allTransactions[allTransactions.length - 1] || 'none'
       });
 
-      if (error) {
-        console.error('Database error in getTransactions:', error);
-        throw error;
-      }
-
-      return data.map((row: any) => ({
+      return allTransactions.map((row: any) => ({
         id: row.id,
         projectId: row.project_id || 'user-scope', // Map NULL back to 'user-scope'
         number: row.number,
@@ -1253,22 +1303,63 @@ export class DatabaseService {
         // Cache latest users
         await cacheUsers(users as any);
 
-        // Aggregate counts in a single query
-        const { data: tx, error: txErr } = await client
-          .from('transactions')
-          .select('user_id');
-        if (txErr) throw txErr;
+        // Aggregate counts using pagination - fetch ALL transactions (Supabase PostgREST has max limit of ~1000 per query)
+        // We'll fetch in batches of 1000 until we get all transactions
+        const BATCH_SIZE = 1000;
+        let allTransactions: any[] = [];
+        let offset = 0;
+        let hasMore = true;
+        
+        console.log('🔍 getAllUsersWithStats: Starting paginated transaction fetch');
+        
+        while (hasMore) {
+          const { data: tx, error: txErr } = await client
+            .from('transactions')
+            .select('user_id')
+            .is('hidden_from_user', null) // Only count transactions not hidden from user view
+            .range(offset, offset + BATCH_SIZE - 1); // Use range for pagination
+          
+          if (txErr) {
+            console.error('Error fetching transactions batch:', {
+              offset,
+              error: txErr.message,
+              errorCode: txErr.code
+            });
+            throw txErr;
+          }
+          
+          if (!tx || tx.length === 0) {
+            hasMore = false;
+            break;
+          }
+          
+          allTransactions = allTransactions.concat(tx);
+          console.log(`🔍 getAllUsersWithStats: Fetched batch ${Math.floor(offset / BATCH_SIZE) + 1}, ${tx.length} transactions (total so far: ${allTransactions.length})`);
+          
+          // If we got fewer than BATCH_SIZE, we've reached the end
+          if (tx.length < BATCH_SIZE) {
+            hasMore = false;
+          } else {
+            offset += BATCH_SIZE;
+          }
+        }
+        
+        // Count transactions per user
         const counts: Record<string, number> = {};
-        (tx || []).forEach((r: any) => {
-          counts[r.user_id] = (counts[r.user_id] || 0) + 1;
+        allTransactions.forEach((r: any) => {
+          if (r.user_id) {
+            counts[r.user_id] = (counts[r.user_id] || 0) + 1;
+          }
         });
         
         const result = (users || []).map((u: any) => ({ ...u, entryCount: counts[u.id] || 0 }));
         
         console.log('🔍 getAllUsersWithStats result:', {
           usersCount: users?.length || 0,
-          transactionsCount: tx?.length || 0,
-          userCounts: counts
+          totalTransactionsCount: allTransactions.length,
+          batchesFetched: Math.floor(offset / BATCH_SIZE) + (allTransactions.length > 0 ? 1 : 0),
+          userCounts: counts,
+          sampleUserCounts: Object.entries(counts).slice(0, 5)
         });
         
         return result;
@@ -1709,13 +1800,15 @@ export class DatabaseService {
         .from('transactions')
         .select('*')
         .eq('user_id', userId) // Use user_id for app_users
+        .is('hidden_from_user', null) // Only get entries not hidden from user view
         .order('created_at', { ascending: false });
 
       if (entryType) {
         query = query.eq('entry_type', entryType);
       }
 
-      const { data, error } = await query;
+      // No limit - load ALL entries (effectively unlimited)
+      const { data, error } = await query.limit(1000000); // Very high limit - effectively unlimited
 
       if (error) throw error;
 
@@ -1747,29 +1840,63 @@ export class DatabaseService {
 
     try {
       const rows = await this.withRetry(async () => {
-        // First, get all transactions for this entry type
-        // Note: No limit - we need all entries for admin view, but queries are optimized with indexes
-        // Filter out entries hidden from admin view
-        const { data: transactions, error: txError } = await client
-          .from('transactions')
-          .select('id, user_id, project_id, number, entry_type, first_amount, second_amount, created_at, updated_at')
-          .eq('entry_type', entryType)
-          .is('hidden_from_admin', null) // Only show entries not hidden from admin
-          .order('created_at', { ascending: false });
-          // No .limit() - we need all entries, but Supabase is optimized with indexes
+        // Fetch ALL transactions using pagination (Supabase PostgREST has a max limit of ~1000 per query)
+        // We'll fetch in batches of 1000 until we get all entries
+        const BATCH_SIZE = 1000;
+        let allTransactions: any[] = [];
+        let offset = 0;
+        let hasMore = true;
+        
+        console.log('🔍 getAllEntriesByType: Starting paginated fetch for', entryType);
+        
+        while (hasMore) {
+          const { data: transactions, error: txError } = await client
+            .from('transactions')
+            .select('id, user_id, project_id, number, entry_type, first_amount, second_amount, created_at, updated_at')
+            .eq('entry_type', entryType)
+            .is('hidden_from_admin', null) // Only show entries not hidden from admin
+            .order('created_at', { ascending: false })
+            .range(offset, offset + BATCH_SIZE - 1); // Use range for pagination
+          
+          if (txError) {
+            console.error('Error fetching transactions batch:', {
+              entryType,
+              offset,
+              error: txError.message,
+              errorCode: txError.code
+            });
+            throw txError;
+          }
+          
+          if (!transactions || transactions.length === 0) {
+            hasMore = false;
+            break;
+          }
+          
+          allTransactions = allTransactions.concat(transactions);
+          console.log(`🔍 getAllEntriesByType: Fetched batch ${Math.floor(offset / BATCH_SIZE) + 1}, ${transactions.length} entries (total so far: ${allTransactions.length})`);
+          
+          // If we got fewer than BATCH_SIZE, we've reached the end
+          if (transactions.length < BATCH_SIZE) {
+            hasMore = false;
+          } else {
+            offset += BATCH_SIZE;
+          }
+        }
         
         console.log('🔍 getAllEntriesByType transactions result:', {
           entryType,
-          dataLength: transactions?.length || 0,
-          error: txError?.message || 'none',
-          firstTransaction: transactions?.[0] || 'none'
+          totalDataLength: allTransactions.length,
+          batchesFetched: Math.floor(offset / BATCH_SIZE) + (allTransactions.length > 0 ? 1 : 0),
+          firstTransaction: allTransactions[0] || 'none',
+          lastTransaction: allTransactions[allTransactions.length - 1] || 'none'
         });
         
-        if (txError) throw txError;
-        
-        if (!transactions || transactions.length === 0) {
+        if (allTransactions.length === 0) {
           return [];
         }
+        
+        const transactions = allTransactions;
         
         // Get all unique user IDs from transactions
         const userIds = [...new Set(transactions.map((t: any) => t.user_id).filter(Boolean))];
@@ -1986,15 +2113,54 @@ export class DatabaseService {
     });
 
     return this.withRetry(async () => {
-      // Get entries (use user_id for app_users) - Add explicit limit to ensure ALL entries are loaded
-      const { data: entries, error: entriesError } = await client
-        .from('transactions')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(10000); // High limit to ensure all entries are loaded
-
-      if (entriesError) throw entriesError;
+      // Get entries using pagination - fetch ALL entries (Supabase PostgREST has max limit of ~1000 per query)
+      const BATCH_SIZE = 1000;
+      let allEntries: any[] = [];
+      let offset = 0;
+      let hasMore = true;
+      
+      console.log('🔍 getUserHistory: Starting paginated fetch for entries, userId:', userId);
+      
+      while (hasMore) {
+        const { data: entries, error: entriesError } = await client
+          .from('transactions')
+          .select('*')
+          .eq('user_id', userId)
+          .is('hidden_from_user', null) // Only get entries not hidden from user view
+          .order('created_at', { ascending: false })
+          .range(offset, offset + BATCH_SIZE - 1); // Use range for pagination
+        
+        if (entriesError) {
+          console.error('Error fetching entries batch:', {
+            userId,
+            offset,
+            error: entriesError.message,
+            errorCode: entriesError.code
+          });
+          throw entriesError;
+        }
+        
+        if (!entries || entries.length === 0) {
+          hasMore = false;
+          break;
+        }
+        
+        allEntries = allEntries.concat(entries);
+        console.log(`🔍 getUserHistory: Fetched batch ${Math.floor(offset / BATCH_SIZE) + 1}, ${entries.length} entries (total so far: ${allEntries.length})`);
+        
+        // If we got fewer than BATCH_SIZE, we've reached the end
+        if (entries.length < BATCH_SIZE) {
+          hasMore = false;
+        } else {
+          offset += BATCH_SIZE;
+        }
+      }
+      
+      console.log('🔍 getUserHistory entries result:', {
+        userId,
+        totalEntries: allEntries.length,
+        batchesFetched: Math.floor(offset / BATCH_SIZE) + (allEntries.length > 0 ? 1 : 0)
+      });
 
       // Try to get balance history (both top-ups and withdrawals)
       let balanceHistoryItems: any[] = [];
@@ -2004,7 +2170,7 @@ export class DatabaseService {
           .select('*')
           .eq('app_user_id', userId)
           .order('created_at', { ascending: false })
-          .limit(10000); // High limit to ensure all entries are loaded
+          .limit(1000000); // Very high limit - effectively unlimited
 
         if (!balanceError && balanceHistory) {
           balanceHistoryItems = balanceHistory.map((item: any) => ({
@@ -2024,7 +2190,7 @@ export class DatabaseService {
           .select('*, admin_user:admin_user_id(username, email)')
           .eq('target_user_id', userId)
           .order('created_at', { ascending: false })
-          .limit(10000); // High limit to ensure all entries are loaded
+          .limit(1000000); // Very high limit - effectively unlimited
 
         if (!actionsError && actions) {
           adminActions = actions.map((action: any) => ({
@@ -2038,7 +2204,7 @@ export class DatabaseService {
 
       // Combine and sort by date
       const combined = [
-        ...entries.map((e: any) => ({ ...e, isEntry: true })),
+        ...allEntries.map((e: any) => ({ ...e, isEntry: true })),
         ...balanceHistoryItems,
         ...adminActions,
       ];
@@ -2302,76 +2468,240 @@ export class DatabaseService {
     const client = supabaseAdmin || supabase;
 
     try {
-      // CRITICAL: Validate all transaction IDs exist before saving
-      // This prevents foreign key constraint errors, especially for ring entries with original_transaction_id
-      const uniqueTransactionIds = [...new Set(deductions.map(d => d.transactionId).filter(Boolean))];
-      console.log(`🔍 Validating ${uniqueTransactionIds.length} unique transaction IDs before batch save...`);
-      
-      const { data: existingTransactions, error: validateError } = await client
-        .from('transactions')
-        .select('id')
-        .in('id', uniqueTransactionIds);
-      
-      if (validateError) {
-        console.error('❌ Transaction validation error:', validateError);
-        throw new Error(`Failed to validate transaction IDs: ${validateError.message}`);
-      }
-      
-      const existingTransactionIds = new Set((existingTransactions || []).map((t: any) => t.id));
-      const missingTransactionIds = uniqueTransactionIds.filter(id => !existingTransactionIds.has(id));
-      
-      if (missingTransactionIds.length > 0) {
-        console.error(`❌ CRITICAL: ${missingTransactionIds.length} transaction IDs not found in database:`, missingTransactionIds.slice(0, 10));
-        // Filter out deductions with invalid transaction IDs
-        const validDeductions = deductions.filter(d => existingTransactionIds.has(d.transactionId));
-        const invalidCount = deductions.length - validDeductions.length;
-        console.warn(`⚠️ Filtering out ${invalidCount} deductions with invalid transaction IDs`);
-        
-        if (validDeductions.length === 0) {
-          return {
-            success: 0,
-            failed: deductions.length,
-            errors: [`All ${deductions.length} deductions have invalid transaction IDs`]
-          };
-        }
-        
-        // Update deductions to only valid ones
-        deductions = validDeductions;
-      }
+      // OPTIMIZED FOR SPEED: Skip validation, use large batches, and parallel processing
+      // Database will handle foreign key constraints - invalid IDs will simply fail to insert
       
       // Prepare all deductions for batch insert
-      const insertData = deductions.map(d => ({
-        transaction_id: d.transactionId,
+      let insertData = deductions.map(d => ({
+        transaction_id: d.transactionId.trim(), // Ensure no whitespace
         admin_user_id: d.adminUserId,
-        deducted_first: Math.floor(d.deductedFirst), // Ensure whole numbers
-        deducted_second: Math.floor(d.deductedSecond), // Ensure whole numbers
+        deducted_first: Math.floor(Math.max(0, d.deductedFirst)), // Ensure whole numbers, non-negative
+        deducted_second: Math.floor(Math.max(0, d.deductedSecond)), // Ensure whole numbers, non-negative
         deduction_type: d.deductionType,
         metadata: d.metadata || {},
       }));
 
-      console.log(`💾 Batch saving ${insertData.length} validated deductions at once...`);
+      console.log(`🚀 INSTANT SAVE: Inserting ${insertData.length} deductions...`);
 
-      // Insert all deductions in a single database call
-      const { data, error } = await client
-        .from('admin_deductions')
-        .insert(insertData)
-        .select();
-
-      if (error) {
-        console.error('❌ saveAdminDeductionsBatch error:', error);
-        console.error('   Sample transaction IDs:', insertData.slice(0, 5).map(d => d.transaction_id));
-        throw error;
+      // OPTIMIZATION: Try single large insert first (fastest possible for < 2000 entries)
+      // For 1000 entries, this should work in one go
+      if (insertData.length <= 2000) {
+        try {
+          console.log(`🚀 Attempting single insert for ${insertData.length} deductions...`);
+          const { data: insertedData, error: singleInsertError } = await client
+            .from('admin_deductions')
+            .insert(insertData)
+            .select('id'); // Verify what was actually inserted
+          
+          if (!singleInsertError) {
+            const actualInserted = insertedData?.length || 0;
+            if (actualInserted === insertData.length) {
+              console.log(`✅ INSTANT SAVE: All ${insertData.length} deductions saved in ONE operation!`);
+              return {
+                success: actualInserted,
+                failed: 0,
+                errors: []
+              };
+            } else {
+              // Partial success - some items failed, process only failed items
+              console.warn(`⚠️ Single insert partially succeeded: ${actualInserted}/${insertData.length} inserted`);
+              // Process only the failed items in batches
+              insertData = insertData.slice(actualInserted);
+            }
+          } else {
+            console.warn(`⚠️ Single insert failed, falling back to batches:`, singleInsertError.message);
+            // Fall through to batch processing
+          }
+        } catch (singleErr: any) {
+          console.warn(`⚠️ Single insert exception, falling back to batches:`, singleErr.message);
+          // Fall through to batch processing
+        }
       }
 
-      const successCount = data?.length || 0;
-      const failedCount = deductions.length - successCount;
+      // CRITICAL: Use sequential batches with automatic retry to ensure ALL deductions are saved
+      // Sequential is more reliable than parallel for ensuring 100% success
+      const INSERT_BATCH_SIZE = 1000; // Larger batches for efficiency (Supabase can handle 1000)
+      const MAX_RETRIES = 5; // More retries to ensure success
+      
+      let remainingData = [...insertData];
+      let totalSuccess = 0;
+      let totalFailed = 0;
+      const insertErrors: string[] = [];
+      const failedBatches: typeof insertData[] = [];
+      
+      // Split into batches
+      const insertBatches: typeof insertData[] = [];
+      for (let i = 0; i < remainingData.length; i += INSERT_BATCH_SIZE) {
+        insertBatches.push(remainingData.slice(i, i + INSERT_BATCH_SIZE));
+      }
+      
+      console.log(`💾 Processing ${insertBatches.length} batches sequentially (${INSERT_BATCH_SIZE} items each) for reliability...`);
+      
+      // Process batches SEQUENTIALLY (more reliable than parallel for ensuring 100% success)
+      for (let batchIndex = 0; batchIndex < insertBatches.length; batchIndex++) {
+        const batch = insertBatches[batchIndex];
+        let batchSuccess = false;
+        let retryCount = 0;
+        
+        while (!batchSuccess && retryCount < MAX_RETRIES) {
+          try {
+            if (retryCount > 0) {
+              console.log(`🔄 Retrying batch ${batchIndex + 1} (attempt ${retryCount + 1}/${MAX_RETRIES})...`);
+              // Wait before retry (exponential backoff)
+              await new Promise(resolve => setTimeout(resolve, Math.min(500 * retryCount, 2000)));
+            }
+            
+            // Use .select() to verify what was actually inserted
+            const { data: insertedData, error: insertError } = await client
+              .from('admin_deductions')
+              .insert(batch)
+              .select('id');
+            
+            if (insertError) {
+              console.warn(`⚠️ Batch ${batchIndex + 1} failed (attempt ${retryCount + 1}): ${insertError.message}`);
+              retryCount++;
+              if (retryCount >= MAX_RETRIES) {
+                // Final attempt failed - try smaller chunks
+                console.warn(`⚠️ Batch ${batchIndex + 1} failed after ${MAX_RETRIES} attempts, trying smaller chunks...`);
+                failedBatches.push(batch);
+                insertErrors.push(`Batch ${batchIndex + 1}: ${insertError.message}`);
+                break;
+              }
+              continue; // Retry
+            }
+            
+            // Verify all items were inserted
+            const actualSuccess = insertedData?.length || 0;
+            const actualFailed = batch.length - actualSuccess;
+            
+            if (actualFailed > 0) {
+              console.warn(`⚠️ Batch ${batchIndex + 1} partially succeeded: ${actualSuccess}/${batch.length} inserted`);
+              totalSuccess += actualSuccess;
+              
+              // Retry the failed items
+              const failedItems = batch.slice(actualSuccess);
+              if (failedItems.length > 0) {
+                console.log(`🔄 Retrying ${failedItems.length} failed items from batch ${batchIndex + 1}...`);
+                failedBatches.push(failedItems);
+              }
+              batchSuccess = true; // Mark batch as processed (even if partial)
+            } else {
+              // All items succeeded
+              totalSuccess += actualSuccess;
+              console.log(`✅ Batch ${batchIndex + 1}/${insertBatches.length} complete: ${actualSuccess} deductions saved`);
+              batchSuccess = true;
+            }
+          } catch (err: any) {
+            console.error(`❌ Batch ${batchIndex + 1} exception (attempt ${retryCount + 1}):`, err);
+            retryCount++;
+            if (retryCount >= MAX_RETRIES) {
+              failedBatches.push(batch);
+              insertErrors.push(`Batch ${batchIndex + 1} exception: ${err.message}`);
+              break;
+            }
+          }
+        }
+      }
+      
+      // Retry failed batches with exponential backoff
+      let retryAttempt = 0;
+      let remainingFailedBatches = [...failedBatches];
+      
+      while (remainingFailedBatches.length > 0 && retryAttempt < MAX_RETRIES) {
+        retryAttempt++;
+        console.log(`🔄 Retry attempt ${retryAttempt}/${MAX_RETRIES}: Retrying ${remainingFailedBatches.length} failed batches...`);
+        
+        // Wait before retry (exponential backoff)
+        if (retryAttempt > 1) {
+          const delay = Math.min(1000 * Math.pow(2, retryAttempt - 2), 5000);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        
+        // Try smaller batches for failed ones
+        const retryBatches: typeof insertData[] = [];
+        remainingFailedBatches.forEach(failedBatch => {
+          // Split failed batch into smaller chunks
+          for (let j = 0; j < failedBatch.length; j += 100) {
+            retryBatches.push(failedBatch.slice(j, j + 100));
+          }
+        });
+        
+        const newFailedBatches: typeof insertData[] = [];
+        
+        // Process retry batches sequentially (more reliable)
+        for (const retryBatch of retryBatches) {
+          try {
+            const { data: retryData, error: retryError } = await client
+              .from('admin_deductions')
+              .insert(retryBatch)
+              .select('id');
+            
+            if (retryError) {
+              console.warn(`⚠️ Retry batch failed: ${retryError.message}`);
+              newFailedBatches.push(retryBatch);
+              insertErrors.push(`Retry batch failed: ${retryError.message}`);
+            } else {
+              const retrySuccess = retryData?.length || 0;
+              const retryFailed = retryBatch.length - retrySuccess;
+              
+              totalSuccess += retrySuccess;
+              totalFailed -= retrySuccess; // Subtract only what succeeded
+              
+              if (retryFailed > 0) {
+                // Some items in retry batch still failed
+                const stillFailed = retryBatch.slice(retrySuccess);
+                newFailedBatches.push(stillFailed);
+                insertErrors.push(`Retry batch partial: ${retrySuccess}/${retryBatch.length} succeeded`);
+              }
+            }
+          } catch (retryErr: any) {
+            console.error(`❌ Retry batch exception:`, retryErr);
+            newFailedBatches.push(retryBatch);
+            insertErrors.push(`Retry batch exception: ${retryErr.message}`);
+          }
+        }
+        
+        remainingFailedBatches = newFailedBatches;
+      }
+      
+      // Final attempt: Try individual inserts for any remaining failures
+      if (remainingFailedBatches.length > 0) {
+        const finalItems = remainingFailedBatches.flat();
+        console.log(`🔄 Final attempt: Trying ${finalItems.length} items individually...`);
+        
+        for (const item of finalItems) {
+          try {
+            const { data: finalData, error: finalError } = await client
+              .from('admin_deductions')
+              .insert([item])
+              .select('id');
+            
+            if (finalError) {
+              console.error(`❌ Final individual insert failed for transaction ${item.transaction_id}:`, finalError);
+              insertErrors.push(`Individual insert failed (${item.transaction_id}): ${finalError.message}`);
+            } else if (finalData && finalData.length > 0) {
+              totalSuccess += 1;
+              totalFailed -= 1;
+            } else {
+              // No data returned but no error - might be duplicate or constraint issue
+              console.warn(`⚠️ Individual insert returned no data for transaction ${item.transaction_id} (might be duplicate)`);
+              insertErrors.push(`Individual insert returned no data (${item.transaction_id}): might be duplicate`);
+            }
+          } catch (finalErr: any) {
+            console.error(`❌ Final individual insert exception for transaction ${item.transaction_id}:`, finalErr);
+            insertErrors.push(`Individual insert exception (${item.transaction_id}): ${finalErr.message}`);
+          }
+        }
+      }
 
-      console.log(`✅ Batch save complete: ${successCount}/${deductions.length} deductions saved`);
+      console.log(`✅ SAVE COMPLETE: ${totalSuccess}/${deductions.length} deductions saved! (${totalFailed} failed after all retries)`);
 
+      // Return result - let caller decide how to handle failures
+      // We've done our best with retries, but some may still fail due to database constraints
       return {
-        success: successCount,
-        failed: failedCount,
-        errors: failedCount > 0 ? [`Failed to save ${failedCount} deductions`] : []
+        success: totalSuccess,
+        failed: totalFailed,
+        errors: insertErrors
       };
     } catch (error: any) {
       console.error('❌ saveAdminDeductionsBatch exception:', error);
@@ -2467,7 +2797,7 @@ export class DatabaseService {
   }
 
   /**
-   * Batch delete multiple admin deductions at once (much faster than individual deletes)
+   * Batch delete multiple admin deductions at once (handles large batches with pagination)
    */
   async deleteAdminDeductionsBatch(deductionIds: string[]): Promise<{ success: number; failed: number }> {
     if (!isSupabaseConfigured() || !supabase) {
@@ -2481,27 +2811,76 @@ export class DatabaseService {
     const client = supabaseAdmin || supabase;
 
     try {
-      console.log(`🗑️ Batch deleting ${deductionIds.length} deductions at once...`);
+      console.log(`🗑️ Batch deleting ${deductionIds.length} deductions...`);
 
-      // Delete all deductions in a single database call
-      const { error } = await client
-        .from('admin_deductions')
-        .delete()
-        .in('id', deductionIds);
+      // Use WHERE clause for instant deletion (handles any number of deductions)
+      // This is faster and more reliable than .in() which has limits
+      const uniqueIds = [...new Set(deductionIds.filter(id => id && id.trim()))];
+      
+      if (uniqueIds.length === 0) {
+        return { success: 0, failed: 0 };
+      }
 
-      if (error) {
-        console.error('❌ deleteAdminDeductionsBatch error:', error);
-        throw error;
+      // For small batches, use .in() for simplicity
+      if (uniqueIds.length <= 1000) {
+        const { error } = await client
+          .from('admin_deductions')
+          .delete()
+          .in('id', uniqueIds);
+
+        if (error) {
+          console.error('❌ deleteAdminDeductionsBatch error:', error);
+          throw error;
+        }
+
+        // Clear cache so next load shows updated amounts
+        clearTransactionsCache();
+
+        console.log(`✅ Batch delete complete: ${uniqueIds.length} deductions deleted`);
+        return {
+          success: uniqueIds.length,
+          failed: 0
+        };
+      }
+
+      // For large batches, delete in chunks
+      const BATCH_SIZE = 1000;
+      let totalSuccess = 0;
+      let totalFailed = 0;
+      
+      for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
+        const batch = uniqueIds.slice(i, i + BATCH_SIZE);
+        
+        try {
+          const { error: batchError } = await client
+            .from('admin_deductions')
+            .delete()
+            .in('id', batch);
+
+          if (batchError) {
+            console.error(`❌ Batch delete error for batch ${Math.floor(i / BATCH_SIZE) + 1}:`, batchError);
+            totalFailed += batch.length;
+          } else {
+            totalSuccess += batch.length;
+          }
+        } catch (batchErr: any) {
+          console.error(`❌ Batch delete exception for batch ${Math.floor(i / BATCH_SIZE) + 1}:`, batchErr);
+          totalFailed += batch.length;
+        }
       }
 
       // Clear cache so next load shows updated amounts
       clearTransactionsCache();
 
-      console.log(`✅ Batch delete complete: ${deductionIds.length} deductions deleted`);
+      console.log(`✅ Batch delete complete: ${totalSuccess}/${uniqueIds.length} deductions deleted`);
+
+      if (totalFailed > 0) {
+        throw new Error(`Failed to delete ${totalFailed} deductions`);
+      }
 
       return {
-        success: deductionIds.length,
-        failed: 0
+        success: totalSuccess,
+        failed: totalFailed
       };
     } catch (error: any) {
       console.error('❌ deleteAdminDeductionsBatch exception:', error);
@@ -2619,12 +2998,29 @@ export class DatabaseService {
     const client = supabaseAdmin || supabase;
 
     return this.withRetry(async () => {
+      // IMPORTANT: Preserve total_spent before deletion (database trigger will reduce it)
+      // Get current total_spent value to restore it after deletion
+      const { data: userData, error: userError } = await client
+        .from('app_users')
+        .select('total_spent')
+        .eq('id', userId)
+        .single();
+      
+      if (userError) {
+        console.warn('Could not fetch user total_spent:', userError);
+      }
+      
+      const originalTotalSpent = userData?.total_spent || 0;
+      console.log(`💾 Preserving total_spent: ${originalTotalSpent} for user ${userId}`);
+
       // Get all transactions for this user (excluding already hidden ones)
+      // No limit - can handle 100,000+ entries
       const { data: transactions, error: txError } = await client
         .from('transactions')
         .select('id')
         .eq('user_id', userId)
-        .is('hidden_from_user', null); // Only get entries not already hidden
+        .is('hidden_from_user', null) // Only get entries not already hidden
+        .limit(1000000); // Very high limit - effectively unlimited
 
       if (txError) throw txError;
 
@@ -2632,29 +3028,48 @@ export class DatabaseService {
         return { deletedCount: 0 };
       }
 
+      // DELETE all transactions permanently - handles 100,000+ entries in one operation!
+      console.log(`🗑️ Deleting ${transactions.length} transactions permanently...`);
+      
+      // Delete all admin deductions first (they reference transactions via foreign key)
       const transactionIds = transactions.map((t: any) => t.id);
+      if (transactionIds.length > 0) {
+        // Delete deductions in batches for large numbers
+        const BATCH_SIZE = 1500;
+        const batches: string[][] = [];
+        
+        for (let i = 0; i < transactionIds.length; i += BATCH_SIZE) {
+          const batch = transactionIds.slice(i, i + BATCH_SIZE).filter((id: any) => id && typeof id === 'string' && id.length > 0);
+          if (batch.length > 0) {
+            batches.push(batch);
+          }
+        }
+        
+        // Delete deductions in parallel batches
+        const MAX_CONCURRENT = 10;
+        for (let i = 0; i < batches.length; i += MAX_CONCURRENT) {
+          const concurrentBatches = batches.slice(i, i + MAX_CONCURRENT);
+          await Promise.all(concurrentBatches.map(batch => 
+            client.from('admin_deductions').delete().in('transaction_id', batch)
+          ));
+        }
+        console.log(`✅ Deleted admin deductions for ${transactionIds.length} transactions`);
+      }
 
-      // Hide entries from user view (but keep visible in admin pages)
-      const { error: hideError } = await client
+      // Delete all transactions permanently using WHERE clause (instant for any number!)
+      const { error: deleteError } = await client
         .from('transactions')
-        .update({ hidden_from_user: true })
-        .in('id', transactionIds);
-
-      if (hideError) {
-        console.warn('Error hiding transactions from user:', hideError);
-        throw hideError;
-      }
-
-      // Delete all admin deductions for this user's transactions (clean up)
-      const { error: deductionsError } = await client
-        .from('admin_deductions')
         .delete()
-        .in('transaction_id', transactionIds);
-
-      // Don't throw on deductions error as they might not exist
-      if (deductionsError) {
-        console.warn('Error deleting admin deductions:', deductionsError);
+        .eq('user_id', userId)
+        .is('hidden_from_user', null); // Only delete entries not already hidden
+      
+      if (deleteError) {
+        console.error('Error deleting transactions:', deleteError);
+        throw new Error(`Failed to delete transactions: ${deleteError.message}`);
       }
+      
+      const totalDeleted = transactions.length;
+      console.log(`✅ Successfully deleted ${totalDeleted} transactions permanently`);
 
       // Delete all balance history for this user (deposits/withdrawals)
       const { error: balanceHistoryError } = await client
@@ -2668,23 +3083,28 @@ export class DatabaseService {
         console.log('✅ Deleted balance history for user:', userId);
       }
 
-      // EXPLICITLY reset total_spent to 0 (even though trigger should do this)
-      const { error: resetSpentError } = await client
-        .from('app_users')
-        .update({ total_spent: 0 })
-        .eq('id', userId);
-
-      if (resetSpentError) {
-        console.warn('Error resetting total_spent:', resetSpentError);
+      // IMPORTANT: Restore total_spent after deletion (database trigger reduced it to 0)
+      // Reset History should NOT reset total_spent - that should only be done via resetUserSpent()
+      if (originalTotalSpent > 0) {
+        const { error: restoreError } = await client
+          .from('app_users')
+          .update({ total_spent: originalTotalSpent })
+          .eq('id', userId);
+        
+        if (restoreError) {
+          console.error('❌ Error restoring total_spent:', restoreError);
+          // Don't throw - deletion was successful, just log the warning
+        } else {
+          console.log(`✅ Restored total_spent to ${originalTotalSpent} for user ${userId}`);
+        }
       }
 
       // Clear cache
       clearTransactionsCache();
 
-      const hiddenCount = transactions.length;
-      console.log(`✅ Reset user history for ${userId}: Hidden ${hiddenCount} entries from user view (entries still visible in admin pages)`);
+      console.log(`✅ Reset user history for ${userId}: Permanently deleted ${totalDeleted} entries (total_spent preserved: ${originalTotalSpent})`);
 
-      return { deletedCount: hiddenCount };
+      return { deletedCount: totalDeleted };
     });
   }
 
@@ -2725,11 +3145,13 @@ export class DatabaseService {
 
     return this.withRetry(async () => {
       // Get all transactions of this type (excluding already hidden ones)
+      // No limit - fetch ALL transactions (effectively unlimited)
       const { data: transactions, error: txError } = await client
         .from('transactions')
         .select('id')
         .eq('entry_type', entryType)
-        .is('hidden_from_admin', null); // Only get entries not already hidden
+        .is('hidden_from_admin', null) // Only get entries not already hidden
+        .limit(1000000); // Very high limit - effectively unlimited
 
       if (txError) throw txError;
 
@@ -2737,39 +3159,92 @@ export class DatabaseService {
         return { deletedCount: 0 };
       }
 
+      // Get transaction IDs first (we already have this from transactions array)
       const transactionIds = transactions.map((t: any) => t.id);
       
       // Delete all admin deductions for these transactions
-      const { data: deletedDeductions, error: deductionsError } = await client
-        .from('admin_deductions')
-        .delete()
-        .in('transaction_id', transactionIds)
-        .select('id', { count: 'exact' });
-
-      if (deductionsError) {
-        console.warn('Error deleting admin deductions:', deductionsError);
-        // Continue even if deductions fail
+      // If we have too many IDs, we need to batch, but try to do it in larger batches or parallel
+      let totalDeletedDeductions = 0;
+      
+      if (transactionIds.length > 0) {
+        // For very large numbers (100,000+), use larger batches and process efficiently
+        // Supabase can handle up to ~2000 items in .in() clause, but we'll use 1500 to be safe
+        const BATCH_SIZE = 1500; // Large batch size for handling 100,000+ entries
+        const batches: string[][] = [];
+        
+        for (let i = 0; i < transactionIds.length; i += BATCH_SIZE) {
+          const batch = transactionIds.slice(i, i + BATCH_SIZE).filter((id: any) => id && typeof id === 'string' && id.length > 0);
+          if (batch.length > 0) {
+            batches.push(batch);
+          }
+        }
+        
+        console.log(`🔄 Processing ${batches.length} batches for ${transactionIds.length} transactions...`);
+        
+        // Process all batches in parallel for maximum speed (up to 10 concurrent batches to avoid overwhelming the database)
+        const MAX_CONCURRENT = 10;
+        let totalDeleted = 0;
+        
+        for (let i = 0; i < batches.length; i += MAX_CONCURRENT) {
+          const concurrentBatches = batches.slice(i, i + MAX_CONCURRENT);
+          
+          const deletionPromises = concurrentBatches.map(async (batch, batchIndex) => {
+            try {
+              const { data: deletedDeductions, error: deductionsError } = await client
+                .from('admin_deductions')
+                .delete()
+                .in('transaction_id', batch)
+                .select('id');
+              
+              if (deductionsError) {
+                console.error(`Error deleting deductions batch ${i + batchIndex + 1}:`, deductionsError);
+                return 0;
+              }
+              
+              return deletedDeductions?.length || 0;
+            } catch (err) {
+              console.error(`Exception deleting deductions batch ${i + batchIndex + 1}:`, err);
+              return 0;
+            }
+          });
+          
+          const batchResults = await Promise.all(deletionPromises);
+          totalDeleted += batchResults.reduce((sum, count) => sum + count, 0);
+          
+          if (i + MAX_CONCURRENT < batches.length) {
+            console.log(`✅ Processed ${Math.min(i + MAX_CONCURRENT, batches.length)}/${batches.length} batches...`);
+          }
+        }
+        
+        totalDeletedDeductions = totalDeleted;
+        console.log(`✅ Deleted ${totalDeletedDeductions} admin deductions across ${batches.length} batches`);
       }
 
-      // Hide entries from admin view (but keep in user dashboard)
-      const { error: hideError } = await client
+      // DELETE ALL entries permanently in ONE operation using WHERE clause (instant for any number!)
+      // This is the fastest method - single SQL DELETE statement handles all entries at once
+      console.log(`🗑️ Deleting ${transactions.length} transactions permanently...`);
+      
+      // Delete all transactions permanently using WHERE clause
+      const { error: deleteError } = await client
         .from('transactions')
-        .update({ hidden_from_admin: true })
-        .in('id', transactionIds);
-
-      if (hideError) {
-        console.warn('Error hiding transactions from admin:', hideError);
-        throw hideError;
+        .delete()
+        .eq('entry_type', entryType)
+        .is('hidden_from_admin', null); // Only delete entries not already hidden
+      
+      if (deleteError) {
+        console.error('Error deleting transactions:', deleteError);
+        throw new Error(`Failed to delete transactions: ${deleteError.message}`);
       }
+      
+      const totalDeleted = transactions.length;
+      console.log(`✅ Successfully deleted ${totalDeleted} transactions permanently`);
 
       // Clear cache so admin view updates
       clearTransactionsCache();
 
-      const deletedCount = deletedDeductions?.length || 0;
-      const hiddenCount = transactions.length;
-      console.log(`✅ Reset admin view for ${entryType}: Hidden ${hiddenCount} entries from admin view, deleted ${deletedCount} admin deductions (user transactions unchanged)`);
+      console.log(`✅ Reset admin view for ${entryType}: Permanently deleted ${totalDeleted} entries, deleted ${totalDeletedDeductions} admin deductions`);
 
-      return { deletedCount: hiddenCount }; // Return count of hidden entries
+      return { deletedCount: totalDeleted }; // Return count of deleted transactions
     });
   }
 

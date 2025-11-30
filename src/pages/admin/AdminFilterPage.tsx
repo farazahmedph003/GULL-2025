@@ -636,15 +636,26 @@ const AdminFilterPage: React.FC = () => {
             }
           }));
           
-          const batchResult = await db.saveAdminDeductionsBatch(batchDeductions);
+          // Add timeout to prevent hanging (60 seconds max - increased for retries)
+          const savePromise = db.saveAdminDeductionsBatch(batchDeductions);
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Save operation timed out after 60 seconds')), 60000)
+          );
           
+          const batchResult = await Promise.race([savePromise, timeoutPromise]) as any;
+          
+          // CRITICAL: If any deductions failed, it means retries also failed - this is a critical error
           if (batchResult.failed > 0) {
+            const errorMsg = `CRITICAL: ${batchResult.failed} deductions failed to save after all retries. You may need to save the filter again.`;
+            console.error(`❌ ${errorMsg}`);
             errorCount += batchResult.failed;
-            errors.push(...batchResult.errors);
-            console.error(`❌ Batch save had ${batchResult.failed} failures`);
+            errors.push(errorMsg, ...batchResult.errors);
+            
+            // Show critical error to user
+            showError('Critical Error', `${batchResult.failed} deductions failed to save. Please try saving the filter again.`);
+          } else {
+            console.log(`✅ Batch save complete! ALL ${batchResult.success} deductions saved successfully!`);
           }
-          
-          console.log(`✅ Batch save complete! ${batchResult.success} deductions saved instantly!`);
         } catch (batchError: any) {
           console.error('❌ Batch save error:', batchError);
           errorCount += allDeductionsToSave.length;
@@ -697,7 +708,7 @@ const AdminFilterPage: React.FC = () => {
       console.log(`✅ Filter save complete! Processed ${processedEntries.size} entries, ${errorCount} errors`);
       console.log(`📋 Summary: ${processedEntries.size} deductions saved, ${errorCount} errors, ${totalResults} numbers processed`);
       
-      // Show result message immediately
+      // Show result message immediately (don't wait for reload)
       if (processedEntries.size > 0) {
         if (errorCount > 0) {
           showError(
@@ -715,107 +726,20 @@ const AdminFilterPage: React.FC = () => {
         }
       }
       
-      // Clear results first (before reload to avoid flicker)
+      // Clear results immediately
       if (errorCount === 0 && processedEntries.size > 0) {
         setCalculatedResults([]);
       }
       
-      // Reload entries to show updated values with retry logic
+      // Reload entries in background (non-blocking) - don't wait for it
       if (processedEntries.size > 0) {
-        console.log('🔄 Waiting for database commits before reloading...');
-        
-        // Wait a bit for database commits to complete
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Increased to 1 second
-        
-        // Verify deductions were saved by checking a sample
-        if (selectedType === 'ring' && calculatedResults.length > 0) {
-          try {
-            const sampleNumber = calculatedResults[0].number;
-            const sampleEntries = entries.filter(e => e.number === sampleNumber);
-            if (sampleEntries.length > 0) {
-              // Use the same logic as when saving - get original transaction ID
-              const sampleEntry = sampleEntries[0];
-              const sampleTransactionId = (sampleEntry as any).original_transaction_id || sampleEntry.id;
-              console.log(`🔍 Verifying deduction was saved for ring transaction ${sampleTransactionId} (number: ${sampleNumber})...`);
-              
-              // Also check what transaction IDs we actually saved
-              console.log(`🔍 Sample entry details:`, {
-                id: sampleEntry.id,
-                original_transaction_id: (sampleEntry as any).original_transaction_id,
-                number: sampleEntry.number
-              });
-              
-              // Try to query the deduction directly using service role if available
-              const { supabase, supabaseAdmin } = await import('../../lib/supabase');
-              const clientToUse = supabaseAdmin || supabase;
-              if (clientToUse) {
-                const { data: verifyDeduction, error: verifyError } = await clientToUse
-                  .from('admin_deductions')
-                  .select('id, transaction_id, deducted_first, deducted_second, deduction_type, metadata')
-                  .eq('transaction_id', sampleTransactionId)
-                  .order('created_at', { ascending: false })
-                  .limit(5); // Get recent deductions
-                
-                if (verifyError) {
-                  console.warn('⚠️ Could not verify deduction:', verifyError);
-                } else if (verifyDeduction && verifyDeduction.length > 0) {
-                  console.log(`✅ Found ${verifyDeduction.length} deduction(s) in database for transaction ${sampleTransactionId}:`, verifyDeduction);
-                } else {
-                  console.warn(`⚠️ Deduction not found in database for transaction ${sampleTransactionId}`);
-                  // Try searching by number in metadata
-                  const { data: searchByMetadata } = await clientToUse
-                    .from('admin_deductions')
-                    .select('id, transaction_id, deducted_first, deducted_second, metadata')
-                    .eq('metadata->>entryType', selectedType)
-                    .like('metadata->>numberFiltered', `%${sampleNumber}%`)
-                    .limit(5);
-                  if (searchByMetadata && searchByMetadata.length > 0) {
-                    console.log(`🔍 Found deductions by metadata search:`, searchByMetadata);
-                  }
-                }
-              }
-            }
-          } catch (verifyErr) {
-            console.warn('⚠️ Error verifying deduction:', verifyErr);
-          }
-        }
-        
-        // Retry reload up to 3 times if it fails
-        let reloadAttempts = 0;
-        const maxReloadAttempts = 3;
-        let reloadSuccess = false;
-        
-        while (reloadAttempts < maxReloadAttempts && !reloadSuccess) {
-          reloadAttempts++;
-          console.log(`🔄 Reloading entries (attempt ${reloadAttempts}/${maxReloadAttempts})...`);
-          
-          try {
-            // Add timeout to prevent hanging
-            const reloadPromise = loadEntries(reloadAttempts === 1); // Only save history on first attempt
-            const timeoutPromise = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Reload timeout')), 30000)
-            );
-            
-            await Promise.race([reloadPromise, timeoutPromise]);
-            console.log('✅ Entries reloaded successfully');
-            reloadSuccess = true;
-          } catch (reloadError: any) {
-            console.warn(`⚠️ Reload attempt ${reloadAttempts} failed:`, reloadError);
-            
-            if (reloadAttempts < maxReloadAttempts) {
-              // Wait before retrying (exponential backoff)
-              const retryDelay = Math.min(1000 * Math.pow(2, reloadAttempts - 1), 5000);
-              console.log(`⏳ Retrying in ${retryDelay}ms...`);
-              await new Promise(resolve => setTimeout(resolve, retryDelay));
-            } else {
-              console.error('❌ All reload attempts failed. Deductions were saved but may not be visible until page refresh.');
-              // Try one final reload without saving history
-              loadEntries(false).catch(err => {
-                console.warn('Final reload attempt also failed:', err);
-              });
-            }
-          }
-        }
+        // Reload in background without blocking - user can see results immediately
+        setTimeout(() => {
+          console.log('🔄 Reloading entries in background...');
+          loadEntries(false).catch(err => {
+            console.warn('⚠️ Background reload failed (non-critical):', err);
+          });
+        }, 500); // Small delay to ensure database commits
       }
     } catch (error: any) {
       console.error('❌ Save filter error:', error);

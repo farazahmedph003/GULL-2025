@@ -19,6 +19,8 @@ const AdminUserManagement: React.FC = () => {
   const [impersonating, setImpersonating] = useState(false);
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resettingHistory, setResettingHistory] = useState(false);
+  const [resettingSpent, setResettingSpent] = useState(false);
   const [newUser, setNewUser] = useState({
     displayName: '',
     phone: '',
@@ -48,6 +50,8 @@ const AdminUserManagement: React.FC = () => {
         lastLoginAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        totalSpent: user.total_spent || 0,
+        entryCount: user.entryCount || 0,
       }));
       setUsers(neroUsers);
     } catch (error) {
@@ -148,6 +152,59 @@ const AdminUserManagement: React.FC = () => {
     if (!result) return;
     
     console.log(`❌ User ${user.displayName} has been deleted.`);
+  };
+
+  const handleResetHistory = async (user: NeroUser) => {
+    if (!confirm) return;
+    
+    const result = await confirm(
+      `Are you sure you want to PERMANENTLY DELETE ALL HISTORY for "${user.displayName}" (@${user.phone})?\n\nThis will PERMANENTLY DELETE:\n• All transactions (Open, Akra, Ring, Packet)\n• All entry history\n• All balance history (deposits/withdrawals)\n• All admin deductions\n\n⚠️ This will DELETE entries from ALL pages (User Dashboard AND Admin pages).\n\n🚨 THIS ACTION CANNOT BE UNDONE - ENTRIES WILL BE PERMANENTLY DELETED!`,
+      { type: 'danger', title: '⚠️ Delete User History Permanently' }
+    );
+    
+    if (!result) return;
+
+    setResettingHistory(true);
+    try {
+      const resetResult = await db.resetUserHistory(user.id);
+      alert(`✅ Successfully reset history for ${user.displayName}. ${resetResult.deletedCount} transaction(s) hidden from user view.`);
+      await loadUsers();
+      if (showUserDetails && selectedUser?.id === user.id) {
+        setShowUserDetails(false);
+      }
+    } catch (error) {
+      console.error('Error resetting user history:', error);
+      alert(`❌ Failed to reset user history: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setResettingHistory(false);
+    }
+  };
+
+  const handleResetSpent = async (user: NeroUser) => {
+    if (!confirm) return;
+    
+    const totalSpent = (user as any).totalSpent || 0;
+    const result = await confirm(
+      `Are you sure you want to RESET SPENT AMOUNT for "${user.displayName}" (@${user.phone})?\n\nCurrent Spent: PKR ${totalSpent.toLocaleString()}\n\nThis will set their spent amount to 0.\n\nThis action CANNOT be undone!`,
+      { type: 'warning', title: '💸 Reset User Spent' }
+    );
+    
+    if (!result) return;
+
+    setResettingSpent(true);
+    try {
+      await db.resetUserSpent(user.id);
+      alert(`✅ Successfully reset spent amount for ${user.displayName} to PKR 0`);
+      await loadUsers();
+      if (showUserDetails && selectedUser?.id === user.id) {
+        setShowUserDetails(false);
+      }
+    } catch (error) {
+      console.error('Error resetting user spent:', error);
+      alert(`❌ Failed to reset user spent: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setResettingSpent(false);
+    }
   };
 
   const handleCreateUser = async () => {
@@ -376,6 +433,34 @@ const AdminUserManagement: React.FC = () => {
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                               </svg>
+                            </button>
+                            <button
+                              onClick={() => handleResetSpent(user)}
+                              disabled={resettingSpent}
+                              className="p-2 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Reset Spent"
+                            >
+                              {resettingSpent ? (
+                                <div className="w-5 h-5 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin"></div>
+                              ) : (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handleResetHistory(user)}
+                              disabled={resettingHistory}
+                              className="p-2 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Reset History"
+                            >
+                              {resettingHistory ? (
+                                <div className="w-5 h-5 border-2 border-orange-600 border-t-transparent rounded-full animate-spin"></div>
+                              ) : (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                              )}
                             </button>
                           </>
                         )}
@@ -622,12 +707,20 @@ const AdminUserManagement: React.FC = () => {
                   <p className="text-xl font-bold text-green-600 dark:text-green-400">PKR {selectedUser.balance.toLocaleString()}</p>
                 </div>
                 <div className="p-4 bg-gray-50 dark:bg-slate-700 rounded-lg">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Spent</p>
+                  <p className="text-xl font-bold text-pink-600 dark:text-pink-400">PKR {((selectedUser as any).totalSpent || 0).toLocaleString()}</p>
+                </div>
+                <div className="p-4 bg-gray-50 dark:bg-slate-700 rounded-lg">
                   <p className="text-sm text-gray-600 dark:text-gray-400">Spending Limit</p>
                   <p className="text-xl font-bold text-blue-600 dark:text-blue-400">PKR {selectedUser.spendingLimit.toLocaleString()}</p>
                 </div>
                 <div className="p-4 bg-gray-50 dark:bg-slate-700 rounded-lg">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Entries</p>
+                  <p className="text-xl font-bold text-purple-600 dark:text-purple-400">{((selectedUser as any).entryCount || 0).toLocaleString()}</p>
+                </div>
+                <div className="p-4 bg-gray-50 dark:bg-slate-700 rounded-lg">
                   <p className="text-sm text-gray-600 dark:text-gray-400">Projects</p>
-                  <p className="text-xl font-bold text-purple-600 dark:text-purple-400">{getUserProjects(selectedUser.id).length}</p>
+                  <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{getUserProjects(selectedUser.id).length}</p>
                 </div>
                 <div className="p-4 bg-gray-50 dark:bg-slate-700 rounded-lg">
                   <p className="text-sm text-gray-600 dark:text-gray-400">Status</p>
@@ -635,6 +728,54 @@ const AdminUserManagement: React.FC = () => {
                     {selectedUser.status}
                   </span>
                 </div>
+              </div>
+
+              {/* Reset Actions */}
+              <div className="border-t border-gray-200 dark:border-slate-700 pt-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Reset Actions</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    onClick={() => handleResetSpent(selectedUser)}
+                    disabled={resettingSpent}
+                    className="px-4 py-3 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded-lg font-semibold hover:bg-yellow-200 dark:hover:bg-yellow-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 border-2 border-yellow-300 dark:border-yellow-700"
+                  >
+                    {resettingSpent ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin"></div>
+                        <span>Resetting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>💸 Reset Spent</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleResetHistory(selectedUser)}
+                    disabled={resettingHistory}
+                    className="px-4 py-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg font-semibold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 border-2 border-red-300 dark:border-red-700"
+                  >
+                    {resettingHistory ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+                        <span>Resetting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>🔄 Reset History</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
+                  ⚠️ Reset History will hide entries from user view only. Admin pages (Akra, Ring, Packet) will NOT be affected.
+                </p>
               </div>
 
               {/* Activity */}
