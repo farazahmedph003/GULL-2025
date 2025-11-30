@@ -7,5 +7,5 @@
  * 1.0 - Initial release
  * 1.1 - Added filter defaults, loading buttons, performance optimizations
  */
-export const APP_VERSION = '1.1';
+export const APP_VERSION = '1.2';
 

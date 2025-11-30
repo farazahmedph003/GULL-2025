@@ -2821,50 +2821,60 @@ export class DatabaseService {
         return { success: 0, failed: 0 };
       }
 
-      // For small batches, use .in() for simplicity
-      if (uniqueIds.length <= 1000) {
-        const { error } = await client
-          .from('admin_deductions')
-          .delete()
-          .in('id', uniqueIds);
-
-        if (error) {
-          console.error('❌ deleteAdminDeductionsBatch error:', error);
-          throw error;
-        }
-
-        // Clear cache so next load shows updated amounts
-        clearTransactionsCache();
-
-        console.log(`✅ Batch delete complete: ${uniqueIds.length} deductions deleted`);
-        return {
-          success: uniqueIds.length,
-          failed: 0
-        };
-      }
-
-      // For large batches, delete in chunks
-      const BATCH_SIZE = 1000;
+      // Supabase .in() has a limit around 500-1000 items, so we'll always chunk for safety
+      // Use smaller batches to avoid "Bad Request" errors
+      const BATCH_SIZE = 500; // Safe batch size to avoid Supabase limits
       let totalSuccess = 0;
       let totalFailed = 0;
       
+      // Process batches sequentially to avoid overwhelming the database
       for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
         const batch = uniqueIds.slice(i, i + BATCH_SIZE);
+        const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(uniqueIds.length / BATCH_SIZE);
         
         try {
+          console.log(`🗑️ Deleting batch ${batchNumber}/${totalBatches} (${batch.length} deductions)...`);
+          
           const { error: batchError } = await client
             .from('admin_deductions')
             .delete()
             .in('id', batch);
 
           if (batchError) {
-            console.error(`❌ Batch delete error for batch ${Math.floor(i / BATCH_SIZE) + 1}:`, batchError);
-            totalFailed += batch.length;
+            console.error(`❌ Batch delete error for batch ${batchNumber}:`, batchError);
+            // If batch fails, try smaller chunks
+            if (batch.length > 100) {
+              console.log(`🔄 Retrying batch ${batchNumber} in smaller chunks...`);
+              // Split into smaller chunks of 100
+              for (let j = 0; j < batch.length; j += 100) {
+                const smallBatch = batch.slice(j, j + 100);
+                try {
+                  const { error: smallError } = await client
+                    .from('admin_deductions')
+                    .delete()
+                    .in('id', smallBatch);
+                  
+                  if (smallError) {
+                    console.error(`❌ Small batch delete error:`, smallError);
+                    totalFailed += smallBatch.length;
+                  } else {
+                    totalSuccess += smallBatch.length;
+                  }
+                } catch (smallErr: any) {
+                  console.error(`❌ Small batch delete exception:`, smallErr);
+                  totalFailed += smallBatch.length;
+                }
+              }
+            } else {
+              totalFailed += batch.length;
+            }
           } else {
             totalSuccess += batch.length;
+            console.log(`✅ Batch ${batchNumber}/${totalBatches} deleted successfully`);
           }
         } catch (batchErr: any) {
-          console.error(`❌ Batch delete exception for batch ${Math.floor(i / BATCH_SIZE) + 1}:`, batchErr);
+          console.error(`❌ Batch delete exception for batch ${batchNumber}:`, batchErr);
           totalFailed += batch.length;
         }
       }
