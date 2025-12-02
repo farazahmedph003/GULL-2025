@@ -64,7 +64,7 @@ const AdminFilterPage: React.FC = () => {
     // Auto-refresh every 5 seconds
     const autoRefreshInterval = setInterval(() => {
       if (!isAnyModalOpenRef.current) {
-      loadEntries(false, false);
+      loadEntries(false);
       } else {
         console.log('⏸️ Skipping Filter refresh - modal or processing');
       }
@@ -84,7 +84,7 @@ const AdminFilterPage: React.FC = () => {
           (payload: any) => {
             console.log(`🔴 Real-time update received for ${selectedType} (filter):`, payload);
             if (!isAnyModalOpenRef.current) {
-            loadEntries(false, false);
+            loadEntries(false);
             } else {
               console.log('⏸️ Skipping real-time refresh - modal or processing');
             }
@@ -740,7 +740,7 @@ const AdminFilterPage: React.FC = () => {
         // Reload in background without blocking - user can see results immediately
         setTimeout(() => {
           console.log('🔄 Reloading entries in background...');
-          loadEntries(false, false).catch(err => {
+          loadEntries(false).catch(err => {
             console.warn('⚠️ Background reload failed (non-critical):', err);
           });
         }, 500); // Small delay to ensure database commits
