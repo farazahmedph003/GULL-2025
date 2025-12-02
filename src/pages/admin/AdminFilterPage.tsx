@@ -36,6 +36,7 @@ const AdminFilterPage: React.FC = () => {
   
   // Results
   const [calculatedResults, setCalculatedResults] = useState<CalculationResult[]>([]);
+  const [calculating, setCalculating] = useState<boolean>(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
 
   // Undo/Redo history
@@ -63,7 +64,7 @@ const AdminFilterPage: React.FC = () => {
     // Auto-refresh every 5 seconds
     const autoRefreshInterval = setInterval(() => {
       if (!isAnyModalOpenRef.current) {
-      loadEntries(false);
+      loadEntries(false, false);
       } else {
         console.log('⏸️ Skipping Filter refresh - modal or processing');
       }
@@ -83,7 +84,7 @@ const AdminFilterPage: React.FC = () => {
           (payload: any) => {
             console.log(`🔴 Real-time update received for ${selectedType} (filter):`, payload);
             if (!isAnyModalOpenRef.current) {
-            loadEntries(false);
+            loadEntries(false, false);
             } else {
               console.log('⏸️ Skipping real-time refresh - modal or processing');
             }
@@ -196,36 +197,42 @@ const AdminFilterPage: React.FC = () => {
     }
   };
 
-  // Apply filter and calculate
+  // Apply filter and calculate (async-style so button spinner is visible)
   const handleApplyFilter = () => {
-    const results: CalculationResult[] = [];
-    const firstThreshold = parseFloat(firstFilterValue) || 0;
-    const secondThreshold = parseFloat(secondFilterValue) || 0;
-    const firstLimitValue = parseFloat(firstLimit) || 0;
-    const secondLimitValue = parseFloat(secondLimit) || 0;
+    setCalculating(true);
 
-    summaries.forEach((summary, number) => {
-      const passesFirstFilter = firstFilterValue ? compare(summary.firstTotal, firstComparison, firstThreshold) : true;
-      const passesSecondFilter = secondFilterValue ? compare(summary.secondTotal, secondComparison, secondThreshold) : true;
+    // Defer heavy calculation to next tick so the "loading" state renders first
+    setTimeout(() => {
+      const results: CalculationResult[] = [];
+      const firstThreshold = parseFloat(firstFilterValue) || 0;
+      const secondThreshold = parseFloat(secondFilterValue) || 0;
+      const firstLimitValue = parseFloat(firstLimit) || 0;
+      const secondLimitValue = parseFloat(secondLimit) || 0;
 
-      if (passesFirstFilter || passesSecondFilter) {
-        const firstResult = summary.firstTotal > firstLimitValue ? summary.firstTotal - firstLimitValue : 0;
-        const secondResult = summary.secondTotal > secondLimitValue ? summary.secondTotal - secondLimitValue : 0;
+      summaries.forEach((summary, number) => {
+        const passesFirstFilter = firstFilterValue ? compare(summary.firstTotal, firstComparison, firstThreshold) : true;
+        const passesSecondFilter = secondFilterValue ? compare(summary.secondTotal, secondComparison, secondThreshold) : true;
 
-        if (firstResult > 0 || secondResult > 0) {
-          results.push({
-            number,
-            firstOriginal: summary.firstTotal,
-            firstResult,
-            secondOriginal: summary.secondTotal,
-            secondResult,
-          });
+        if (passesFirstFilter || passesSecondFilter) {
+          const firstResult = summary.firstTotal > firstLimitValue ? summary.firstTotal - firstLimitValue : 0;
+          const secondResult = summary.secondTotal > secondLimitValue ? summary.secondTotal - secondLimitValue : 0;
+
+          if (firstResult > 0 || secondResult > 0) {
+            results.push({
+              number,
+              firstOriginal: summary.firstTotal,
+              firstResult,
+              secondOriginal: summary.secondTotal,
+              secondResult,
+            });
+          }
         }
-      }
-    });
+      });
 
-    results.sort((a, b) => a.number.localeCompare(b.number));
-    setCalculatedResults(results);
+      results.sort((a, b) => a.number.localeCompare(b.number));
+      setCalculatedResults(results);
+      setCalculating(false);
+    }, 0);
   };
 
   const handleReset = () => {
@@ -393,7 +400,7 @@ const AdminFilterPage: React.FC = () => {
             })));
           }
           
-          // Group entries by user to deduct proportionally from each user
+          // Group entries by user so we can fully consume one account before touching the next
           const entriesByUser = new Map<string, typeof entries>();
           entriesForNumber.forEach(entry => {
             const userId = entry.userId || 'unknown';
@@ -405,18 +412,24 @@ const AdminFilterPage: React.FC = () => {
           
           console.log(`   👥 Found ${entriesByUser.size} users with this number`);
           
-          let remainingFirstToDeduct = result.firstResult;
-          let remainingSecondToDeduct = result.secondResult;
+          let remainingFirstToDeduct = Math.floor(result.firstResult);
+          let remainingSecondToDeduct = Math.floor(result.secondResult);
           
           // Collect all deductions that need to be saved for this number (will be added to allDeductionsToSave)
           
-          // Process entries for each user proportionally
-          for (const [userId, userEntries] of entriesByUser) {
+          // Process entries for each user sequentially (exhaust one account before moving on)
+          for (const [userId, userEntries] of entriesByUser.entries()) {
+            if (remainingFirstToDeduct <= 0 && remainingSecondToDeduct <= 0) {
+              break;
+            }
+            
             console.log(`   👤 Processing user ${userId}: ${userEntries.length} entries`);
             
-            // Calculate user's ORIGINAL total for this number (before any deductions)
+            // Calculate user's ORIGINAL totals and CURRENT available totals for this number
             let userFirstTotalOriginal = 0;
             let userSecondTotalOriginal = 0;
+            let userFirstCurrentTotal = 0;
+            let userSecondCurrentTotal = 0;
             
             userEntries.forEach(entry => {
               const transactionId = (entry as any).original_transaction_id || entry.id;
@@ -425,48 +438,32 @@ const AdminFilterPage: React.FC = () => {
                 userFirstTotalOriginal += original.first;
                 userSecondTotalOriginal += original.second;
               } else {
-                // Fallback to current amounts if original not found
                 console.warn(`⚠️ Original amount not found for transaction ${transactionId}, using current amounts`);
                 userFirstTotalOriginal += entry.first || 0;
                 userSecondTotalOriginal += entry.second || 0;
               }
+              
+              userFirstCurrentTotal += entry.first || 0;
+              userSecondCurrentTotal += entry.second || 0;
             });
             
-            // Calculate total ORIGINAL amounts for this number (before any deductions)
-            let totalFirstOriginal = 0;
-            let totalSecondOriginal = 0;
+            // Determine how much this user can actually cover (bounded by both current + original totals)
+            let userRemainingFirst = Math.min(
+              remainingFirstToDeduct,
+              userFirstTotalOriginal,
+              userFirstCurrentTotal
+            );
+            let userRemainingSecond = Math.min(
+              remainingSecondToDeduct,
+              userSecondTotalOriginal,
+              userSecondCurrentTotal
+            );
             
-            entriesForNumber.forEach(entry => {
-              const transactionId = (entry as any).original_transaction_id || entry.id;
-              const original = originalEntriesMap.get(transactionId);
-              if (original) {
-                totalFirstOriginal += original.first;
-                totalSecondOriginal += original.second;
-              } else {
-                // Fallback to current amounts if original not found
-                totalFirstOriginal += entry.first || 0;
-                totalSecondOriginal += entry.second || 0;
-              }
-            });
-            
-            // Calculate how much to deduct from this user (proportional to their ORIGINAL share)
-            const userFirstShareRaw = totalFirstOriginal > 0 ? (userFirstTotalOriginal / totalFirstOriginal) * result.firstResult : 0;
-            const userSecondShareRaw = totalSecondOriginal > 0 ? (userSecondTotalOriginal / totalSecondOriginal) * result.secondResult : 0;
-            
-            // Round to whole numbers (no decimals)
-            const userFirstShare = Math.round(userFirstShareRaw);
-            const userSecondShare = Math.round(userSecondShareRaw);
-            
-            // Ensure we don't deduct more than what's remaining and what the user has ORIGINALLY
-            let userRemainingFirst = Math.min(userFirstShare, remainingFirstToDeduct, userFirstTotalOriginal);
-            let userRemainingSecond = Math.min(userSecondShare, remainingSecondToDeduct, userSecondTotalOriginal);
-            
-            // Ensure whole numbers (remove any decimal parts)
-            userRemainingFirst = Math.floor(userRemainingFirst);
-            userRemainingSecond = Math.floor(userRemainingSecond);
+            userRemainingFirst = Math.floor(Math.max(0, userRemainingFirst));
+            userRemainingSecond = Math.floor(Math.max(0, userRemainingSecond));
             
             console.log(`   📊 User original totals: F ${userFirstTotalOriginal}, S ${userSecondTotalOriginal}`);
-            console.log(`   📊 User share to deduct: F ${userRemainingFirst.toFixed(0)}, S ${userRemainingSecond.toFixed(0)}`);
+            console.log(`   📊 Sequential user target: F ${userRemainingFirst}, S ${userRemainingSecond}`);
             
             for (const entry of userEntries) {
               // Use original_transaction_id if this is a split entry, otherwise use entry.id
@@ -562,14 +559,21 @@ const AdminFilterPage: React.FC = () => {
                 console.log(`   ⏭️ Skipping entry ${transactionId} - no deduction needed (F: ${deductedFirst}, S: ${deductedSecond})`);
               }
               
-              // Stop if user's share is fully deducted
+              // Stop if this user's allocation is fully deducted
               if (userRemainingFirst <= 0 && userRemainingSecond <= 0) {
                 break;
               }
             }
           }
           
-          console.log(`   ✔️ Number ${result.number} complete. Remaining: F ${remainingFirstToDeduct.toFixed(0)}, S ${remainingSecondToDeduct.toFixed(0)}`);
+          if (remainingFirstToDeduct > 0 || remainingSecondToDeduct > 0) {
+            const warnMsg = `Unable to fully deduct number ${result.number}. Remaining F ${remainingFirstToDeduct}, S ${remainingSecondToDeduct}`;
+            console.warn(`   ⚠️ ${warnMsg}`);
+            errors.push(warnMsg);
+            errorCount++;
+          } else {
+            console.log(`   ✔️ Number ${result.number} complete. Remaining: F ${remainingFirstToDeduct}, S ${remainingSecondToDeduct}`);
+          }
           processedResults++;
           if (processedResults % 10 === 0 || processedResults === totalResults) {
             console.log(`📊 Progress: ${processedResults}/${totalResults} numbers processed (${Math.round(processedResults / totalResults * 100)}%)`);
@@ -736,7 +740,7 @@ const AdminFilterPage: React.FC = () => {
         // Reload in background without blocking - user can see results immediately
         setTimeout(() => {
           console.log('🔄 Reloading entries in background...');
-          loadEntries(false).catch(err => {
+          loadEntries(false, false).catch(err => {
             console.warn('⚠️ Background reload failed (non-critical):', err);
           });
         }, 500); // Small delay to ensure database commits
@@ -898,9 +902,9 @@ const AdminFilterPage: React.FC = () => {
 
               {/* Action Buttons */}
               <div className="flex gap-3 flex-wrap">
-                <LoadingButton
+                <LoadingButton 
                   onClick={handleApplyFilter}
-                  loading={processing}
+                  loading={processing || calculating}
                   variant="primary"
                 >
                   Apply Filter
@@ -908,7 +912,7 @@ const AdminFilterPage: React.FC = () => {
 
                 <LoadingButton
                   onClick={handleReset}
-                  loading={processing}
+                  loading={processing || calculating}
                   variant="secondary"
                 >
                   Reset

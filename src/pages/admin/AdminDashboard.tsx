@@ -103,6 +103,9 @@ const AdminDashboard: React.FC = () => {
     setRefreshCallback(() => {
       loadUsers();
       calculateSystemTotals();
+      if (selectedFilter) {
+        loadUserStatsForType(selectedFilter);
+      }
     });
     
     // Initial load
@@ -255,13 +258,13 @@ const AdminDashboard: React.FC = () => {
             <p className="text-3xl font-bold">{systemFirstPkr.toLocaleString()}</p>
             <p className="text-emerald-100 text-sm mt-2">All types (Open, Akra, Ring, Packet)</p>
           </div>
-
+          
           <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl p-6 text-white shadow-lg">
             <h3 className="text-lg font-semibold mb-2">Second PKR</h3>
             <p className="text-3xl font-bold">{systemSecondPkr.toLocaleString()}</p>
             <p className="text-amber-100 text-sm mt-2">All types (Open, Akra, Ring, Packet)</p>
           </div>
-
+          
           <div className="bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-2xl p-6 text-white shadow-lg">
             <h3 className="text-lg font-semibold mb-2">Total PKR</h3>
             <p className="text-3xl font-bold">{systemTotalPkr.toLocaleString()}</p>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import AdminSidebar from './AdminSidebar';
 import ProfileDropdown from './ProfileDropdown';
 import { AdminRefreshProvider, useAdminRefresh } from '../contexts/AdminRefreshContext';
@@ -9,6 +9,7 @@ import { AdminRefreshProvider, useAdminRefresh } from '../contexts/AdminRefreshC
  */
 const AdminLayoutInner: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
   const { triggerRefresh } = useAdminRefresh();
 
   const handleRefresh = () => {
@@ -51,6 +52,7 @@ const AdminLayoutInner: React.FC = () => {
           {/* Right: Profile Dropdown */}
           <ProfileDropdown />
         </div>
+        <div className="h-px bg-gray-200 dark:bg-gray-700" />
       </header>
 
       {/* Admin Sidebar */}

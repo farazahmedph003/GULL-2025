@@ -11,6 +11,7 @@ import EditUserModal from '../../components/EditUserModal';
 import EditTransactionModal from '../../components/EditTransactionModal';
 import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
 import { generateUserReport } from '../../utils/pdfGenerator';
+import LoadingSpinner from '../../components/LoadingSpinner';
 
 interface UserData {
   id: string;
@@ -31,6 +32,7 @@ const UserManagement: React.FC = () => {
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [historyTab, setHistoryTab] = useState<'entries' | 'balance'>('entries');
   const [balanceHistory, setBalanceHistory] = useState<any[]>([]);
+  const [usersLoading, setUsersLoading] = useState<boolean>(true);
 
   // Modals
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
@@ -57,33 +59,40 @@ const UserManagement: React.FC = () => {
     console.log('📝 Modal state changed, any modal open:', isAnyModalOpenRef.current);
   }, [editingTransaction, deletingTransaction, createUserModalOpen, topUpModalOpen, editUserModalOpen]);
 
-  const loadUsers = useCallback(async (force = false) => {
+  const loadUsers = useCallback(async (force = false, showLoader = true) => {
     // Skip refresh if ANY modal is open (unless forced)
     if (!force && isAnyModalOpenRef.current) {
       console.log('⏸️ Skipping refresh - modal is open');
       return;
     }
-    
+
+    if (showLoader) {
+      setUsersLoading(true);
+    }
     try {
       const data = await db.getAllUsersWithStats();
       setUsers(data);
     } catch (error) {
       console.error('Error loading users:', error);
       showError('Error', 'Failed to load users');
+    } finally {
+      if (showLoader) {
+        setUsersLoading(false);
+      }
     }
   }, [showError]);
 
   useEffect(() => {
     // Register refresh callback for the refresh button
-    setRefreshCallback(() => loadUsers(true));
+    setRefreshCallback(() => loadUsers(true, true));
     
-    loadUsers(true);
+    loadUsers(true, true);
 
     // Auto-refresh every 5 seconds
     console.log('⏰ Setting up auto-refresh every 5 seconds for User Management...');
     const autoRefreshInterval = setInterval(() => {
       console.log('🔄 Auto-refreshing User Management data...');
-      loadUsers(false); // Don't force refresh on auto-refresh
+      loadUsers(false, false); // Silent background refresh
     }, 5000);
 
     // Set up real-time subscription for auto-updates
@@ -94,21 +103,21 @@ const UserManagement: React.FC = () => {
           { event: '*', schema: 'public', table: 'app_users' },
           (payload: any) => {
             console.log('🔴 Real-time update received for users:', payload);
-            loadUsers(false); // Don't force refresh on real-time updates
+            loadUsers(false, false); // Silent background refresh
           }
         )
         .on('postgres_changes',
           { event: '*', schema: 'public', table: 'transactions' },
           (payload: any) => {
             console.log('🔴 Real-time update received for transactions (user stats):', payload);
-            loadUsers(false); // Don't force refresh on real-time updates
+            loadUsers(false, false); // Silent background refresh
           }
         )
         .on('postgres_changes',
           { event: '*', schema: 'public', table: 'balance_history' },
           (payload: any) => {
             console.log('🔴 Real-time update received for balance_history:', payload);
-            loadUsers(false); // Don't force refresh on real-time updates
+            loadUsers(false, false); // Silent background refresh
             // Refresh balance history if a user's history is currently expanded (but not if any modal is open)
             const currentExpandedUserId = expandedUserId;
             if (currentExpandedUserId && !isAnyModalOpenRef.current) {
@@ -987,13 +996,15 @@ const UserManagement: React.FC = () => {
           })}
         </div>
 
-        {users.length === 0 && (
+        {usersLoading ? (
+          <LoadingSpinner text="Loading users..." />
+        ) : users.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-gray-500 dark:text-gray-400 text-lg">
               No users found. Create your first user to get started.
             </p>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Modals */}

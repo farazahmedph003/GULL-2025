@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import LoadingButton from '../../components/LoadingButton';
+import LoadingSpinner from '../../components/LoadingSpinner';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -58,6 +59,7 @@ const AdminRingPage: React.FC = () => {
     totalPkr: 0,
     uniqueNumbers: 0,
   });
+  const [loadingEntries, setLoadingEntries] = useState<boolean>(true);
 
   const { showSuccess, showError } = useNotifications();
   const { setRefreshCallback } = useAdminRefresh();
@@ -70,13 +72,16 @@ const AdminRingPage: React.FC = () => {
     isAnyModalOpenRef.current = !!(editingEntry || deletingEntry || showNumbersModal);
   }, [editingEntry, deletingEntry, showNumbersModal]);
 
-  const loadEntries = useCallback(async (force = false) => {
+  const loadEntries = useCallback(async (force = false, showLoader = true) => {
     // Skip refresh if modal is open (unless forced)
     if (!force && isAnyModalOpenRef.current) {
       console.log('⏸️ Skipping Ring refresh - modal is open');
       return;
     }
 
+    if (showLoader) {
+      setLoadingEntries(true);
+    }
     try {
       // Use adminView=true to apply admin deductions
       const data = await db.getAllEntriesByType('ring', true);
@@ -101,6 +106,10 @@ const AdminRingPage: React.FC = () => {
     } catch (error) {
       console.error('Error loading entries:', error);
       showError('Error', 'Failed to load entries');
+    } finally {
+      if (showLoader) {
+        setLoadingEntries(false);
+      }
     }
   }, [showError]); // Remove modal states from dependencies, use ref instead
 
@@ -114,14 +123,14 @@ const AdminRingPage: React.FC = () => {
 
   useEffect(() => {
     // Register refresh callback for the refresh button
-    setRefreshCallback(loadEntries);
+    setRefreshCallback(() => loadEntries(true, true));
     
     // Initial load
-    loadEntries();
+    loadEntries(true, true);
 
-    // Auto-refresh every 5 seconds
+    // Auto-refresh every 5 seconds (silent, no header animation)
     const autoRefreshInterval = setInterval(() => {
-      loadEntries();
+      loadEntries(false, false);
     }, 5000);
 
     // Set up real-time subscription for auto-updates
@@ -137,7 +146,7 @@ const AdminRingPage: React.FC = () => {
           },
           (payload: any) => {
             console.log('🔴 Real-time update received for Ring:', payload);
-            loadEntries();
+            loadEntries(false);
           }
         )
         .subscribe((status: string) => {
@@ -193,8 +202,8 @@ const AdminRingPage: React.FC = () => {
     if (!confirm) return;
 
     const result = await confirm(
-      `Are you sure you want to PERMANENTLY DELETE ALL Ring entries?\n\nThis will PERMANENTLY DELETE:\n• All Ring transactions (000)\n• All admin deductions for Ring entries\n\n🚨 THIS ACTION CANNOT BE UNDONE - ALL RING ENTRIES WILL BE PERMANENTLY DELETED FROM ALL PAGES!`,
-      { type: 'danger', title: '🗑️ Delete All Ring Entries Permanently' }
+      `Are you sure you want to RESET the Admin View for Ring entries?\n\nThis will PERMANENTLY DELETE:\n• All Ring transactions (000)\n• All admin deductions for Ring entries\n\n⚠️ This will only affect Ring entries on this admin page.\n⚠️ Other entry types (Open, Akra, Packet) will NOT be affected.`,
+      { type: 'danger', title: '🔄 Reset Admin View - Ring Entries Only' }
     );
 
     if (!result) return;
@@ -202,7 +211,7 @@ const AdminRingPage: React.FC = () => {
     setResetting(true);
     try {
       const result = await db.deleteAllAdminDeductionsByType('ring');
-      await showSuccess('Success', `Permanently deleted ${result.deletedCount} Ring entries!`);
+      await showSuccess('Success', `Reset admin view: Deleted ${result.deletedCount} Ring entries and all associated deductions.`);
       loadEntries(true); // Force reload after reset
     } catch (error) {
       console.error('Reset error:', error);
@@ -857,13 +866,15 @@ const AdminRingPage: React.FC = () => {
             </div>
           )}
 
-            {filteredEntries.length === 0 && (
+            {loadingEntries ? (
+              <LoadingSpinner text="Loading Ring entries..." />
+            ) : filteredEntries.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-gray-500 dark:text-gray-400 text-lg">
                   {searchNumber ? 'No entries match your search' : 'No ring entries found'}
                 </p>
               </div>
-            )}
+            ) : null}
         </div>
       </div>
 

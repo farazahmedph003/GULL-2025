@@ -2305,6 +2305,8 @@ textarea.input-field {
   animation: loadingPulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/* header-loading-stripe animation removed per design request */
+
 /* Smooth Transitions for All Interactive Elements */
 button, a, input, select, textarea {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);

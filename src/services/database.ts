@@ -3142,9 +3142,22 @@ export class DatabaseService {
    * Delete all entries of a specific type (open, akra, ring, packet)
    */
   /**
-   * Delete all admin deductions for an entry type (RESET ADMIN VIEW ONLY)
-   * This does NOT delete user transactions - it only removes admin deductions
-   * User data remains unchanged, only the admin view is reset
+   * Delete all transactions and admin deductions for a specific entry type (RESET ADMIN VIEW)
+   * 
+   * This function deletes:
+   * - All transactions of the specified entry type
+   * - All admin deductions for those transactions
+   * 
+   * IMPORTANT: 
+   * - Each admin page (Ring, Open, Akra, Packet) only deletes its own entry type
+   * - Ring page only deletes 'ring' transactions (000)
+   * - Open page only deletes 'open' transactions (0)
+   * - Akra page only deletes 'akra' transactions (00)
+   * - Packet page only deletes 'packet' transactions (0000)
+   * - Other entry types remain untouched
+   * 
+   * @param entryType - The entry type to reset ('open', 'akra', 'ring', or 'packet')
+   * @returns Count of deleted transactions
    */
   async deleteAllAdminDeductionsByType(entryType: 'open' | 'akra' | 'ring' | 'packet'): Promise<{ deletedCount: number }> {
     if (!isSupabaseConfigured() || !supabase) {
@@ -3154,107 +3167,111 @@ export class DatabaseService {
     const client = supabaseAdmin || supabase;
 
     return this.withRetry(async () => {
-      // Get all transactions of this type (excluding already hidden ones)
-      // No limit - fetch ALL transactions (effectively unlimited)
+      // First, count transactions before deletion to get accurate count
+      const { count: transactionCount, error: countError } = await client
+        .from('transactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('entry_type', entryType);
+
+      if (countError) {
+        console.error('Error counting transactions:', countError);
+        throw countError;
+      }
+
+      const totalTransactions = transactionCount || 0;
+
+      if (totalTransactions === 0) {
+        console.log(`ℹ️ No ${entryType} transactions found to delete`);
+        return { deletedCount: 0 };
+      }
+
+      console.log(`📊 Found ${totalTransactions} ${entryType} transactions to delete`);
+
+      // Delete all admin deductions for this entry type first
+      // Get all transaction IDs of this type
       const { data: transactions, error: txError } = await client
         .from('transactions')
         .select('id')
         .eq('entry_type', entryType)
-        .is('hidden_from_admin', null) // Only get entries not already hidden
-        .limit(1000000); // Very high limit - effectively unlimited
+        .limit(1000000);
 
-      if (txError) throw txError;
-
-      if (!transactions || transactions.length === 0) {
-        return { deletedCount: 0 };
+      if (txError) {
+        console.error('Error fetching transactions:', txError);
+        // Continue anyway - we'll delete transactions which will cascade delete deductions
       }
 
-      // Get transaction IDs first (we already have this from transactions array)
-      const transactionIds = transactions.map((t: any) => t.id);
-      
-      // Delete all admin deductions for these transactions
-      // If we have too many IDs, we need to batch, but try to do it in larger batches or parallel
       let totalDeletedDeductions = 0;
       
-      if (transactionIds.length > 0) {
-        // For very large numbers (100,000+), use larger batches and process efficiently
-        // Supabase can handle up to ~2000 items in .in() clause, but we'll use 1500 to be safe
-        const BATCH_SIZE = 1500; // Large batch size for handling 100,000+ entries
-        const batches: string[][] = [];
+      if (transactions && transactions.length > 0) {
+        const transactionIds = transactions.map((t: any) => t.id);
+        
+        // Delete admin deductions in batches
+        const BATCH_SIZE = 500;
+        const deductionBatches: string[][] = [];
         
         for (let i = 0; i < transactionIds.length; i += BATCH_SIZE) {
-          const batch = transactionIds.slice(i, i + BATCH_SIZE).filter((id: any) => id && typeof id === 'string' && id.length > 0);
+          const batch = transactionIds.slice(i, i + BATCH_SIZE);
           if (batch.length > 0) {
-            batches.push(batch);
+            deductionBatches.push(batch);
           }
         }
         
-        console.log(`🔄 Processing ${batches.length} batches for ${transactionIds.length} transactions...`);
+        console.log(`🗑️ Deleting admin deductions for ${transactionIds.length} transactions...`);
         
-        // Process all batches in parallel for maximum speed (up to 10 concurrent batches to avoid overwhelming the database)
-        const MAX_CONCURRENT = 10;
-        let totalDeleted = 0;
-        
-        for (let i = 0; i < batches.length; i += MAX_CONCURRENT) {
-          const concurrentBatches = batches.slice(i, i + MAX_CONCURRENT);
+        for (let i = 0; i < deductionBatches.length; i += 10) {
+          const concurrentBatches = deductionBatches.slice(i, i + 10);
           
-          const deletionPromises = concurrentBatches.map(async (batch, batchIndex) => {
+          const deletionPromises = concurrentBatches.map(async (batch) => {
             try {
-              const { data: deletedDeductions, error: deductionsError } = await client
+              const { data: deletedData, error: batchError } = await client
                 .from('admin_deductions')
                 .delete()
                 .in('transaction_id', batch)
                 .select('id');
               
-              if (deductionsError) {
-                console.error(`Error deleting deductions batch ${i + batchIndex + 1}:`, deductionsError);
+              if (batchError) {
+                console.error(`Error deleting deductions batch:`, batchError);
                 return 0;
               }
               
-              return deletedDeductions?.length || 0;
+              return deletedData?.length || 0;
             } catch (err) {
-              console.error(`Exception deleting deductions batch ${i + batchIndex + 1}:`, err);
+              console.error(`Exception deleting deductions batch:`, err);
               return 0;
             }
           });
           
           const batchResults = await Promise.all(deletionPromises);
-          totalDeleted += batchResults.reduce((sum, count) => sum + count, 0);
-          
-          if (i + MAX_CONCURRENT < batches.length) {
-            console.log(`✅ Processed ${Math.min(i + MAX_CONCURRENT, batches.length)}/${batches.length} batches...`);
-          }
+          totalDeletedDeductions += batchResults.reduce((sum, count) => sum + count, 0);
         }
         
-        totalDeletedDeductions = totalDeleted;
-        console.log(`✅ Deleted ${totalDeletedDeductions} admin deductions across ${batches.length} batches`);
+        console.log(`✅ Deleted ${totalDeletedDeductions} admin deductions`);
       }
 
-      // DELETE ALL entries permanently in ONE operation using WHERE clause (instant for any number!)
-      // This is the fastest method - single SQL DELETE statement handles all entries at once
-      console.log(`🗑️ Deleting ${transactions.length} transactions permanently...`);
+      // Delete all transactions of this entry type permanently
+      // This resets the admin view for this specific page only (Ring, Open, Akra, or Packet)
+      // Each page only deletes its own entry type, not affecting other entry types
+      console.log(`🗑️ Deleting all ${totalTransactions} ${entryType} transactions permanently...`);
       
-      // Delete all transactions permanently using WHERE clause
+      // Delete all transactions of this entry type using WHERE clause (instant for any number!)
       const { error: deleteError } = await client
         .from('transactions')
         .delete()
-        .eq('entry_type', entryType)
-        .is('hidden_from_admin', null); // Only delete entries not already hidden
+        .eq('entry_type', entryType);
       
       if (deleteError) {
         console.error('Error deleting transactions:', deleteError);
         throw new Error(`Failed to delete transactions: ${deleteError.message}`);
       }
       
-      const totalDeleted = transactions.length;
-      console.log(`✅ Successfully deleted ${totalDeleted} transactions permanently`);
+      console.log(`✅ Successfully deleted ${totalTransactions} ${entryType} transactions permanently`);
 
       // Clear cache so admin view updates
       clearTransactionsCache();
 
-      console.log(`✅ Reset admin view for ${entryType}: Permanently deleted ${totalDeleted} entries, deleted ${totalDeletedDeductions} admin deductions`);
+      console.log(`✅ Reset admin view for ${entryType}: Deleted ${totalTransactions} transactions and ${totalDeletedDeductions} admin deductions`);
 
-      return { deletedCount: totalDeleted }; // Return count of deleted transactions
+      return { deletedCount: totalTransactions }; // Return count of deleted transactions
     });
   }
 

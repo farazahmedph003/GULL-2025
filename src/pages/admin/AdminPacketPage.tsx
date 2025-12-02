@@ -8,6 +8,7 @@ import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import { ConfirmationContext } from '../../App';
 import EditTransactionModal from '../../components/EditTransactionModal';
 import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
+import LoadingSpinner from '../../components/LoadingSpinner';
 
 interface Entry {
   id: string;
@@ -58,6 +59,7 @@ const AdminPacketPage: React.FC = () => {
     totalPkr: 0,
     uniqueNumbers: 0,
   });
+  const [loadingEntries, setLoadingEntries] = useState<boolean>(true);
 
   const { showSuccess, showError } = useNotifications();
   const { setRefreshCallback } = useAdminRefresh();
@@ -70,13 +72,16 @@ const AdminPacketPage: React.FC = () => {
     isAnyModalOpenRef.current = !!(editingEntry || deletingEntry || showNumbersModal);
   }, [editingEntry, deletingEntry, showNumbersModal]);
 
-  const loadEntries = useCallback(async (force = false) => {
+  const loadEntries = useCallback(async (force = false, showLoader = true) => {
     // Skip refresh if modal is open (unless forced)
     if (!force && isAnyModalOpenRef.current) {
       console.log('⏸️ Skipping Packet refresh - modal is open');
       return;
     }
 
+    if (showLoader) {
+      setLoadingEntries(true);
+    }
     try {
       // Use adminView=true to apply admin deductions
       const data = await db.getAllEntriesByType('packet', true);
@@ -101,6 +106,10 @@ const AdminPacketPage: React.FC = () => {
     } catch (error) {
       console.error('Error loading entries:', error);
       showError('Error', 'Failed to load entries');
+    } finally {
+      if (showLoader) {
+        setLoadingEntries(false);
+      }
     }
   }, [showError]); // Remove modal states from dependencies, use ref instead
 
@@ -114,14 +123,14 @@ const AdminPacketPage: React.FC = () => {
 
   useEffect(() => {
     // Register refresh callback for the refresh button
-    setRefreshCallback(loadEntries);
+    setRefreshCallback(() => loadEntries(true, true));
     
     // Initial load
-    loadEntries();
+    loadEntries(true, true);
 
-    // Auto-refresh every 5 seconds
+    // Auto-refresh every 5 seconds (silent, no header animation)
     const autoRefreshInterval = setInterval(() => {
-      loadEntries();
+      loadEntries(false, false);
     }, 5000);
 
     // Set up real-time subscription for auto-updates
@@ -137,7 +146,7 @@ const AdminPacketPage: React.FC = () => {
           },
           (payload: any) => {
             console.log('🔴 Real-time update received for Packet:', payload);
-            loadEntries();
+            loadEntries(false);
           }
         )
         .subscribe((status: string) => {
@@ -193,8 +202,8 @@ const AdminPacketPage: React.FC = () => {
     if (!confirm) return;
 
     const result = await confirm(
-      `Are you sure you want to PERMANENTLY DELETE ALL Packet entries?\n\nThis will PERMANENTLY DELETE:\n• All Packet transactions (0000)\n• All admin deductions for Packet entries\n\n🚨 THIS ACTION CANNOT BE UNDONE - ALL PACKET ENTRIES WILL BE PERMANENTLY DELETED FROM ALL PAGES!`,
-      { type: 'danger', title: '🗑️ Delete All Packet Entries Permanently' }
+      `Are you sure you want to RESET the Admin View for Packet entries?\n\nThis will PERMANENTLY DELETE:\n• All Packet transactions (0000)\n• All admin deductions for Packet entries\n\n⚠️ This will only affect Packet entries on this admin page.\n⚠️ Other entry types (Ring, Open, Akra) will NOT be affected.`,
+      { type: 'danger', title: '🔄 Reset Admin View - Packet Entries Only' }
     );
 
     if (!result) return;
@@ -202,7 +211,7 @@ const AdminPacketPage: React.FC = () => {
     setResetting(true);
     try {
       const result = await db.deleteAllAdminDeductionsByType('packet');
-      await showSuccess('Success', `Permanently deleted ${result.deletedCount} Packet entries!`);
+      await showSuccess('Success', `Reset admin view: Deleted ${result.deletedCount} Packet entries and all associated deductions.`);
       loadEntries(true); // Force reload after reset
     } catch (error) {
       console.error('Reset error:', error);
@@ -855,13 +864,15 @@ const AdminPacketPage: React.FC = () => {
             </div>
           )}
 
-          {filteredEntries.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-gray-500 dark:text-gray-400 text-lg">
-                {searchNumber ? 'No entries match your search' : 'No packet entries found'}
-              </p>
-            </div>
-          )}
+            {loadingEntries ? (
+              <LoadingSpinner text="Loading Packet entries..." />
+            ) : filteredEntries.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-gray-500 dark:text-gray-400 text-lg">
+                  {searchNumber ? 'No entries match your search' : 'No packet entries found'}
+                </p>
+              </div>
+            ) : null}
         </div>
       </div>
 
