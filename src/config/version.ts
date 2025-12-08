@@ -8,6 +8,7 @@
  * 1.1 - Added filter defaults, loading buttons, performance optimizations
  * 1.2 - Admin filter deductions, sequential limits, initial loading UX tweaks
  * 1.3 - Global loading spinners, admin UX refinements, bugfixes
+ * 1.4 - Stale-While-Revalidate (SWR) caching, instant page loads, optimistic updates
  */
-export const APP_VERSION = '1.3';
+export const APP_VERSION = '1.4';
 
