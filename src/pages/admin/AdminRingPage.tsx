@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import LoadingButton from '../../components/LoadingButton';
-import LoadingSpinner from '../../components/LoadingSpinner';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -1025,7 +1024,7 @@ const AdminRingPage: React.FC = () => {
             createdAt: editingEntry.created_at,
             updatedAt: editingEntry.created_at,
           }}
-          onSave={_handleEdit}
+          onSave={handleEdit}
           transactions={entries.map(e => ({
             id: e.id,
             number: e.number,

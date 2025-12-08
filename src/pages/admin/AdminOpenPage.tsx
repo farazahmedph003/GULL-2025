@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import LoadingButton from '../../components/LoadingButton';
-import LoadingSpinner from '../../components/LoadingSpinner';
 import { db } from '../../services/database';
 import { supabase } from '../../lib/supabase';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -9,7 +8,7 @@ import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import { ConfirmationContext } from '../../App';
 import EditTransactionModal from '../../components/EditTransactionModal';
 import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
-import { swrLoad, CACHE_KEYS, getCachedData, setCachedData } from '../../utils/cache';
+import { CACHE_KEYS, getCachedData, setCachedData } from '../../utils/cache';
 
 interface Entry {
   id: string;

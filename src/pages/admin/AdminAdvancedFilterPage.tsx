@@ -8,7 +8,7 @@ import { ConfirmationContext } from '../../App';
 import { groupTransactionsByNumber } from '../../utils/transactionHelpers';
 import type { EntryType } from '../../types';
 import LoadingButton from '../../components/LoadingButton';
-import { getCachedData, setCachedData, CACHE_KEYS } from '../../utils/cache';
+import { getCachedData, setCachedData } from '../../utils/cache';
 
 const AdminAdvancedFilterPage: React.FC = () => {
   const [selectedType, setSelectedType] = useState<EntryType>('open');

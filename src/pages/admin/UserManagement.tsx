@@ -188,7 +188,7 @@ const UserManagement: React.FC = () => {
         throw new Error(`Full name "${userData.fullName}" is already taken. Please choose a different name.`);
       }
       
-      await db.createUser(userData);
+      const newUser = await db.createUser(userData);
       await showSuccess('Success', `User ${userData.username} created successfully${userData.isPartner ? ' as Partner' : ''}`);
       // INSTANT: Add new user to cache immediately
       const newUserData: UserData = {

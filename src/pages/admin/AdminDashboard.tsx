@@ -6,13 +6,6 @@ import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import { ConfirmationContext } from '../../App';
 import type { EntryType } from '../../types';
 
-interface AdminUser {
-  id: string;
-  username: string;
-  full_name: string;
-  balance: number;
-}
-
 interface UserStats {
   id: string;
   username: string;

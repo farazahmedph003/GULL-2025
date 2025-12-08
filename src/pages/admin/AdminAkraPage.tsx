@@ -8,7 +8,6 @@ import EditTransactionModal from '../../components/EditTransactionModal';
 import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
 import { useDebounce } from '../../hooks/useDebounce';
 import LoadingButton from '../../components/LoadingButton';
-import LoadingSpinner from '../../components/LoadingSpinner';
 import { getCachedData, setCachedData, CACHE_KEYS } from '../../utils/cache';
 
 interface Entry {

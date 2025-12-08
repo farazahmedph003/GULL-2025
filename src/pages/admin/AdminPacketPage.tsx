@@ -8,7 +8,6 @@ import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import { ConfirmationContext } from '../../App';
 import EditTransactionModal from '../../components/EditTransactionModal';
 import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
-import LoadingSpinner from '../../components/LoadingSpinner';
 import { getCachedData, setCachedData, CACHE_KEYS } from '../../utils/cache';
 
 interface Entry {
