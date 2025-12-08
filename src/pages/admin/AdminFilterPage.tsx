@@ -8,6 +8,7 @@ import { groupTransactionsByNumber } from '../../utils/transactionHelpers';
 import type { EntryType } from '../../types';
 import { exportFilterResultsToPDF } from '../../utils/pdfExport';
 import LoadingButton from '../../components/LoadingButton';
+import { getCachedData, setCachedData } from '../../utils/cache';
 
 type ComparisonType = '>=' | '>' | '<=' | '<' | '==';
 
@@ -21,7 +22,18 @@ interface CalculationResult {
 
 const AdminFilterPage: React.FC = () => {
   const [selectedType, setSelectedType] = useState<EntryType>('open');
-  const [entries, setEntries] = useState<any[]>([]);
+  
+  // INSTANT: Load cache synchronously BEFORE first render (for initial type)
+  const initialCacheKey = `cache-filter-entries-open`;
+  const initialCacheConfig = {
+    key: initialCacheKey,
+    validator: (data: any): data is any[] => Array.isArray(data),
+  };
+  const initialCached = typeof window !== 'undefined' 
+    ? getCachedData<any[]>(initialCacheConfig) 
+    : { data: null };
+  
+  const [entries, setEntries] = useState<any[]>(initialCached.data || []);
   const [processing, setProcessing] = useState(false); // Prevent double actions
   
   // Filter states - Default values set to 1 and disabled (not editable)
@@ -110,6 +122,20 @@ const AdminFilterPage: React.FC = () => {
   }, [selectedType]); // Only re-run when selectedType changes
 
   const loadEntries = async (saveHistory = false) => {
+    // Stale-While-Revalidate: Load from cache instantly
+    const cacheKey = `cache-filter-entries-${selectedType}`;
+    const cacheConfig = {
+      key: cacheKey,
+      validator: (data: any): data is any[] => Array.isArray(data),
+    };
+
+    // 1. Instant load from cache
+    const cached = getCachedData<any[]>(cacheConfig);
+    if (cached.data) {
+      setEntries(cached.data);
+    }
+
+    // 2. Always fetch fresh data in background
     try {
       // Use adminView=true to see admin-adjusted amounts
       const data = await db.getAllEntriesByType(selectedType, true);
@@ -128,6 +154,8 @@ const AdminFilterPage: React.FC = () => {
         is_split_entry: e.is_split_entry || false,
       }));
       
+      // Update cache and state
+      setCachedData(cacheConfig, transactions);
       setEntries(transactions);
       
       // Debug: Log split entries for ring type
@@ -712,6 +740,14 @@ const AdminFilterPage: React.FC = () => {
       console.log(`✅ Filter save complete! Processed ${processedEntries.size} entries, ${errorCount} errors`);
       console.log(`📋 Summary: ${processedEntries.size} deductions saved, ${errorCount} errors, ${totalResults} numbers processed`);
       
+      // INSTANT: Update cache immediately after filter save
+      if (processedEntries.size > 0) {
+        // Reload entries immediately to update cache with fresh data
+        loadEntries(false).catch(err => {
+          console.warn('⚠️ Reload failed (non-critical):', err);
+        });
+      }
+      
       // Show result message immediately (don't wait for reload)
       if (processedEntries.size > 0) {
         if (errorCount > 0) {
@@ -733,17 +769,6 @@ const AdminFilterPage: React.FC = () => {
       // Clear results immediately
       if (errorCount === 0 && processedEntries.size > 0) {
         setCalculatedResults([]);
-      }
-      
-      // Reload entries in background (non-blocking) - don't wait for it
-      if (processedEntries.size > 0) {
-        // Reload in background without blocking - user can see results immediately
-        setTimeout(() => {
-          console.log('🔄 Reloading entries in background...');
-          loadEntries(false).catch(err => {
-            console.warn('⚠️ Background reload failed (non-critical):', err);
-          });
-        }, 500); // Small delay to ensure database commits
       }
     } catch (error: any) {
       console.error('❌ Save filter error:', error);

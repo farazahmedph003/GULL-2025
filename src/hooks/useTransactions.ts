@@ -4,16 +4,26 @@ import { useUserBalance } from './useUserBalance';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../services/database';
 import { isSupabaseConfigured, isOfflineMode } from '../lib/supabase';
+import { getCachedData, setCachedData, CACHE_KEYS } from '../utils/cache';
 
 // In projectless mode, pass 'user-scope' for current user
 export const useTransactions = (projectId: string) => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const isUserScope = projectId === 'user-scope';
+  const storageKey = isUserScope ? 'gull-transactions-user' : `gull-transactions-${projectId}`;
+  const cacheKey = isUserScope ? CACHE_KEYS.USER_TRANSACTIONS : `cache-transactions-${projectId}`;
+  
+  // INSTANT: Check cache synchronously to determine initial loading state
+  const cacheConfig = {
+    key: cacheKey,
+    validator: (data: any): data is Transaction[] => Array.isArray(data),
+  };
+  const initialCached = typeof window !== 'undefined' ? getCachedData<Transaction[]>(cacheConfig) : { data: null };
+  
+  const [transactions, setTransactions] = useState<Transaction[]>(initialCached.data || []);
+  const [loading, setLoading] = useState(!initialCached.data); // Only loading if no cache
   const [error, setError] = useState<string | null>(null);
   const { user, isImpersonating, originalAdminUser } = useAuth();
   const { deductBalance, addBalance } = useUserBalance();
-  const isUserScope = projectId === 'user-scope';
-  const storageKey = isUserScope ? 'gull-transactions-user' : `gull-transactions-${projectId}`;
 
   const removeTransactionsById = useCallback((idsToRemove: string[]) => {
     if (!idsToRemove?.length) {
@@ -23,9 +33,11 @@ export const useTransactions = (projectId: string) => {
     setTransactions(prevTransactions => {
       const updated = prevTransactions.filter(t => !idSet.has(t.id));
       localStorage.setItem(storageKey, JSON.stringify(updated));
+      // INSTANT: Update cache immediately
+      setCachedData(cacheConfig, updated);
       return updated;
     });
-  }, [storageKey]);
+  }, [storageKey, cacheConfig]);
 
   const settleBalanceForAmount = useCallback(async (amount: number) => {
     if (amount === 0) {
@@ -46,109 +58,92 @@ export const useTransactions = (projectId: string) => {
     }
   }, [addBalance, deductBalance]);
 
-  // Load transactions from database or localStorage as fallback
+  // Load transactions from database with stale-while-revalidate cache
   const loadTransactions = useCallback(async () => {
-    setLoading(true);
     setError(null);
-    
+
+    // Cache already loaded synchronously in initial state, so just fetch fresh data
+    // But check cache again in case it was updated elsewhere
+    const cached = getCachedData<Transaction[]>(cacheConfig);
+    if (cached.data && transactions.length === 0) {
+      // If state is empty but cache exists, load it (shouldn't happen but safety check)
+      setTransactions(cached.data);
+      setLoading(false);
+    }
+
+    // 2. Always fetch fresh data in background
     try {
-      // Prefer database whenever we're online; reading does not require auth uid
       if (isSupabaseConfigured() && !isOfflineMode()) {
-        // Online mode: ALWAYS fetch from database first
         console.log('🌐 Loading transactions from database for project:', projectId);
         
-        let dbTransactions: Transaction[] = [];
-        try {
-          // Pass user ID to filter transactions for this specific user only
-          const userId = user?.id;
-          dbTransactions = await db.getTransactions(projectId, userId);
-          console.log('✅ Transactions loaded from database:', dbTransactions.length, userId ? `(filtered by user: ${userId})` : '(all users)');
-          
-          // Log if there's a discrepancy with cached data
-          const cachedData = localStorage.getItem(storageKey);
-          if (cachedData) {
-            const cachedTransactions = JSON.parse(cachedData);
-            if (cachedTransactions.length !== dbTransactions.length) {
-              console.log(`🔄 Cache update: Cached had ${cachedTransactions.length} entries, database has ${dbTransactions.length} entries - updating cache`);
-            }
-          }
-        } catch (dbError) {
-          console.error('❌ Database fetch failed:', dbError);
-          throw dbError;
-        }
+        const userId = user?.id;
+        const dbTransactions = await db.getTransactions(projectId, userId);
+        console.log('✅ Transactions loaded from database:', dbTransactions.length, userId ? `(filtered by user: ${userId})` : '(all users)');
 
-        // Merge with existing state to prevent losing transactions that were just added
-        // This prevents race conditions where database hasn't committed yet
-        setTransactions(prevTransactions => {
-          // Create a map of existing transactions by ID for fast lookup
-          const existingMap = new Map(prevTransactions.map(t => [t.id, t]));
-          
-          // Add all database transactions to the map
-          dbTransactions.forEach(t => {
-            existingMap.set(t.id, t);
-          });
-          
-          // Convert back to array and sort by creation date (newest first)
-          const mergedTransactions = Array.from(existingMap.values()).sort((a, b) => {
-            const dateA = new Date(a.createdAt).getTime();
-            const dateB = new Date(b.createdAt).getTime();
-            return dateB - dateA; // Newest first
-          });
-          
-          // Log if merge resulted in more transactions
-          if (mergedTransactions.length > dbTransactions.length) {
-            console.log(`🔄 Merge: Had ${prevTransactions.length} in state, ${dbTransactions.length} from DB, ${mergedTransactions.length} after merge`);
-          }
-          
-          // Update localStorage cache
-          localStorage.setItem(storageKey, JSON.stringify(mergedTransactions));
-          return mergedTransactions;
+        // Sort by date (newest first)
+        const sortedTransactions = [...dbTransactions].sort((a, b) => {
+          const dateA = new Date(a.createdAt).getTime();
+          const dateB = new Date(b.createdAt).getTime();
+          return dateB - dateA;
         });
+
+        // Update cache and state
+        setCachedData(cacheConfig, sortedTransactions);
+        setTransactions(sortedTransactions);
+        
+        // Also update legacy storage key for compatibility
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(storageKey, JSON.stringify(sortedTransactions));
+        }
         
       } else if (isOfflineMode()) {
-        // Offline mode: use localStorage
-        console.log('📱 Loading transactions from localStorage (offline mode)');
-        const data = localStorage.getItem(storageKey);
-        const parsed = data ? JSON.parse(data) : [];
-        setTransactions(parsed);
-        console.log('Transactions loaded from localStorage:', parsed.length);
-        
+        // Offline mode: use cache only
+        console.log('📱 Offline mode - using cached transactions');
+        if (cached.data) {
+          setTransactions(cached.data);
+        }
       } else {
-        // No Supabase configured: fallback to localStorage
-        console.log('⚠️ No Supabase configured, using localStorage');
-        const data = localStorage.getItem(storageKey);
-        const parsed = data ? JSON.parse(data) : [];
-        setTransactions(parsed);
-        console.log('Transactions loaded from localStorage:', parsed.length);
+        // No Supabase configured: use cache only
+        console.log('⚠️ No Supabase configured, using cached transactions');
+        if (cached.data) {
+          setTransactions(cached.data);
+        }
       }
     } catch (error) {
       console.error('❌ Error loading transactions:', error);
       
-      // Only fallback to localStorage if database is completely unavailable
-      console.log('🔄 Falling back to localStorage...');
-      try {
-        const data = localStorage.getItem(storageKey);
-        const parsed = data ? JSON.parse(data) : [];
-        setTransactions(parsed);
-        
-        let errorMessage = 'Failed to load transactions from database.';
-        if (isOfflineMode()) {
-          errorMessage = 'Database is in offline mode. Using local storage.';
-        } else if (!isSupabaseConfigured()) {
-          errorMessage = 'Database is not configured. Using local storage.';
-        } else if (error instanceof Error) {
-          errorMessage = `Database error: ${error.message}. Using local storage.`;
+      // Fallback to cached data if available
+      if (cached.data) {
+        console.log('🔄 Using cached data as fallback');
+        setTransactions(cached.data);
+      } else {
+        // Try legacy storage key as last resort
+        try {
+          const legacyData = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
+          if (legacyData) {
+            const parsed = JSON.parse(legacyData);
+            setTransactions(parsed);
+          } else {
+            setTransactions([]);
+          }
+        } catch {
+          setTransactions([]);
         }
-        setError(errorMessage);
-      } catch (localError) {
-        console.error('❌ Error loading from localStorage:', localError);
-        setTransactions([]);
-        setError('Failed to load transactions from both database and local storage.');
       }
+      
+      let errorMessage = 'Failed to load transactions from database.';
+      if (isOfflineMode()) {
+        errorMessage = 'Database is in offline mode. Using cached data.';
+      } else if (!isSupabaseConfigured()) {
+        errorMessage = 'Database is not configured. Using cached data.';
+      } else if (error instanceof Error) {
+        errorMessage = `Database error: ${error.message}. Using cached data.`;
+      }
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
-  }, [projectId, user?.id]);
+  }, [projectId, user?.id, isUserScope, storageKey]);
 
   // Initial load
   useEffect(() => {
@@ -357,11 +352,17 @@ export const useTransactions = (projectId: string) => {
         };
       }
 
-      // Update state using functional update to avoid stale closure issues
+      // INSTANT: Update state and cache immediately
       setTransactions(prevTransactions => {
-        const updatedTransactions = [...prevTransactions, newTransaction];
+        const updatedTransactions = [...prevTransactions, newTransaction].sort((a, b) => {
+          const dateA = new Date(a.createdAt).getTime();
+          const dateB = new Date(b.createdAt).getTime();
+          return dateB - dateA; // Newest first
+        });
         // Always save to localStorage as backup/cache
         localStorage.setItem(storageKey, JSON.stringify(updatedTransactions));
+        // INSTANT: Update cache immediately
+        setCachedData(cacheConfig, updatedTransactions);
         return updatedTransactions;
       });
       
@@ -443,6 +444,8 @@ export const useTransactions = (projectId: string) => {
         const updatedTransactions = [...prevTransactions, ...newTransactions];
         // Always save to localStorage as backup/cache
         localStorage.setItem(storageKey, JSON.stringify(updatedTransactions));
+        // INSTANT: Update cache immediately
+        setCachedData(cacheConfig, updatedTransactions);
         return updatedTransactions;
       });
 
@@ -499,20 +502,18 @@ export const useTransactions = (projectId: string) => {
         }
       }
 
-      // Update the transaction in local state
-      const updated = transactions.map(t =>
-        t.id === transactionId
-          ? { ...t, ...updates, updatedAt: new Date().toISOString() }
-          : t
-      );
-      localStorage.setItem(storageKey, JSON.stringify(updated));
-      
-      // Update state using functional update
-      setTransactions(prevTransactions => prevTransactions.map(t =>
-        t.id === transactionId
-          ? { ...t, ...updates, updatedAt: new Date().toISOString() }
-          : t
-      ));
+      // INSTANT: Update state and cache immediately
+      setTransactions(prevTransactions => {
+        const updated = prevTransactions.map(t =>
+          t.id === transactionId
+            ? { ...t, ...updates, updatedAt: new Date().toISOString() }
+            : t
+        );
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+        // INSTANT: Update cache immediately
+        setCachedData(cacheConfig, updated);
+        return updated;
+      });
       return true;
     } catch (error) {
       console.error('Error updating transaction:', error);

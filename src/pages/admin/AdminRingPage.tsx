@@ -9,6 +9,7 @@ import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import { ConfirmationContext } from '../../App';
 import EditTransactionModal from '../../components/EditTransactionModal';
 import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
+import { getCachedData, setCachedData, CACHE_KEYS } from '../../utils/cache';
 
 interface Entry {
   id: string;
@@ -44,22 +45,49 @@ interface DeductionRecord {
 }
 
 const AdminRingPage: React.FC = () => {
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [deductions, setDeductions] = useState<DeductionRecord[]>([]);
+  // INSTANT: Load cache synchronously BEFORE first render
+  const ringCacheConfig = {
+    key: CACHE_KEYS.ADMIN_RING_ENTRIES,
+    validator: (data: any): data is Entry[] => Array.isArray(data),
+  };
+  const ringDeductionsCacheConfig = {
+    key: CACHE_KEYS.ADMIN_DEDUCTIONS_RING,
+    validator: (data: any): data is DeductionRecord[] => Array.isArray(data),
+  };
+  
+  const initialCachedEntries = typeof window !== 'undefined' 
+    ? getCachedData<Entry[]>(ringCacheConfig) 
+    : { data: null };
+  const initialCachedDeductions = typeof window !== 'undefined'
+    ? getCachedData<DeductionRecord[]>(ringDeductionsCacheConfig)
+    : { data: null };
+  
+  const [entries, setEntries] = useState<Entry[]>(initialCachedEntries.data || []);
+  const [deductions, setDeductions] = useState<DeductionRecord[]>(initialCachedDeductions.data || []);
+  
+  // Calculate initial stats from cached data
+  const initialStats = initialCachedEntries.data ? {
+    totalEntries: initialCachedEntries.data.length,
+    firstPkr: initialCachedEntries.data.reduce((sum, e) => sum + (e.first_amount || 0), 0),
+    secondPkr: initialCachedEntries.data.reduce((sum, e) => sum + (e.second_amount || 0), 0),
+    totalPkr: initialCachedEntries.data.reduce((sum, e) => sum + (e.first_amount || e.second_amount || 0), 0),
+    uniqueNumbers: new Set(initialCachedEntries.data.map(e => e.number)).size,
+  } : {
+    totalEntries: 0,
+    firstPkr: 0,
+    secondPkr: 0,
+    totalPkr: 0,
+    uniqueNumbers: 0,
+  };
+  
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<Entry | null>(null);
   const [deletingDeductionIds, setDeletingDeductionIds] = useState<Set<string>>(new Set()); // Track deletions in progress
   const [viewMode, setViewMode] = useState<'aggregated' | 'history'>('aggregated');
   const [searchNumber, setSearchNumber] = useState('');
   const [showNumbersModal, setShowNumbersModal] = useState<{ numbers: string[]; title: string } | null>(null);
-  const [stats, setStats] = useState({
-    totalEntries: 0,
-    firstPkr: 0,
-    secondPkr: 0,
-    totalPkr: 0,
-    uniqueNumbers: 0,
-  });
-  const [loadingEntries, setLoadingEntries] = useState<boolean>(true);
+  const [stats, setStats] = useState(initialStats);
+  const [loadingEntries, setLoadingEntries] = useState<boolean>(false);
 
   const { showSuccess, showError } = useNotifications();
   const { setRefreshCallback } = useAdminRefresh();
@@ -79,25 +107,39 @@ const AdminRingPage: React.FC = () => {
       return;
     }
 
-    if (showLoader) {
+    // Cache already loaded in initial state - just fetch fresh data
+    const cacheConfig = {
+      key: CACHE_KEYS.ADMIN_RING_ENTRIES,
+      validator: (data: any): data is Entry[] => Array.isArray(data),
+    };
+    const deductionsCacheConfig = {
+      key: CACHE_KEYS.ADMIN_DEDUCTIONS_RING,
+      validator: (data: any): data is DeductionRecord[] => Array.isArray(data),
+    };
+
+    // Show loader only if no data exists and loader requested
+    if (showLoader && entries.length === 0) {
       setLoadingEntries(true);
     }
+
+    // 2. Always fetch fresh data in background
     try {
-      // Use adminView=true to apply admin deductions
-      const data = await db.getAllEntriesByType('ring', true);
-      setEntries(data);
+      const [freshEntries, freshDeductions] = await Promise.all([
+        db.getAllEntriesByType('ring', true),
+        db.getAdminDeductionsByType('ring'),
+      ]);
 
-      // Load deduction records
-      const deductionData = await db.getAdminDeductionsByType('ring');
-      setDeductions(deductionData);
+      setCachedData(cacheConfig, freshEntries);
+      setCachedData(deductionsCacheConfig, freshDeductions);
+      setEntries(freshEntries);
+      setDeductions(freshDeductions);
 
-      // Calculate stats
-      const firstPkr = data.reduce((sum, e) => sum + (e.first_amount || 0), 0);
-      const secondPkr = data.reduce((sum, e) => sum + (e.second_amount || 0), 0);
-      const uniqueNumbers = new Set(data.map(e => e.number)).size;
+      const firstPkr = freshEntries.reduce((sum, e) => sum + (e.first_amount || 0), 0);
+      const secondPkr = freshEntries.reduce((sum, e) => sum + (e.second_amount || 0), 0);
+      const uniqueNumbers = new Set(freshEntries.map(e => e.number)).size;
 
       setStats({
-        totalEntries: data.length,
+        totalEntries: freshEntries.length,
         firstPkr,
         secondPkr,
         totalPkr: firstPkr + secondPkr,
@@ -105,13 +147,16 @@ const AdminRingPage: React.FC = () => {
       });
     } catch (error) {
       console.error('Error loading entries:', error);
-      showError('Error', 'Failed to load entries');
+      // If we have no data, show error
+      if (entries.length === 0) {
+        showError('Error', 'Failed to load entries');
+      }
     } finally {
       if (showLoader) {
         setLoadingEntries(false);
       }
     }
-  }, [showError]); // Remove modal states from dependencies, use ref instead
+  }, [showError, entries.length]);
 
   // Optimized search with debouncing for fast performance even on slow connections
   const debouncedSearchNumber = useDebounce(searchNumber, 200);
@@ -125,8 +170,8 @@ const AdminRingPage: React.FC = () => {
     // Register refresh callback for the refresh button
     setRefreshCallback(() => loadEntries(true, true));
     
-    // Initial load
-    loadEntries(true, true);
+    // Initial load (cache already loaded in initial state, this updates it in background)
+    loadEntries(true, !initialCachedEntries.data); // Only show loader if no cache
 
     // Auto-refresh every 5 seconds (silent, no header animation)
     const autoRefreshInterval = setInterval(() => {
@@ -171,28 +216,55 @@ const AdminRingPage: React.FC = () => {
   const handleDelete = async () => {
     if (!deletingEntry) return;
 
-    try {
+    // INSTANT: Optimistically update UI and cache immediately
+    const entryToDelete = deletingEntry;
+    setEntries(prev => prev.filter(e => e.id !== entryToDelete.id));
+    
+    // Update stats immediately
+    setStats(prev => ({
+      totalEntries: prev.totalEntries - 1,
+      firstPkr: prev.firstPkr - (entryToDelete.first_amount || 0),
+      secondPkr: prev.secondPkr - (entryToDelete.second_amount || 0),
+      totalPkr: prev.totalPkr - ((entryToDelete.first_amount || 0) + (entryToDelete.second_amount || 0)),
+      uniqueNumbers: new Set(entries.filter(e => e.id !== entryToDelete.id).map(e => e.number)).size,
+    }));
+    
+    // Update cache immediately
+    const updatedEntries = entries.filter(e => e.id !== entryToDelete.id);
+    setCachedData(ringCacheConfig, updatedEntries);
+    
+    setDeletingEntry(null);
 
+    try {
       // Refund the balance to the user
-      const refundAmount = deletingEntry.first_amount + deletingEntry.second_amount;
-      const { data: userData } = await db.getUserBalance(deletingEntry.user_id);
+      const refundAmount = entryToDelete.first_amount + entryToDelete.second_amount;
+      const { data: userData } = await db.getUserBalance(entryToDelete.user_id);
       if (!userData) {
         throw new Error('User data not found');
       }
       const newBalance = userData.balance + refundAmount;
       const newTotalSpent = Math.max(0, (userData.total_spent || 0) - refundAmount);
-      await db.updateUserBalance(deletingEntry.user_id, newBalance, { totalSpent: newTotalSpent });
+      await db.updateUserBalance(entryToDelete.user_id, newBalance, { totalSpent: newTotalSpent });
 
       // Delete the transaction
-      await db.deleteTransaction(deletingEntry.id);
+      await db.deleteTransaction(entryToDelete.id);
       await showSuccess('Success', 'Entry deleted successfully and balance refunded');
       
-      setDeletingEntry(null);
-      loadEntries(true); // Force reload after delete
+      // Refresh in background to ensure sync
+      loadEntries(false, false);
     } catch (error) {
       console.error('Delete error:', error);
+      // Rollback on error
+      setEntries(prev => [...prev, entryToDelete]);
+      setStats(prev => ({
+        totalEntries: prev.totalEntries + 1,
+        firstPkr: prev.firstPkr + (entryToDelete.first_amount || 0),
+        secondPkr: prev.secondPkr + (entryToDelete.second_amount || 0),
+        totalPkr: prev.totalPkr + ((entryToDelete.first_amount || 0) + (entryToDelete.second_amount || 0)),
+        uniqueNumbers: new Set([...entries, entryToDelete].map(e => e.number)).size,
+      }));
+      setCachedData(ringCacheConfig, entries);
       showError('Error', 'Failed to delete entry');
-    } finally {
     }
   };
 
@@ -240,14 +312,18 @@ const AdminRingPage: React.FC = () => {
     // Mark as deleting
     setDeletingDeductionIds(prev => new Set(prev).add(deduction.id));
 
-    // Optimistically remove from UI immediately
-    setDeductions(prev => prev.filter(d => d.id !== deduction.id));
+    // INSTANT: Optimistically remove from UI and cache immediately
+    setDeductions(prev => {
+      const updated = prev.filter(d => d.id !== deduction.id);
+      setCachedData(ringDeductionsCacheConfig, updated);
+      return updated;
+    });
 
     try {
       await db.deleteAdminDeduction(deduction.id);
       await showSuccess('Success', 'Deduction deleted successfully. Amounts have been restored.');
-      // Force reload to ensure UI is in sync
-      await loadEntries(true);
+      // Refresh in background to ensure sync
+      loadEntries(false, false);
     } catch (error) {
       console.error('Delete deduction error:', error);
       // Restore deduction on error
@@ -295,9 +371,13 @@ const AdminRingPage: React.FC = () => {
       return next;
     });
 
-    // Optimistically remove from UI immediately
+    // INSTANT: Optimistically remove from UI and cache immediately
     const deductionIdSet = new Set(deductionIds);
-    setDeductions(prev => prev.filter(d => !deductionIdSet.has(d.id)));
+    setDeductions(prev => {
+      const updated = prev.filter(d => !deductionIdSet.has(d.id));
+      setCachedData(ringDeductionsCacheConfig, updated);
+      return updated;
+    });
 
     try {
       // Delete all deductions in a single batch operation
@@ -308,8 +388,8 @@ const AdminRingPage: React.FC = () => {
       }
 
       await showSuccess('Success', `Successfully deleted ${deductions.length} deductions. Amounts have been restored.`);
-      // Force reload to ensure UI is in sync
-      await loadEntries(true);
+      // Refresh in background to ensure sync
+      loadEntries(false, false);
     } catch (error: any) {
       console.error('Delete deductions error:', error);
       // Restore deductions on error
@@ -325,17 +405,43 @@ const AdminRingPage: React.FC = () => {
     }
   };
 
-  const _handleEdit = async (updatedTransaction: any) => {
+  const handleEdit = async (updatedTransaction: any) => {
     if (!editingEntry) return;
+
+    // INSTANT: Optimistically update UI and cache immediately
+    const oldEntry = editingEntry;
+    const updatedEntry: Entry = {
+      ...oldEntry,
+      number: updatedTransaction.number || oldEntry.number,
+      first_amount: updatedTransaction.first,
+      second_amount: updatedTransaction.second,
+    };
+    
+    setEntries(prev => prev.map(e => e.id === oldEntry.id ? updatedEntry : e));
+    
+    // Update stats immediately
+    const oldTotal = oldEntry.first_amount + oldEntry.second_amount;
+    const newTotal = updatedTransaction.first + updatedTransaction.second;
+    const difference = newTotal - oldTotal;
+    setStats(prev => ({
+      ...prev,
+      firstPkr: prev.firstPkr - oldEntry.first_amount + updatedTransaction.first,
+      secondPkr: prev.secondPkr - oldEntry.second_amount + updatedTransaction.second,
+      totalPkr: prev.totalPkr + difference,
+    }));
+    
+    // Update cache immediately
+    const updatedEntries = entries.map(e => e.id === oldEntry.id ? updatedEntry : e);
+    setCachedData(ringCacheConfig, updatedEntries);
+    
+    setEditingEntry(null);
 
     try {
       // Calculate balance difference
-      const oldTotal = editingEntry.first_amount + editingEntry.second_amount;
-      const newTotal = updatedTransaction.first + updatedTransaction.second;
       const difference = newTotal - oldTotal;
 
       // Get current user balance
-      const { data: userData } = await db.getUserBalance(editingEntry.user_id);
+      const { data: userData } = await db.getUserBalance(oldEntry.user_id);
       if (!userData) {
         throw new Error('User data not found');
       }
@@ -343,11 +449,11 @@ const AdminRingPage: React.FC = () => {
 
       // Update user balance
       const newTotalSpent = Math.max(0, (userData.total_spent || 0) + difference);
-      await db.updateUserBalance(editingEntry.user_id, newBalance, { totalSpent: newTotalSpent });
+      await db.updateUserBalance(oldEntry.user_id, newBalance, { totalSpent: newTotalSpent });
 
       // Update transaction
-      await db.updateTransaction(editingEntry.id, {
-        number: updatedTransaction.number || editingEntry.number,
+      await db.updateTransaction(oldEntry.id, {
+        number: updatedTransaction.number || oldEntry.number,
         entryType: updatedTransaction.entryType || 'ring',
         first: updatedTransaction.first,
         second: updatedTransaction.second,
@@ -355,10 +461,20 @@ const AdminRingPage: React.FC = () => {
       });
 
       await showSuccess('Success', 'Entry updated successfully');
-      setEditingEntry(null);
-      loadEntries(true); // Force reload after edit
+      
+      // Refresh in background to ensure sync
+      loadEntries(false, false);
     } catch (error) {
       console.error('Edit error:', error);
+      // Rollback on error
+      setEntries(prev => prev.map(e => e.id === oldEntry.id ? oldEntry : e));
+      setStats(prev => ({
+        ...prev,
+        firstPkr: prev.firstPkr - updatedTransaction.first + oldEntry.first_amount,
+        secondPkr: prev.secondPkr - updatedTransaction.second + oldEntry.second_amount,
+        totalPkr: prev.totalPkr - difference,
+      }));
+      setCachedData(ringCacheConfig, entries);
       showError('Error', 'Failed to update entry');
     }
   };
@@ -867,7 +983,22 @@ const AdminRingPage: React.FC = () => {
           )}
 
             {loadingEntries ? (
-              <LoadingSpinner text="Loading Ring entries..." />
+              <div className="space-y-4">
+                {[...Array(10)].map((_, idx) => (
+                  <div key={idx} className="bg-white dark:bg-gray-800 rounded-lg p-4 animate-pulse">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 space-y-2">
+                        <div className="bg-gray-200 dark:bg-gray-700 h-4 w-1/4 rounded" />
+                        <div className="bg-gray-200 dark:bg-gray-700 h-4 w-1/3 rounded" />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="bg-gray-200 dark:bg-gray-700 h-4 w-20 rounded" />
+                        <div className="bg-gray-200 dark:bg-gray-700 h-4 w-16 rounded" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : filteredEntries.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-gray-500 dark:text-gray-400 text-lg">

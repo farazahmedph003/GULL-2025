@@ -8,6 +8,7 @@ import { ConfirmationContext } from '../../App';
 import { groupTransactionsByNumber } from '../../utils/transactionHelpers';
 import type { EntryType } from '../../types';
 import LoadingButton from '../../components/LoadingButton';
+import { getCachedData, setCachedData, CACHE_KEYS } from '../../utils/cache';
 
 const AdminAdvancedFilterPage: React.FC = () => {
   const [selectedType, setSelectedType] = useState<EntryType>('open');
@@ -29,9 +30,24 @@ const AdminAdvancedFilterPage: React.FC = () => {
 
   // Load entries when type changes
   useEffect(() => {
+    // INSTANT: Check cache synchronously first (before any async operations)
+    const cacheKey = `cache-advanced-filter-entries-${selectedType}`;
+    const cacheConfig = {
+      key: cacheKey,
+      validator: (data: any): data is any[] => Array.isArray(data),
+    };
+    
+    const cached = getCachedData<any[]>(cacheConfig);
+    
+    // Render cached data INSTANTLY (synchronous - no loading state)
+    if (cached.data) {
+      setEntries(cached.data);
+    }
+    
     // Register refresh callback for the refresh button
     setRefreshCallback(() => loadEntries(false, true)); // Force refresh when manual
     
+    // Initial load (will update cache in background)
     loadEntries(true); // Save initial state to history
 
     // Auto-refresh every 5 seconds
@@ -81,6 +97,20 @@ const AdminAdvancedFilterPage: React.FC = () => {
       return;
     }
 
+    // Stale-While-Revalidate: Load from cache instantly
+    const cacheKey = `cache-advanced-filter-entries-${selectedType}`;
+    const cacheConfig = {
+      key: cacheKey,
+      validator: (data: any): data is any[] => Array.isArray(data),
+    };
+
+    // 1. Instant load from cache
+    const cached = getCachedData<any[]>(cacheConfig);
+    if (cached.data) {
+      setEntries(cached.data);
+    }
+
+    // 2. Always fetch fresh data in background
     try {
       // Use adminView=true to see admin-adjusted amounts
       const data = await db.getAllEntriesByType(selectedType, true);
@@ -96,6 +126,8 @@ const AdminAdvancedFilterPage: React.FC = () => {
         username: e.app_users?.username || 'Unknown',
       }));
       
+      // Update cache and state
+      setCachedData(cacheConfig, transactions);
       setEntries(transactions);
       
       // Save to history after loading if requested

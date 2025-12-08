@@ -279,7 +279,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose }) => {
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-50 glass-backdrop"
+        className="fixed inset-0 z-50"
         style={{
           background: 'rgba(0, 0, 0, 0.5)',
           backdropFilter: 'blur(8px)',

@@ -22,15 +22,30 @@ export const useAdmin = () => {
   return { isAdmin, loading };
 };
 
+import { getCachedData, setCachedData, CACHE_KEYS } from '../utils/cache';
+
 // Mock data for now - will be replaced with real API calls
 export const useAdminData = () => {
-  const [users, setUsers] = useState<UserAccount[]>([]);
+  // INSTANT: Check cache synchronously to determine initial state
+  const usersCacheConfig = {
+    key: CACHE_KEYS.ADMIN_DATA_USERS,
+    validator: (data: any): data is UserAccount[] => Array.isArray(data),
+  };
+  const initialCachedUsers = typeof window !== 'undefined' ? getCachedData<UserAccount[]>(usersCacheConfig) : { data: null };
+  
+  const [users, setUsers] = useState<UserAccount[]>(initialCachedUsers.data || []);
   const [reports, setReports] = useState<UserReport[]>([]);
   const [stats, setStats] = useState<AdminStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialCachedUsers.data); // Only loading if no cache
 
   const loadAdminData = useCallback(async () => {
-    setLoading(true);
+    // Cache already loaded synchronously in initial state, just fetch fresh data
+    const cachedUsers = getCachedData<UserAccount[]>(usersCacheConfig);
+    if (cachedUsers.data && users.length === 0) {
+      // If state is empty but cache exists, load it (safety check)
+      setUsers(cachedUsers.data);
+      setLoading(false);
+    }
 
     try {
       if (!isOfflineMode() && supabase) {
@@ -332,6 +347,11 @@ export const useAdminData = () => {
 
         console.log('Mapped users for admin:', mapped);
         setUsers(mapped);
+        
+        // Cache users for instant next load
+        setCachedData(usersCacheConfig, mapped);
+        setLoading(false);
+        
         const reportData = mapped.map((u) => {
           const stats = userStatsMap[u.userId] || { entries: 0, firstTotal: 0, secondTotal: 0 };
           const projectCount = projectCountMap[u.userId] || 0;
@@ -375,9 +395,14 @@ export const useAdminData = () => {
           totalRevenue: 0,
         });
       } else {
-        // Offline fallback: read from localStorage mock
-        const allUsers: UserAccount[] = [];
-        setUsers(allUsers);
+        // Offline fallback: use cached data if available
+        const cachedCheck = getCachedData<UserAccount[]>(usersCacheConfig);
+        if (cachedCheck.data) {
+          setUsers(cachedCheck.data);
+        } else {
+          const allUsers: UserAccount[] = [];
+          setUsers(allUsers);
+        }
         setReports([]);
         setStats({
           totalUsers: 0,
@@ -388,10 +413,18 @@ export const useAdminData = () => {
           totalBalance: 0,
           totalRevenue: 0,
         });
+        setLoading(false);
       }
     } catch (e) {
       console.warn('Failed to load admin data:', e);
-      setUsers([]);
+      // Fallback to cached data if available
+      const cachedCheck = getCachedData<UserAccount[]>(usersCacheConfig);
+      if (cachedCheck.data) {
+        setUsers(cachedCheck.data);
+      } else {
+        setUsers([]);
+      }
+      setLoading(false);
       setReports([]);
       setStats({
         totalUsers: 0,
@@ -402,10 +435,8 @@ export const useAdminData = () => {
         totalBalance: 0,
         totalRevenue: 0,
       });
-    } finally {
-      setLoading(false);
     }
-  }, []);
+  }, [usersCacheConfig]);
 
   // Load admin data on mount
   useEffect(() => {

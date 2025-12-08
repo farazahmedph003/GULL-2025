@@ -12,6 +12,7 @@ import EditTransactionModal from '../../components/EditTransactionModal';
 import DeleteConfirmationModal from '../../components/DeleteConfirmationModal';
 import { generateUserReport } from '../../utils/pdfGenerator';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { getCachedData, setCachedData, CACHE_KEYS } from '../../utils/cache';
 
 interface UserData {
   id: string;
@@ -27,12 +28,22 @@ interface UserData {
 }
 
 const UserManagement: React.FC = () => {
-  const [users, setUsers] = useState<UserData[]>([]);
+  // INSTANT: Load cache synchronously BEFORE first render
+  const usersCacheConfig = {
+    key: CACHE_KEYS.ADMIN_DATA_USERS,
+    validator: (data: any): data is UserData[] => Array.isArray(data),
+  };
+  
+  const initialCachedUsers = typeof window !== 'undefined' 
+    ? getCachedData<UserData[]>(usersCacheConfig) 
+    : { data: null };
+  
+  const [users, setUsers] = useState<UserData[]>(initialCachedUsers.data || []);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [historyTab, setHistoryTab] = useState<'entries' | 'balance'>('entries');
   const [balanceHistory, setBalanceHistory] = useState<any[]>([]);
-  const [usersLoading, setUsersLoading] = useState<boolean>(true);
+  const [usersLoading, setUsersLoading] = useState<boolean>(!initialCachedUsers.data);
 
   // Modals
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
@@ -66,27 +77,36 @@ const UserManagement: React.FC = () => {
       return;
     }
 
-    if (showLoader) {
+    // Only show loader if no cache exists (cache already loaded in initial state)
+    if (showLoader && users.length === 0) {
       setUsersLoading(true);
     }
+    
     try {
       const data = await db.getAllUsersWithStats();
       setUsers(data);
+      
+      // Cache for instant next load
+      setCachedData(usersCacheConfig, data);
     } catch (error) {
       console.error('Error loading users:', error);
-      showError('Error', 'Failed to load users');
+      // If we have cached data, keep showing it
+      if (users.length === 0) {
+        showError('Error', 'Failed to load users');
+      }
     } finally {
       if (showLoader) {
         setUsersLoading(false);
       }
     }
-  }, [showError]);
+  }, [showError, users.length, usersCacheConfig]);
 
   useEffect(() => {
     // Register refresh callback for the refresh button
     setRefreshCallback(() => loadUsers(true, true));
     
-    loadUsers(true, true);
+    // Initial load (cache already loaded in initial state, this updates it in background)
+    loadUsers(true, users.length === 0); // Only show loader if no cache
 
     // Auto-refresh every 5 seconds
     console.log('⏰ Setting up auto-refresh every 5 seconds for User Management...');
@@ -170,7 +190,25 @@ const UserManagement: React.FC = () => {
       
       await db.createUser(userData);
       await showSuccess('Success', `User ${userData.username} created successfully${userData.isPartner ? ' as Partner' : ''}`);
-      loadUsers(true); // Force reload after create
+      // INSTANT: Add new user to cache immediately
+      const newUserData: UserData = {
+        id: newUser.id,
+        username: newUser.username,
+        full_name: newUser.full_name || newUser.username,
+        email: newUser.email || '',
+        balance: newUser.balance || 0,
+        total_spent: 0,
+        entryCount: 0,
+        is_active: true,
+        is_partner: newUser.is_partner || false,
+        role: newUser.role || 'user',
+      };
+      const updatedUsers = [...users, newUserData];
+      setUsers(updatedUsers);
+      setCachedData(usersCacheConfig, updatedUsers);
+      
+      // Refresh in background to ensure sync
+      loadUsers(false, false);
     } catch (error) {
       throw error;
     }
@@ -187,7 +225,17 @@ const UserManagement: React.FC = () => {
         await db.topUpUserBalance(selectedUser.id, amount);
         await showSuccess('Success', `Added PKR ${amount.toLocaleString()} to ${selectedUser.username}'s balance`);
       }
-      loadUsers(true); // Force reload after top-up
+      // INSTANT: Update cache immediately
+      const updatedUsers = users.map(u => 
+        u.id === selectedUser.id 
+          ? { ...u, balance: isWithdraw ? u.balance - amount : u.balance + amount }
+          : u
+      );
+      setUsers(updatedUsers);
+      setCachedData(usersCacheConfig, updatedUsers);
+      
+      // Refresh in background to ensure sync
+      loadUsers(false, false);
       
       // Refresh balance history if this user's history is currently expanded
       if (expandedUserId === selectedUser.id) {
@@ -293,17 +341,30 @@ const UserManagement: React.FC = () => {
 
     setExpandedUserId(user.id);
     setHistoryTab('entries');
-    // Refresh user list first to ensure entryCount is up-to-date
-    await loadUsers(true);
+    // Load history data (will use cache if available)
     await loadHistoryData(user.id, true);
+    // Refresh user list in background to ensure entryCount is up-to-date
+    loadUsers(false, false);
   };
 
   const handleEditTransaction = async (updatedTransaction: any) => {
     if (!editingTransaction || !expandedUserId) return;
 
+    // INSTANT: Optimistically update UI immediately
+    const oldTransaction = editingTransaction;
+    const updatedTransactionData = {
+      ...oldTransaction,
+      first_amount: updatedTransaction.first,
+      second_amount: updatedTransaction.second,
+      number: updatedTransaction.number || oldTransaction.number,
+    };
+    
+    setHistoryData(prev => prev.map(t => t.id === oldTransaction.id ? updatedTransactionData : t));
+    setEditingTransaction(null);
+
     try {
       // Calculate balance difference
-      const oldTotal = editingTransaction.first_amount + editingTransaction.second_amount;
+      const oldTotal = oldTransaction.first_amount + oldTransaction.second_amount;
       const newTotal = updatedTransaction.first + updatedTransaction.second;
       const difference = newTotal - oldTotal;
 
@@ -319,24 +380,23 @@ const UserManagement: React.FC = () => {
       await db.updateUserBalance(expandedUserId, newBalance, { totalSpent: newTotalSpent });
 
       // Update transaction
-      await db.updateTransaction(editingTransaction.id, {
-        number: updatedTransaction.number || editingTransaction.number,
-        entryType: updatedTransaction.entryType || editingTransaction.entry_type,
+      await db.updateTransaction(oldTransaction.id, {
+        number: updatedTransaction.number || oldTransaction.number,
+        entryType: updatedTransaction.entryType || oldTransaction.entry_type,
         first: updatedTransaction.first,
         second: updatedTransaction.second,
         notes: updatedTransaction.notes,
       });
 
       await showSuccess('Success', 'Entry updated successfully');
-      setEditingTransaction(null);
       
-      // Reload history (force refresh)
-      await loadHistoryData(expandedUserId, true);
-      
-      // Reload users to update balance display
-      loadUsers(true); // Force reload after edit
+      // Refresh in background to ensure sync
+      loadHistoryData(expandedUserId, false);
+      loadUsers(false, false);
     } catch (error) {
       console.error('Edit error:', error);
+      // Rollback on error
+      setHistoryData(prev => prev.map(t => t.id === oldTransaction.id ? oldTransaction : t));
       showError('Error', 'Failed to update entry');
     }
   };
@@ -344,9 +404,24 @@ const UserManagement: React.FC = () => {
   const handleDeleteTransaction = async () => {
     if (!deletingTransaction || !expandedUserId) return;
 
+    // INSTANT: Optimistically update UI immediately
+    const transactionToDelete = deletingTransaction;
+    setHistoryData(prev => prev.filter(t => t.id !== transactionToDelete.id));
+    
+    // Update user balance in UI immediately
+    const refundAmount = transactionToDelete.first_amount + transactionToDelete.second_amount;
+    const updatedUsers = users.map(u => 
+      u.id === expandedUserId 
+        ? { ...u, balance: u.balance + refundAmount }
+        : u
+    );
+    setUsers(updatedUsers);
+    setCachedData(usersCacheConfig, updatedUsers);
+    
+    setDeletingTransaction(null);
+
     try {
       // Refund the balance to the user
-      const refundAmount = deletingTransaction.first_amount + deletingTransaction.second_amount;
       const { data: userData } = await db.getUserBalance(expandedUserId);
       if (!userData) {
         throw new Error('User data not found');
@@ -356,28 +431,41 @@ const UserManagement: React.FC = () => {
       await db.updateUserBalance(expandedUserId, newBalance, { totalSpent: newTotalSpent });
 
       // Delete the transaction
-      await db.deleteTransaction(deletingTransaction.id);
+      await db.deleteTransaction(transactionToDelete.id);
       await showSuccess('Success', 'Entry deleted successfully and balance refunded');
       
-      setDeletingTransaction(null);
-      
-      // Reload history (force refresh)
-      await loadHistoryData(expandedUserId, true);
-      
-      // Reload users to update balance display
-      loadUsers(true); // Force reload after delete
+      // Refresh in background to ensure sync
+      loadHistoryData(expandedUserId, false);
+      loadUsers(false, false);
     } catch (error) {
       console.error('Delete error:', error);
+      // Rollback on error
+      setHistoryData(prev => [...prev, transactionToDelete]);
+      setUsers(users);
+      setCachedData(usersCacheConfig, users);
       showError('Error', 'Failed to delete entry');
     }
   };
 
   const handleToggleActive = async (user: UserData) => {
+    // INSTANT: Optimistically update UI immediately
+    const newStatus = !user.is_active;
+    const updatedUsers = users.map(u => 
+      u.id === user.id 
+        ? { ...u, is_active: newStatus }
+        : u
+    );
+    setUsers(updatedUsers);
+    setCachedData(usersCacheConfig, updatedUsers);
+    
     try {
-      const newStatus = !user.is_active;
       await db.toggleUserActiveStatus(user.id, newStatus);
       await showSuccess('Success', `User ${user.username} is now ${newStatus ? 'active' : 'inactive'}`);
-      loadUsers(true); // Force reload after toggle
+      
+      // Refresh in background to ensure sync
+      loadUsers(false, false);
+      // Refresh in background to ensure sync
+      loadUsers(false, false);
     } catch (error) {
       console.error('Error toggling user status:', error);
       showError('Error', 'Failed to update user status');
@@ -394,12 +482,23 @@ const UserManagement: React.FC = () => {
     
     if (!result) return;
 
+    // INSTANT: Optimistically remove from UI immediately
+    const userToDelete = user;
+    const updatedUsers = users.filter(u => u.id !== userToDelete.id);
+    setUsers(updatedUsers);
+    setCachedData(usersCacheConfig, updatedUsers);
+
     try {
-      await db.deleteUser(user.id, true); // Hard delete - completely remove from database
-      await showSuccess('Success', `User ${user.username} has been permanently deleted`);
-      loadUsers(true); // Force reload after delete
+      await db.deleteUser(userToDelete.id, true); // Hard delete - completely remove from database
+      await showSuccess('Success', `User ${userToDelete.username} has been permanently deleted`);
+      
+      // Refresh in background to ensure sync
+      loadUsers(false, false);
     } catch (error) {
       console.error('Error deleting user:', error);
+      // Rollback on error
+      setUsers(users);
+      setCachedData(usersCacheConfig, users);
       showError('Error', 'Failed to delete user');
     }
   };

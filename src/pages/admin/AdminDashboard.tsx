@@ -6,6 +6,13 @@ import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import { ConfirmationContext } from '../../App';
 import type { EntryType } from '../../types';
 
+interface AdminUser {
+  id: string;
+  username: string;
+  full_name: string;
+  balance: number;
+}
+
 interface UserStats {
   id: string;
   username: string;
@@ -19,23 +26,50 @@ interface UserStats {
   secondUnique: number;
 }
 
+const DASHBOARD_USERS_CACHE_KEY = 'admin-dashboard-users-cache';
+
 const AdminDashboard: React.FC = () => {
-  const [users, setUsers] = useState<any[]>([]);
+  // INSTANT: Load cache synchronously BEFORE first render
+  const initialCachedUsers = typeof window !== 'undefined' 
+    ? (() => {
+        try {
+          const cached = window.localStorage.getItem(DASHBOARD_USERS_CACHE_KEY);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) {
+              return parsed;
+            }
+          }
+        } catch {}
+        return [];
+      })()
+    : [];
+  
+  const [users, setUsers] = useState<any[]>(initialCachedUsers);
   const [selectedFilter, setSelectedFilter] = useState<EntryType | null>(null);
   const [userStats, setUserStats] = useState<UserStats[]>([]);
   const [systemFirstPkr, setSystemFirstPkr] = useState<number>(0);
   const [systemSecondPkr, setSystemSecondPkr] = useState<number>(0);
   const [systemTotalPkr, setSystemTotalPkr] = useState<number>(0);
+  const [isUsersLoading, setIsUsersLoading] = useState<boolean>(initialCachedUsers.length === 0);
   const { showSuccess, showError } = useNotifications();
   const { setRefreshCallback } = useAdminRefresh();
   const confirm = useContext(ConfirmationContext);
 
   const loadUsers = useCallback(async () => {
+    // 2) Always fetch fresh data in background (cache already loaded synchronously in useEffect)
     try {
       const data = await db.getAllUsersWithStats();
       setUsers(data);
+
+      // Persist fresh data for instant next render
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(DASHBOARD_USERS_CACHE_KEY, JSON.stringify(data));
+      }
     } catch (error) {
       console.error('Error loading users:', error);
+    } finally {
+      setIsUsersLoading(false);
     }
   }, []);
 
@@ -108,7 +142,7 @@ const AdminDashboard: React.FC = () => {
       }
     });
     
-    // Initial load
+    // Initial load (cache already loaded in initial state, this updates it in background)
     loadUsers();
 
     // Auto-refresh every 5 seconds
@@ -300,6 +334,23 @@ const AdminDashboard: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* Skeleton loader for first-time users (no cache) */}
+        {isUsersLoading && users.length === 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+            {[...Array(6)].map((_, idx) => (
+              <div key={idx} className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
+                <div className="space-y-3 animate-pulse">
+                  <div className="bg-gray-200 dark:bg-gray-700 h-4 w-1/2 rounded" />
+                  <div className="bg-gray-200 dark:bg-gray-700 h-4 w-1/3 rounded" />
+                  <div className="bg-gray-200 dark:bg-gray-700 h-4 w-2/3 rounded" />
+                  <div className="bg-gray-200 dark:bg-gray-700 h-4 w-1/4 rounded" />
+                  <div className="bg-gray-200 dark:bg-gray-700 h-4 w-3/5 rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* User Stats Grid (shown when filter selected) */}
         {selectedFilter && (
