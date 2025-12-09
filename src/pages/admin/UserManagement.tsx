@@ -108,12 +108,12 @@ const UserManagement: React.FC = () => {
     // Initial load (cache already loaded in initial state, this updates it in background)
     loadUsers(true, users.length === 0); // Only show loader if no cache
 
-    // Auto-refresh every 5 seconds
-    console.log('⏰ Setting up auto-refresh every 5 seconds for User Management...');
+    // Auto-refresh every 2 seconds
+    console.log('⏰ Setting up auto-refresh every 2 seconds for User Management...');
     const autoRefreshInterval = setInterval(() => {
       console.log('🔄 Auto-refreshing User Management data...');
       loadUsers(false, false); // Silent background refresh
-    }, 5000);
+    }, 2000);
 
     // Set up real-time subscription for auto-updates
     if (supabase) {

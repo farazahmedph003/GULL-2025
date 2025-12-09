@@ -15,6 +15,7 @@ import { useConfirmation } from './hooks/useConfirmation.tsx';
 import { initializeCustomPopups } from './utils/customPopups';
 import AdminRoute from './components/AdminRoute';
 import AdminLayout from './components/AdminLayout';
+import { startSyncLoop } from './services/syncManager';
 
 // Create and export Confirmation Context for global access
 interface ConfirmationOptions {
@@ -157,6 +158,11 @@ const AppWithNotifications: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  // Start offline->online sync loop once app mounts (every 2 seconds)
+  React.useEffect(() => {
+    startSyncLoop(2000);
+  }, []);
+
   return (
     <ErrorBoundary>
       <ThemeProvider>

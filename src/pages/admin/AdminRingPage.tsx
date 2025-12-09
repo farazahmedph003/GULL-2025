@@ -172,10 +172,10 @@ const AdminRingPage: React.FC = () => {
     // Initial load (cache already loaded in initial state, this updates it in background)
     loadEntries(true, !initialCachedEntries.data); // Only show loader if no cache
 
-    // Auto-refresh every 5 seconds (silent, no header animation)
+    // Auto-refresh every 2 seconds (silent, no header animation)
     const autoRefreshInterval = setInterval(() => {
       loadEntries(false, false);
-    }, 5000);
+    }, 2000);
 
     // Set up real-time subscription for auto-updates
     if (supabase) {

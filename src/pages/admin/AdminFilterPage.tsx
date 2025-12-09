@@ -63,8 +63,8 @@ const AdminFilterPage: React.FC = () => {
   const isAnyModalOpenRef = React.useRef(false);
   
   React.useEffect(() => {
-    isAnyModalOpenRef.current = !!(showSaveModal || processing);
-  }, [showSaveModal, processing]);
+    isAnyModalOpenRef.current = !!(showSaveModal || processing || calculating);
+  }, [showSaveModal, processing, calculating]);
 
   // Load entries when type changes
   React.useEffect(() => {
@@ -73,14 +73,14 @@ const AdminFilterPage: React.FC = () => {
     
     loadEntries(true); // Save initial state to history
 
-    // Auto-refresh every 5 seconds
+    // Auto-refresh every 2 seconds
     const autoRefreshInterval = setInterval(() => {
       if (!isAnyModalOpenRef.current) {
       loadEntries(false);
       } else {
         console.log('⏸️ Skipping Filter refresh - modal or processing');
       }
-    }, 5000);
+    }, 2000);
 
     // Set up real-time subscription for auto-updates
     if (supabase) {
@@ -227,6 +227,7 @@ const AdminFilterPage: React.FC = () => {
 
   // Apply filter and calculate (async-style so button spinner is visible)
   const handleApplyFilter = () => {
+    if (calculating) return; // Prevent multiple rapid clicks
     setCalculating(true);
 
     // Defer heavy calculation to next tick so the "loading" state renders first

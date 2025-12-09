@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { db } from '../services/database';
 import { isSupabaseConfigured, isOfflineMode } from '../lib/supabase';
 import { getCachedData, setCachedData, CACHE_KEYS } from '../utils/cache';
+import { enqueue } from '../services/localDb';
 
 // In projectless mode, pass 'user-scope' for current user
 export const useTransactions = (projectId: string) => {
@@ -227,6 +228,11 @@ export const useTransactions = (projectId: string) => {
     try {
       if (shouldUseDatabase) {
         await db.deleteTransaction(transactionId, isImpersonating ? originalAdminUser?.id : undefined);
+      } else {
+        await enqueue('transactions', 'delete', {
+          ids: [transactionId],
+          adminUserId: isImpersonating ? originalAdminUser?.id : undefined,
+        });
       }
 
       await settleBalanceForAmount(refundAmount);
@@ -276,6 +282,12 @@ export const useTransactions = (projectId: string) => {
         console.log(`✅ Batch delete complete!`);
       } else {
         deletedTransactions.push(...targetTransactions);
+
+        // Queue batch delete for sync
+        await enqueue('transactions', 'delete', {
+          ids: targetTransactions.map(t => t.id),
+          adminUserId: isImpersonating ? originalAdminUser?.id : undefined,
+        });
       }
 
       await finalizeDeleted();
@@ -350,6 +362,14 @@ export const useTransactions = (projectId: string) => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
+
+        // Queue for sync when back online
+        const offlineUserId = user?.id || 'offline-user';
+        await enqueue('transactions', 'create', {
+          userId: offlineUserId,
+          transaction,
+          adminUserId: isImpersonating ? originalAdminUser?.id : undefined,
+        });
       }
 
       // INSTANT: Update state and cache immediately
@@ -437,6 +457,16 @@ export const useTransactions = (projectId: string) => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         }));
+
+        // Queue batch for sync
+        const offlineUserId = user?.id || 'offline-user';
+        for (const tx of transactionsToAdd) {
+          await enqueue('transactions', 'create', {
+            userId: offlineUserId,
+            transaction: tx,
+            adminUserId: isImpersonating ? originalAdminUser?.id : undefined,
+          });
+        }
       }
 
       // Update state using functional update
@@ -514,6 +544,15 @@ export const useTransactions = (projectId: string) => {
         setCachedData(cacheConfig, updated);
         return updated;
       });
+
+      // Queue update for sync when offline
+      if (isOfflineMode() || !isSupabaseConfigured()) {
+        await enqueue('transactions', 'update', {
+          transactionId,
+          updates,
+          adminUserId: isImpersonating ? originalAdminUser?.id : undefined,
+        });
+      }
       return true;
     } catch (error) {
       console.error('Error updating transaction:', error);

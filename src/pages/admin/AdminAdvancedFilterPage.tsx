@@ -50,10 +50,10 @@ const AdminAdvancedFilterPage: React.FC = () => {
     // Initial load (will update cache in background)
     loadEntries(true); // Save initial state to history
 
-    // Auto-refresh every 5 seconds
+    // Auto-refresh every 2 seconds
     const autoRefreshInterval = setInterval(() => {
       loadEntries(false, false); // Don't force, respect processing state
-    }, 5000);
+    }, 2000);
 
     // Set up real-time subscription for auto-updates
     if (supabase) {
