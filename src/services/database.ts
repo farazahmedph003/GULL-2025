@@ -3005,7 +3005,10 @@ export class DatabaseService {
   }
 
   /**
-   * Reset user history (delete all transactions for a specific user)
+   * Reset user history (HIDE transactions from the user dashboard only)
+   * - Does NOT delete transactions
+   * - Admin pages remain intact (they use hidden_from_admin filter)
+   * - User dashboard filters on hidden_from_user, so hidden entries disappear there
    */
   async resetUserHistory(userId: string): Promise<{ deletedCount: number }> {
     if (!isSupabaseConfigured() || !supabase) {
@@ -3015,113 +3018,41 @@ export class DatabaseService {
     const client = supabaseAdmin || supabase;
 
     return this.withRetry(async () => {
-      // IMPORTANT: Preserve total_spent before deletion (database trigger will reduce it)
-      // Get current total_spent value to restore it after deletion
-      const { data: userData, error: userError } = await client
-        .from('app_users')
-        .select('total_spent')
-        .eq('id', userId)
-        .single();
-      
-      if (userError) {
-        console.warn('Could not fetch user total_spent:', userError);
-      }
-      
-      const originalTotalSpent = userData?.total_spent || 0;
-      console.log(`💾 Preserving total_spent: ${originalTotalSpent} for user ${userId}`);
-
       // Get all transactions for this user (excluding already hidden ones)
-      // No limit - can handle 100,000+ entries
       const { data: transactions, error: txError } = await client
         .from('transactions')
         .select('id')
         .eq('user_id', userId)
         .is('hidden_from_user', null) // Only get entries not already hidden
-        .limit(1000000); // Very high limit - effectively unlimited
+        .limit(1000000);
 
       if (txError) throw txError;
 
-      if (!transactions || transactions.length === 0) {
+      const count = transactions?.length || 0;
+      if (count === 0) {
         return { deletedCount: 0 };
       }
 
-      // DELETE all transactions permanently - handles 100,000+ entries in one operation!
-      console.log(`🗑️ Deleting ${transactions.length} transactions permanently...`);
-      
-      // Delete all admin deductions first (they reference transactions via foreign key)
-      const transactionIds = transactions.map((t: any) => t.id);
-      if (transactionIds.length > 0) {
-        // Delete deductions in batches for large numbers
-        const BATCH_SIZE = 1500;
-        const batches: string[][] = [];
-        
-        for (let i = 0; i < transactionIds.length; i += BATCH_SIZE) {
-          const batch = transactionIds.slice(i, i + BATCH_SIZE).filter((id: any) => id && typeof id === 'string' && id.length > 0);
-          if (batch.length > 0) {
-            batches.push(batch);
-          }
-        }
-        
-        // Delete deductions in parallel batches
-        const MAX_CONCURRENT = 10;
-        for (let i = 0; i < batches.length; i += MAX_CONCURRENT) {
-          const concurrentBatches = batches.slice(i, i + MAX_CONCURRENT);
-          await Promise.all(concurrentBatches.map(batch => 
-            client.from('admin_deductions').delete().in('transaction_id', batch)
-          ));
-        }
-        console.log(`✅ Deleted admin deductions for ${transactionIds.length} transactions`);
-      }
+      console.log(`🙈 Hiding ${count} user transactions from user view (admin view unaffected)...`);
 
-      // Delete all transactions permanently using WHERE clause (instant for any number!)
-      const { error: deleteError } = await client
+      // Hide from user, keep data for admin views
+      const { error: hideError } = await client
         .from('transactions')
-        .delete()
+        .update({ hidden_from_user: true })
         .eq('user_id', userId)
-        .is('hidden_from_user', null); // Only delete entries not already hidden
-      
-      if (deleteError) {
-        console.error('Error deleting transactions:', deleteError);
-        throw new Error(`Failed to delete transactions: ${deleteError.message}`);
-      }
-      
-      const totalDeleted = transactions.length;
-      console.log(`✅ Successfully deleted ${totalDeleted} transactions permanently`);
+        .is('hidden_from_user', null);
 
-      // Delete all balance history for this user (deposits/withdrawals)
-      const { error: balanceHistoryError } = await client
-        .from('balance_history')
-        .delete()
-        .eq('app_user_id', userId);
-
-      if (balanceHistoryError) {
-        console.warn('Error deleting balance history:', balanceHistoryError);
-      } else {
-        console.log('✅ Deleted balance history for user:', userId);
+      if (hideError) {
+        console.error('Error hiding user transactions:', hideError);
+        throw new Error(`Failed to hide user transactions: ${hideError.message}`);
       }
 
-      // IMPORTANT: Restore total_spent after deletion (database trigger reduced it to 0)
-      // Reset History should NOT reset total_spent - that should only be done via resetUserSpent()
-      if (originalTotalSpent > 0) {
-        const { error: restoreError } = await client
-          .from('app_users')
-          .update({ total_spent: originalTotalSpent })
-          .eq('id', userId);
-        
-        if (restoreError) {
-          console.error('❌ Error restoring total_spent:', restoreError);
-          // Don't throw - deletion was successful, just log the warning
-        } else {
-          console.log(`✅ Restored total_spent to ${originalTotalSpent} for user ${userId}`);
-        }
-      }
-
-      // Clear cache
+      // Clear cache so user dashboard refreshes
       clearTransactionsCache();
 
-      console.log(`✅ Reset user history for ${userId}: Permanently deleted ${totalDeleted} entries (total_spent preserved: ${originalTotalSpent})`);
+      console.log(`✅ Reset user history for ${userId}: Hidden ${count} entries from user dashboard (admin data preserved)`);
 
-      return { deletedCount: totalDeleted };
+      return { deletedCount: count };
     });
   }
 
@@ -3174,11 +3105,12 @@ export class DatabaseService {
     const client = supabaseAdmin || supabase;
 
     return this.withRetry(async () => {
-      // First, count transactions before deletion to get accurate count
+      // Count transactions of this type
       const { count: transactionCount, error: countError } = await client
         .from('transactions')
         .select('*', { count: 'exact', head: true })
-        .eq('entry_type', entryType);
+        .eq('entry_type', entryType)
+        .is('hidden_from_admin', null);
 
       if (countError) {
         console.error('Error counting transactions:', countError);
@@ -3188,97 +3120,50 @@ export class DatabaseService {
       const totalTransactions = transactionCount || 0;
 
       if (totalTransactions === 0) {
-        console.log(`ℹ️ No ${entryType} transactions found to delete`);
+        console.log(`ℹ️ No ${entryType} transactions found to hide for admin`);
         return { deletedCount: 0 };
       }
 
-      console.log(`📊 Found ${totalTransactions} ${entryType} transactions to delete`);
+      console.log(`🙈 Hiding ${totalTransactions} ${entryType} transactions from admin view (user view unaffected)...`);
 
-      // Delete all admin deductions for this entry type first
-      // Get all transaction IDs of this type
-      const { data: transactions, error: txError } = await client
+      // Hide transactions from admin views (set hidden_from_admin), keep user data intact
+      const { error: hideError } = await client
         .from('transactions')
-        .select('id')
+        .update({ hidden_from_admin: true })
         .eq('entry_type', entryType)
-        .limit(1000000);
+        .is('hidden_from_admin', null);
 
-      if (txError) {
-        console.error('Error fetching transactions:', txError);
-        // Continue anyway - we'll delete transactions which will cascade delete deductions
+      if (hideError) {
+        console.error('Error hiding admin transactions:', hideError);
+        throw new Error(`Failed to hide admin transactions: ${hideError.message}`);
       }
 
-      let totalDeletedDeductions = 0;
-      
-      if (transactions && transactions.length > 0) {
-        const transactionIds = transactions.map((t: any) => t.id);
-        
-        // Delete admin deductions in batches
-        const BATCH_SIZE = 500;
-        const deductionBatches: string[][] = [];
-        
-        for (let i = 0; i < transactionIds.length; i += BATCH_SIZE) {
-          const batch = transactionIds.slice(i, i + BATCH_SIZE);
-          if (batch.length > 0) {
-            deductionBatches.push(batch);
+      // Optionally clean up admin deductions referencing these transactions (admin-only data)
+      try {
+        const { data: txIds } = await client
+          .from('transactions')
+          .select('id')
+          .eq('entry_type', entryType)
+          .is('hidden_from_admin', true)
+          .limit(1000000);
+
+        if (txIds && txIds.length > 0) {
+          const ids = txIds.map((t: any) => t.id);
+          for (let i = 0; i < ids.length; i += 500) {
+            const batch = ids.slice(i, i + 500);
+            await client.from('admin_deductions').delete().in('transaction_id', batch);
           }
         }
-        
-        console.log(`🗑️ Deleting admin deductions for ${transactionIds.length} transactions...`);
-        
-        for (let i = 0; i < deductionBatches.length; i += 10) {
-          const concurrentBatches = deductionBatches.slice(i, i + 10);
-          
-          const deletionPromises = concurrentBatches.map(async (batch) => {
-            try {
-              const { data: deletedData, error: batchError } = await client
-                .from('admin_deductions')
-                .delete()
-                .in('transaction_id', batch)
-                .select('id');
-              
-              if (batchError) {
-                console.error(`Error deleting deductions batch:`, batchError);
-                return 0;
-              }
-              
-              return deletedData?.length || 0;
-            } catch (err) {
-              console.error(`Exception deleting deductions batch:`, err);
-              return 0;
-            }
-          });
-          
-          const batchResults = await Promise.all(deletionPromises);
-          totalDeletedDeductions += batchResults.reduce((sum, count) => sum + count, 0);
-        }
-        
-        console.log(`✅ Deleted ${totalDeletedDeductions} admin deductions`);
+      } catch (dedErr) {
+        console.warn('Warning cleaning up admin deductions (non-blocking):', dedErr);
       }
-
-      // Delete all transactions of this entry type permanently
-      // This resets the admin view for this specific page only (Ring, Open, Akra, or Packet)
-      // Each page only deletes its own entry type, not affecting other entry types
-      console.log(`🗑️ Deleting all ${totalTransactions} ${entryType} transactions permanently...`);
-      
-      // Delete all transactions of this entry type using WHERE clause (instant for any number!)
-      const { error: deleteError } = await client
-        .from('transactions')
-        .delete()
-        .eq('entry_type', entryType);
-      
-      if (deleteError) {
-        console.error('Error deleting transactions:', deleteError);
-        throw new Error(`Failed to delete transactions: ${deleteError.message}`);
-      }
-      
-      console.log(`✅ Successfully deleted ${totalTransactions} ${entryType} transactions permanently`);
 
       // Clear cache so admin view updates
       clearTransactionsCache();
 
-      console.log(`✅ Reset admin view for ${entryType}: Deleted ${totalTransactions} transactions and ${totalDeletedDeductions} admin deductions`);
+      console.log(`✅ Reset admin view for ${entryType}: Hidden ${totalTransactions} transactions from admin (user data preserved)`);
 
-      return { deletedCount: totalTransactions }; // Return count of deleted transactions
+      return { deletedCount: totalTransactions }; // Count of admin-hidden transactions
     });
   }
 
