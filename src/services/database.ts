@@ -1,5 +1,5 @@
 import { supabase, supabaseAdmin, isSupabaseConfigured, isSupabaseConnected } from '../lib/supabase';
-import { cacheUsers, getUsersWithStatsFromCache, getEntriesByTypeFromCache, clearTransactionsCache } from './localDb';
+import { cacheUsers, cacheTransactions, getUsersWithStatsFromCache, getEntriesByTypeFromCache, clearTransactionsCache } from './localDb';
 import type { Project, Transaction, FilterPreset, ActionHistory, EntryType, AmountLimitMap } from '../types';
 
 // Get service key from environment
@@ -1891,6 +1891,13 @@ export class DatabaseService {
           firstTransaction: allTransactions[0] || 'none',
           lastTransaction: allTransactions[allTransactions.length - 1] || 'none'
         });
+
+        // Cache transactions locally (IndexedDB) for offline stats/use
+        try {
+          await cacheTransactions(allTransactions as any);
+        } catch (cacheErr) {
+          console.warn('⚠️ Failed to cache transactions locally:', cacheErr);
+        }
         
         if (allTransactions.length === 0) {
           return [];
