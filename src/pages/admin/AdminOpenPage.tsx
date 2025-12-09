@@ -174,12 +174,7 @@ const AdminOpenPage: React.FC = () => {
     // Initial load (cache already loaded in initial state, this updates it in background)
     loadEntries(true, !initialCachedEntries.data); // Only show loader if no cache
 
-    // Auto-refresh every 2 seconds (silent, no header animation)
-    const autoRefreshInterval = setInterval(() => {
-      loadEntries(false, false);
-    }, 2000);
-
-    // Set up real-time subscription for auto-updates
+    // Set up real-time subscription for auto-updates (primary live source)
     if (supabase) {
       const subscription = supabase
         .channel('open-entries-realtime')
@@ -204,13 +199,12 @@ const AdminOpenPage: React.FC = () => {
 
       return () => {
         console.log('🔌 Unsubscribing from Open real-time updates');
-        clearInterval(autoRefreshInterval);
         subscription.unsubscribe();
       };
     }
 
     return () => {
-      clearInterval(autoRefreshInterval);
+      console.log('🔌 Cleaning up Open entries effect (no auto-refresh interval to clear)');
     };
   }, [loadEntries, setRefreshCallback]);
 

@@ -50,12 +50,7 @@ const AdminAdvancedFilterPage: React.FC = () => {
     // Initial load (will update cache in background)
     loadEntries(true); // Save initial state to history
 
-    // Auto-refresh every 2 seconds
-    const autoRefreshInterval = setInterval(() => {
-      loadEntries(false, false); // Don't force, respect processing state
-    }, 2000);
-
-    // Set up real-time subscription for auto-updates
+    // Set up real-time subscription for auto-updates (primary live source)
     if (supabase) {
       const subscription = supabase
         .channel(`advanced-filter-${selectedType}-realtime`)
@@ -80,13 +75,12 @@ const AdminAdvancedFilterPage: React.FC = () => {
 
       return () => {
         console.log(`🔌 Unsubscribing from ${selectedType} advanced filter real-time updates`);
-        clearInterval(autoRefreshInterval);
         subscription.unsubscribe();
       };
     }
 
     return () => {
-      clearInterval(autoRefreshInterval);
+      console.log('🔌 Cleaning up Advanced Filter effect (no auto-refresh interval to clear)');
     };
   }, [selectedType, processing]); // Add processing as dependency
 

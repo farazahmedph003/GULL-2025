@@ -172,12 +172,7 @@ const AdminRingPage: React.FC = () => {
     // Initial load (cache already loaded in initial state, this updates it in background)
     loadEntries(true, !initialCachedEntries.data); // Only show loader if no cache
 
-    // Auto-refresh every 2 seconds (silent, no header animation)
-    const autoRefreshInterval = setInterval(() => {
-      loadEntries(false, false);
-    }, 2000);
-
-    // Set up real-time subscription for auto-updates
+    // Set up real-time subscription for auto-updates (primary live source)
     if (supabase) {
       const subscription = supabase
         .channel('ring-entries-realtime')
@@ -202,13 +197,12 @@ const AdminRingPage: React.FC = () => {
 
       return () => {
         console.log('🔌 Unsubscribing from Ring real-time updates');
-        clearInterval(autoRefreshInterval);
         subscription.unsubscribe();
       };
     }
 
     return () => {
-      clearInterval(autoRefreshInterval);
+      console.log('🔌 Cleaning up Ring effect (no auto-refresh interval to clear)');
     };
   }, [loadEntries, setRefreshCallback]);
 

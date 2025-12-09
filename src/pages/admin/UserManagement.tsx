@@ -108,14 +108,7 @@ const UserManagement: React.FC = () => {
     // Initial load (cache already loaded in initial state, this updates it in background)
     loadUsers(true, users.length === 0); // Only show loader if no cache
 
-    // Auto-refresh every 2 seconds
-    console.log('⏰ Setting up auto-refresh every 2 seconds for User Management...');
-    const autoRefreshInterval = setInterval(() => {
-      console.log('🔄 Auto-refreshing User Management data...');
-      loadUsers(false, false); // Silent background refresh
-    }, 2000);
-
-    // Set up real-time subscription for auto-updates
+    // Set up real-time subscription for auto-updates (primary live source)
     if (supabase) {
       const subscription = supabase
         .channel('users-changes-realtime')
@@ -156,14 +149,12 @@ const UserManagement: React.FC = () => {
 
       return () => {
         console.log('🔌 Unsubscribing from user management real-time updates');
-        clearInterval(autoRefreshInterval);
         subscription.unsubscribe();
       };
     }
 
     return () => {
-      console.log('🔌 Cleaning up user management auto-refresh...');
-      clearInterval(autoRefreshInterval);
+      console.log('🔌 Cleaning up user management effect (no auto-refresh interval to clear)');
     };
   }, []); // Empty dependency - only run once on mount
 

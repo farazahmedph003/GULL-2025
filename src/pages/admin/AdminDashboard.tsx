@@ -5,6 +5,7 @@ import { useNotifications } from '../../contexts/NotificationContext';
 import { useAdminRefresh } from '../../contexts/AdminRefreshContext';
 import { ConfirmationContext } from '../../App';
 import type { EntryType } from '../../types';
+import { localDb } from '../../services/localDb';
 
 interface UserStats {
   id: string;
@@ -70,16 +71,25 @@ const AdminDashboard: React.FC = () => {
     try {
       let totalFirst = 0;
       let totalSecond = 0;
-      
-      // Calculate across all entry types for all users
-      for (const user of users) {
-        for (const entryType of ['open', 'akra', 'ring', 'packet'] as EntryType[]) {
-          const entries = await db.getUserEntries(user.id, entryType);
-          totalFirst += entries.reduce((sum, e) => sum + (e.first_amount || 0), 0);
-          totalSecond += entries.reduce((sum, e) => sum + (e.second_amount || 0), 0);
+
+      // If online, use database; otherwise fall back to cached transactions
+      if (db.isOnline()) {
+        for (const user of users) {
+          for (const entryType of ['open', 'akra', 'ring', 'packet'] as EntryType[]) {
+            const entries = await db.getUserEntries(user.id, entryType);
+            totalFirst += entries.reduce((sum, e) => sum + (e.first_amount || 0), 0);
+            totalSecond += entries.reduce((sum, e) => sum + (e.second_amount || 0), 0);
+          }
         }
+      } else {
+        // Offline: use cached transactions in IndexedDB
+        const cachedTx = await localDb.transactions.toArray();
+        cachedTx.forEach(tx => {
+          totalFirst += tx.first_amount || 0;
+          totalSecond += tx.second_amount || 0;
+        });
       }
-      
+
       setSystemFirstPkr(totalFirst);
       setSystemSecondPkr(totalSecond);
       setSystemTotalPkr(totalFirst + totalSecond);
@@ -91,16 +101,25 @@ const AdminDashboard: React.FC = () => {
   const loadUserStatsForType = useCallback(async (entryType: EntryType) => {
     try {
       const stats: UserStats[] = [];
-      const allEntries: any[] = []; // Collect all entries for global unique calculation
 
       for (const user of users) {
-        const entries = await db.getUserEntries(user.id, entryType);
-        allEntries.push(...entries); // Add to global collection
-        
+        let entries: any[] = [];
+        if (db.isOnline()) {
+          entries = await db.getUserEntries(user.id, entryType);
+        } else {
+          // Offline: read from cached transactions
+          const cached = await localDb.transactions
+            .where('entry_type')
+            .equals(entryType)
+            .filter(t => t.user_id === user.id)
+            .toArray();
+          entries = cached;
+        }
+
         const firstPkr = entries.reduce((sum, e) => sum + (e.first_amount || 0), 0);
         const secondPkr = entries.reduce((sum, e) => sum + (e.second_amount || 0), 0);
         const totalPkr = firstPkr + secondPkr;
-        
+
         // Calculate unique numbers per user
         const uniqueFirst = new Set(entries.filter(e => e.first_amount > 0).map(e => e.number)).size;
         const uniqueSecond = new Set(entries.filter(e => e.second_amount > 0).map(e => e.number)).size;
@@ -125,6 +144,23 @@ const AdminDashboard: React.FC = () => {
     }
   }, [users]);
 
+  // Load users from IndexedDB cache if localStorage cache is empty (offline instant render)
+  useEffect(() => {
+    if (users.length === 0) {
+      (async () => {
+        try {
+          const cachedUsers = await localDb.users.toArray();
+          if (cachedUsers.length > 0) {
+            setUsers(cachedUsers as any[]);
+            setIsUsersLoading(false);
+          }
+        } catch (err) {
+          console.warn('Failed to load cached users from IndexedDB:', err);
+        }
+      })();
+    }
+  }, [users.length]);
+
   useEffect(() => {
     // Register refresh callback for the refresh button
     setRefreshCallback(() => {
@@ -138,17 +174,7 @@ const AdminDashboard: React.FC = () => {
     // Initial load (cache already loaded in initial state, this updates it in background)
     loadUsers();
 
-    // Auto-refresh every 2 seconds
-    console.log('⏰ Setting up auto-refresh every 2 seconds for Admin Dashboard...');
-    const autoRefreshInterval = setInterval(() => {
-      console.log('🔄 Auto-refreshing Admin Dashboard data...');
-      loadUsers();
-      if (selectedFilter) {
-        loadUserStatsForType(selectedFilter);
-      }
-    }, 2000);
-
-    // Set up real-time subscription for auto-updates
+    // Set up real-time subscription for auto-updates (primary live source)
     if (supabase) {
       const subscription = supabase
         .channel('admin-dashboard-realtime')
@@ -189,14 +215,12 @@ const AdminDashboard: React.FC = () => {
 
       return () => {
         console.log('🔌 Cleaning up Dashboard subscriptions...');
-        clearInterval(autoRefreshInterval);
         subscription.unsubscribe();
       };
     }
 
     return () => {
-      console.log('🔌 Cleaning up auto-refresh...');
-      clearInterval(autoRefreshInterval);
+      console.log('🔌 Cleaning up dashboard effect (no auto-refresh interval to clear)');
     };
   }, []); // Empty dependency - only run once on mount
 
@@ -230,17 +254,22 @@ const AdminDashboard: React.FC = () => {
         const firstNumbers = new Set<string>();
         const secondNumbers = new Set<string>();
         
-        for (const user of users) {
-          const entries = await db.getUserEntries(user.id, selectedFilter);
-          entries.forEach(e => {
-            // Only add to firstNumbers if first_amount > 0
-            if (e.first_amount > 0) {
-              firstNumbers.add(e.number);
-            }
-            // Only add to secondNumbers if second_amount > 0
-            if (e.second_amount > 0) {
-              secondNumbers.add(e.number);
-            }
+        if (db.isOnline()) {
+          for (const user of users) {
+            const entries = await db.getUserEntries(user.id, selectedFilter);
+            entries.forEach(e => {
+              if (e.first_amount > 0) firstNumbers.add(e.number);
+              if (e.second_amount > 0) secondNumbers.add(e.number);
+            });
+          }
+        } else {
+          const cached = await localDb.transactions
+            .where('entry_type')
+            .equals(selectedFilter)
+            .toArray();
+          cached.forEach(e => {
+            if (e.first_amount > 0) firstNumbers.add(e.number);
+            if (e.second_amount > 0) secondNumbers.add(e.number);
           });
         }
         

@@ -73,16 +73,7 @@ const AdminFilterPage: React.FC = () => {
     
     loadEntries(true); // Save initial state to history
 
-    // Auto-refresh every 2 seconds
-    const autoRefreshInterval = setInterval(() => {
-      if (!isAnyModalOpenRef.current) {
-      loadEntries(false);
-      } else {
-        console.log('⏸️ Skipping Filter refresh - modal or processing');
-      }
-    }, 2000);
-
-    // Set up real-time subscription for auto-updates
+    // Set up real-time subscription for auto-updates (primary live source)
     if (supabase) {
       const subscription = supabase
         .channel(`filter-${selectedType}-realtime`)
@@ -111,13 +102,12 @@ const AdminFilterPage: React.FC = () => {
 
       return () => {
         console.log(`🔌 Unsubscribing from ${selectedType} filter real-time updates`);
-        clearInterval(autoRefreshInterval);
         subscription.unsubscribe();
       };
     }
 
     return () => {
-      clearInterval(autoRefreshInterval);
+      console.log('🔌 Cleaning up Filter effect (no auto-refresh interval to clear)');
     };
   }, [selectedType]); // Only re-run when selectedType changes
 
