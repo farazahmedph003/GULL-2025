@@ -69,10 +69,21 @@ const UserDashboard: React.FC = () => {
     }));
   }, [refreshTransactions, refreshBalance, user?.id]);
 
-  // Comprehensive refresh function (manual refresh button / actions)
+  // Comprehensive refresh function
   const refresh = useCallback(() => {
     playReloadSound();
     silentRefresh();
+  }, [transactions.length, silentRefresh]);
+
+  // Auto-refresh balance and transactions every 5 seconds
+  useEffect(() => {
+    const autoRefreshInterval = setInterval(() => {
+      silentRefresh();
+    }, 5000); // 5 seconds for regular updates
+
+    return () => {
+      clearInterval(autoRefreshInterval);
+    };
   }, [silentRefresh]);
 
   // const statistics = getStatistics();
