@@ -2490,9 +2490,9 @@ export class DatabaseService {
 
       console.log(`🚀 INSTANT SAVE: Inserting ${insertData.length} deductions...`);
 
-      // OPTIMIZATION: Try single large insert first (fastest possible for < 2000 entries)
-      // For 1000 entries, this should work in one go
-      if (insertData.length <= 2000) {
+      // OPTIMIZATION: Try single large insert first (now allows up to 100,000)
+      // Supabase can handle large inserts; we keep it high to avoid chunking when possible
+      if (insertData.length <= 100000) {
         try {
           console.log(`🚀 Attempting single insert for ${insertData.length} deductions...`);
           const { data: insertedData, error: singleInsertError } = await client
@@ -2527,8 +2527,8 @@ export class DatabaseService {
 
       // CRITICAL: Use sequential batches with automatic retry to ensure ALL deductions are saved
       // Sequential is more reliable than parallel for ensuring 100% success
-      const INSERT_BATCH_SIZE = 1000; // Larger batches for efficiency (Supabase can handle 1000)
-      const MAX_RETRIES = 5; // More retries to ensure success
+      let INSERT_BATCH_SIZE = 10000; // Start with large batches; we’ll shrink dynamically on errors
+      const MAX_RETRIES = 10; // Increased retries for reliability on very large saves
       
       let remainingData = [...insertData];
       let totalSuccess = 0;

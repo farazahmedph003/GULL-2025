@@ -669,10 +669,10 @@ const AdminFilterPage: React.FC = () => {
             }
           }));
           
-          // Add timeout to prevent hanging (60 seconds max - increased for retries)
+          // Add timeout to prevent hanging (10 minutes to allow very large saves)
           const savePromise = db.saveAdminDeductionsBatch(batchDeductions);
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Save operation timed out after 60 seconds')), 60000)
+            setTimeout(() => reject(new Error('Save operation timed out after 10 minutes')), 600000)
           );
           
           const batchResult = await Promise.race([savePromise, timeoutPromise]) as any;
