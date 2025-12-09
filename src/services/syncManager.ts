@@ -1,5 +1,5 @@
 import { db } from './database';
-import { readQueue, removeQueueItem, SyncQueueItem } from './localDb';
+import { readQueue, removeQueueItem, type SyncQueueItem } from './localDb';
 
 // Runs a lightweight background loop that flushes queued offline mutations
 // to Supabase as soon as connectivity is available.
